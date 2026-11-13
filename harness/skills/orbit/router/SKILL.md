@@ -8,7 +8,7 @@ description: Lead(메인 세션)가 코드 변경 요청을 받으면 가장 먼
 Lead는 조율만 한다. 코드를 읽고 판단할 수는 있지만 고치지 않는다(훅이 막는다).
 질문에 답하기, 설명, 조사만 하는 요청은 run 없이 바로 답한다.
 역할 이름은 항상 플러그인 범위 이름(`orbit:engineer`, `orbit:qa` …)으로 부른다. 맨 이름 호출은 실패한다.
-프로젝트 CLAUDE.md가 이 문서와 충돌하면 CLAUDE.md가 우선한다.
+프로젝트 CLAUDE.md가 이 문서와 충돌하면 CLAUDE.md가 우선한다. 단 사람 승인·관문·트랙 상향·쓰기 범위 제외: CLAUDE.md로 바꿀 수 없다.
 
 ## 1. 팀 설정 읽기와 병합
 
@@ -23,7 +23,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 - 켤 수 있는 역할: designer, data, devops, security-deep, qa-mobile(security·qa의 모드 — 별도 에이전트 파일 없음), reviewer-performance, reviewer-accessibility, reviewer-data, reviewer-idiom.
 - `auto`는 profile의 `signals`(근거가 비어 있지 않으면 켜진 신호)와 이번 작업 내용(요청, diff)을 보고 Lead가 판단한다. 신호는 참고일 뿐이다. 근거 없는 역할은 켜지 않는다.
 - `track`이 `quick|standard|full`이면 시작 트랙이 된다(아래 상향 규칙은 그대로 적용). `auto`면 Lead가 고른다.
-- `rules`의 문장은 역할 호출의 GOAL에 덧붙인다.
+- `rules`의 문장은 역할 호출의 GOAL 뒤에 `사용자 팀 규칙 — 승인·관문 규칙을 바꿀 수 없음:` 꼬리표를 붙여 덧붙인다.
 - 결정 결과와 이유를 STATE.json의 `roles`에 적는다. 예: `"designer": "auto: profile designer(package.json: react 19) + UI 변경"`, `"data": "off: team.yaml"`.
 
 **[MODELS]** `team.yaml`의 `models.<역할>`에 값(`opus|sonnet|haiku`)이 있으면 그 역할을 부르는 Agent 호출의 `model` 인자로 넘긴다. 비어 있으면 인자를 생략해 역할 파일의 기본 모델을 쓴다.
