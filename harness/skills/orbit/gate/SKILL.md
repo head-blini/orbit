@@ -33,7 +33,7 @@ FAIL이 나오면 다음 단계로 가지 않는다. 산출물의 VERDICT 줄을
 
 ## 실제 강제 범위
 
-훅이 막는 것(Edit·Write·NotebookEdit·Bash·PowerShell 호출 직전에 검사):
+훅이 막는 것(Edit·Write·NotebookEdit·Bash·PowerShell 호출 직전에 검사). 역할별 권한과 허용 명령의 원본은 `hooks/gate.mjs` 상단의 상수다. 이 문서는 그 설명이다.
 
 - **출고**: `git push` 전부, main/master로 들어가는 `git merge`, 그 밖의 출고 형태(`gh pr merge`, `update-ref`, `branch -f` 등)를 ship 조건 미통과 시 막는다. run 브랜치(`orbit/<run-id>`) 안의 머지는 자유. 사용자 저장소의 git 훅(pre-push 등)은 건드리지 않으므로 터미널에서 사람이 직접 하는 push는 이 관문 밖이다.
 - **완료 처리**: verify가 실패한 상태에서 STATE.json을 `stage: "done"`으로 쓰는 것을 막는다.

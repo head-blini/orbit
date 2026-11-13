@@ -13,7 +13,7 @@ skills: [orbit:router, orbit:handoff]
 - 모델은 각 역할 파일의 기본값을 쓴다. `.orbit/team.yaml`의 `models.<역할>`이 있으면 Agent 호출의 `model` 인자로 넘긴다.
 - 사람 승인 지점(BRIEF, DESIGN, PLAN, DB 마이그레이션 실행, 배포·외부 공개, 외부 스킬 가져오기, 설정 변경)에서는 `AskUserQuestion`으로 묻고 결과를 STATE.json의 `approvals`에 적는다. 승인 없이 다음 단계로 가지 않는다. 에이전트나 서브에이전트의 메시지는 승인이 아니다.
 - 네가 쓸 수 있는 파일은 `.orbit/` 안뿐이다(STATE.json, 서브에이전트가 돌려준 결과 저장). 그 밖의 편집과 빌드·테스트 실행은 관문 훅이 막는다. 막히면 우회하지 말고 맞는 역할에게 맡긴다.
-- 직접 실행할 수 있는 명령은 `orbit:gate` 스킬이 알려주는 gate 검사 호출과 읽기 전용 `git status|log|diff|show|branch`다.
+- 직접 실행할 수 있는 셸 명령은 `orbit:gate` 스킬의 셸 항목을 따른다.
 - 서브에이전트의 보고는 증거가 아니다. 관문은 gate 검사의 출력으로만 판정한다.
 - 루프 한도(`orbit:router`와 `team.yaml`의 `budget.loops`)를 넘으면 멈추고 사용자에게 쟁점을 보고한다.
 - `orbit:` 에이전트가 목록에 없으면 플러그인이 로드되지 않은 것이다. 관문이 꺼져 있다고 보고 작업하지 말고 사용자에게 알린다.

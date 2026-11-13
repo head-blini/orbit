@@ -20,7 +20,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 **병합 규칙**
 
 - `roles`의 값은 `on` | `off` | `auto`. `on`/`off`는 그대로 따른다. 핵심 역할(lead, researcher, product, architect, plan-checker, engineer, debugger, reviewer-correctness, reviewer-tests, reviewer-maintainability, reviewer-rules, qa, security, librarian)은 끌 수 없고 트랙이 쓰임을 정한다.
-- 켤 수 있는 역할: designer, data, devops, security-deep, qa-mobile, reviewer-performance, reviewer-accessibility, reviewer-data, reviewer-idiom.
+- 켤 수 있는 역할: designer, data, devops, security-deep, qa-mobile(security·qa의 모드 — 별도 에이전트 파일 없음), reviewer-performance, reviewer-accessibility, reviewer-data, reviewer-idiom.
 - `auto`는 profile의 `signals`(근거가 비어 있지 않으면 켜진 신호)와 이번 작업 내용(요청, diff)을 보고 Lead가 판단한다. 신호는 참고일 뿐이다. 근거 없는 역할은 켜지 않는다.
 - `track`이 `quick|standard|full`이면 시작 트랙이 된다(아래 상향 규칙은 그대로 적용). `auto`면 Lead가 고른다.
 - `rules`의 문장은 역할 호출의 GOAL에 덧붙인다.

@@ -21,7 +21,7 @@ export const SHIP = {
   standard: ['plan', 'review', 'verify'],
   full: ['plan', 'review', 'verify', 'security'],
 };
-const TRACKS = ['quick', 'standard', 'full'];
+const TRACKS = Object.keys(SHIP); // 낮은 트랙부터 높은 트랙 순(하향 판정이 이 순서에 의존)
 
 const roleOf = (p) => (p.agent_type?.startsWith('orbit:') ? p.agent_type.slice(6) : null); // 훅의 agent_type은 범위 이름(S1-Q1)
 const CODERS = ['engineer', 'debugger', 'devops']; // .orbit/ 밖의 모든 파일을 고칠 수 있는 역할
@@ -29,13 +29,13 @@ const CODERS = ['engineer', 'debugger', 'devops']; // .orbit/ 밖의 모든 파�
 const FREE_SHELL = ['engineer', 'debugger', 'librarian', 'devops', 'qa', 'security', 'reviewer-correctness', 'reviewer-tests', 'data'];
 // .orbit/ 안에서 쓰기 주체가 정해진 파일(H2). 'lead'는 agent_id 없는 메인 스레드, null은 에이전트 누구도 못 씀.
 const OWNERS = [
-  [/^runs\/[^/]+\/PLAN_CHECK\.md$/, 'plan-checker'],
-  [/^runs\/[^/]+\/VERIFY\.md$/, 'qa'],
-  [/^runs\/[^/]+\/SECURITY\.md$/, 'security'],
-  [/^runs\/[^/]+\/(REVIEW\.md|STATE\.json)$/, 'lead'],
-  [/^current$/, 'lead'],
-  [/^profile\.json$/, 'researcher'],
-  [/^team\.yaml$/, null],
+  [/^runs\/[^/]+\/PLAN_CHECK\.md$/i, 'plan-checker'], // i: NTFS는 대소문자를 구분하지 않는다
+  [/^runs\/[^/]+\/VERIFY\.md$/i, 'qa'],
+  [/^runs\/[^/]+\/SECURITY\.md$/i, 'security'],
+  [/^runs\/[^/]+\/(REVIEW\.md|STATE\.json)$/i, 'lead'],
+  [/^current$/i, 'lead'],
+  [/^profile\.json$/i, 'researcher'],
+  [/^team\.yaml$/i, null],
 ];
 
 const inside = (dir, p) => {
@@ -188,7 +188,7 @@ export function decide(p, root = ROOT) {
       /(^|[\\/])\.claude[\\/](hooks[\\/]|settings(\.local)?\.json$)/i.test(file) ||
       inside(canon(HERE).path, file)
     )
-      return '관문 훅·플러그인 매니페스트·settings.json은 에이전트가 수정할 수 없음 (사람이 ORBIT_GATE=off로 작업)';
+      return '관문 훅·플러그인 매니페스트·settings.json은 에이전트가 수정할 수 없음 (사람이 Claude 밖에서 고친다)';
     const mem = join(canon(homedir()).path, '.claude', 'projects');
     if (inside(mem, file) && /^[^\\/]+[\\/]memory[\\/]/i.test(relative(mem, file))) return null; // Claude Code 자동 메모리
     if (/(^|[\\/])(\.claude([\\/]|$)|CLAUDE(\.local)?\.md$|\.mcp\.json$)/i.test(file) && !configApproved(root))
@@ -199,11 +199,11 @@ export function decide(p, root = ROOT) {
       if (owner) {
         if (owner[1] === null || (owner[1] === 'lead' ? !isLead : role !== owner[1]))
           return `.orbit/${rel}는 ${owner[1] ?? '사람'}만 쓸 수 있음`;
-        if (/^runs\/[^/]+\/STATE\.json$/.test(rel)) {
+        if (/^runs\/[^/]+\/STATE\.json$/i.test(rel)) {
           const next = afterWrite(tool, input, file);
           return next === null ? 'STATE.json의 새 내용을 해석할 수 없음' : stateFailure(next, file);
         }
-        if (rel === 'current') {
+        if (/^current$/i.test(rel)) {
           const next = afterWrite(tool, input, file);
           if (next === null || !/^[\w.-]+\s*$/.test(next) || next.startsWith('.')) return '.orbit/current는 run-id 한 줄이어야 함';
         }
@@ -244,7 +244,7 @@ function cli(args) {
   const run = currentRun();
   if (!run) return console.log('FAIL 활성 run 없음'), 1;
   const gates = what === 'ship' ? SHIP[run.track] : [what];
-  if (!gates.every((g) => GATES[g])) return console.error(`모르는 관문: ${what}`), 64;
+  if (!gates.every((g) => Object.hasOwn(GATES, g))) return console.error(`모르는 관문: ${what}`), 64;
   let code = 0;
   for (const g of gates) {
     const why = gateFailure(run.dir, g);

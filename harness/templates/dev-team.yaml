@@ -11,8 +11,8 @@ roles:
   designer: auto
   data: auto
   devops: auto
-  security-deep: auto
-  qa-mobile: auto
+  security-deep: auto  # security의 모드 — 별도 에이전트 파일 없음
+  qa-mobile: auto  # qa의 모드 — 별도 에이전트 파일 없음
   reviewer-performance: auto
   reviewer-accessibility: auto
   reviewer-data: auto

@@ -260,3 +260,69 @@ test('design-warn: tokens 밖 색·px는 additionalContext로 경고, 다른 파
   assert.doesNotMatch(w.additionalContext, /16px/);
   assert.equal(warn(root, 'src/a.ts', 'const c="#ff0000"', TOK), '');
 });
+
+// ---- review-fix-1 ----
+import { spawnSync } from 'node:child_process';
+const spawnGate = (args, { input = '', env = {}, root } = {}) =>
+  spawnSync('node', [GATE, ...args], { input, encoding: 'utf8', env: { ...process.env, ...(root ? { CLAUDE_PROJECT_DIR: root } : {}), ...env } });
+
+test('B1: .orbit/ 산출물 소유자 판정은 대소문자를 무시한다(NTFS)', () => {
+  const root = project('quick');
+  for (const f of ['.orbit/runs/r1/Review.md', '.orbit/runs/r1/verify.MD', '.orbit/runs/r1/security.md', '.orbit/runs/r1/plan_check.md',
+    '.orbit/runs/r1/state.json', '.orbit/Runs/r2/REVIEW.md', '.orbit/Current', '.orbit/Profile.json', '.orbit/Team.yaml'])
+    assert.notEqual(decide(wr(root, f, 'orbit:engineer'), root), null, f);
+  assert.equal(decide(wr(root, '.orbit/runs/r1/Review.md', undefined), root), null); // Lead는 여전히 쓴다
+});
+
+test('R2: engineer의 브랜치 강제 이동은 관문 미통과 시 차단', () => {
+  const root = project('standard');
+  for (const c of [`${G} branch -f main HEAD`, `${G} switch -C main`, `${G} checkout -B main`])
+    assert.match(decide(sh(root, c, 'orbit:engineer'), root), /차단/, c);
+});
+
+test('R3: config 승인은 gate=config + result=approved일 때만 CLAUDE.md를 연다', () => {
+  const denied = project('full', {}, { approvals: [{ gate: 'config', result: 'denied' }] });
+  const other = project('full', {}, { approvals: [{ gate: 'plan', result: 'approved' }] });
+  for (const root of [denied, other]) assert.match(decide(wr(root, 'CLAUDE.md', 'orbit:engineer'), root), /config 승인/);
+});
+
+test('R4: check CLI 종료 코드', () => {
+  const ok = project('quick', { 'VERIFY.md': EVIDENCE });
+  const bad = project('quick', { 'VERIFY.md': PASS });
+  const empty = mkdtempSync(join(tmpdir(), 'orbit-gate-'));
+  assert.equal(spawnGate(['check', 'ship'], { root: ok }).status, 0);
+  assert.equal(spawnGate(['check', 'verify'], { root: bad }).status, 1);
+  assert.equal(spawnGate(['check', 'ship'], { root: empty }).status, 1);
+  for (const a of [['check', 'nope'], ['check', '__proto__'], ['check', 'constructor'], ['status']]) {
+    const r = spawnGate(a, { root: ok });
+    assert.equal(r.status, 64, a.join(' '));
+    assert.doesNotMatch(r.stderr, /at .*gate\.mjs/, a.join(' ')); // 예외 스택 없음
+  }
+});
+
+test('R5: 훅 모드 — 해석 불가 입력은 exit 2, ORBIT_GATE=off는 exit 0', () => {
+  const root = project('quick');
+  for (const input of ['{nope', '']) {
+    const r = spawnGate([], { input, root });
+    assert.equal(r.status, 2, JSON.stringify(input));
+    assert.match(r.stderr, /\[orbit gate\]/);
+  }
+  assert.equal(spawnGate([], { input: '{nope', root, env: { ORBIT_GATE: 'off' } }).status, 0);
+});
+
+test('R6: Lead의 .orbit/current 내용은 run-id 한 줄만', () => {
+  const root = project('quick');
+  for (const content of ['../x', 'a b', '.hidden']) assert.match(decide(wr(root, '.orbit/current', undefined, { content }), root), /run-id/, content);
+});
+
+test('R7: design-warn — #ffffff와 #fff는 값 해석 없이 문자열 포함으로만 대조(한계 고정), 오류 입력은 조용히 exit 0', () => {
+  const root = project('quick');
+  assert.match(warn(root, 'src/a.css', 'a{color:#ffffff}', '{"c":"#fff"}').additionalContext, /#ffffff/); // 같은 색이지만 경고
+  assert.equal(warn(root, 'src/a.css', 'a{color:#fff}', '{"c":"#ffffff"}'), ''); // 부분 문자열이라 통과
+  const run = (input) => spawnGate(['design-warn'], { input, root });
+  for (const input of ['not json', JSON.stringify({ tool_name: 'Write', cwd: root, tool_input: { file_path: join(root, 'src/none.css') } })]) {
+    const r = run(input);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  }
+});
