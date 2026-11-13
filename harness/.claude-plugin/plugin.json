@@ -1,0 +1,6 @@
+{
+  "name": "orbit",
+  "version": "0.1.0",
+  "description": "orbit harness: role agents, skills, and gate hook",
+  "skills": ["./skills/orbit", "./skills/vendor"]
+}
