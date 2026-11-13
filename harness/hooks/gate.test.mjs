@@ -264,7 +264,10 @@ test('design-warn: tokens 밖 색·px는 additionalContext로 경고, 다른 파
 // ---- review-fix-1 ----
 import { spawnSync } from 'node:child_process';
 const spawnGate = (args, { input = '', env = {}, root } = {}) =>
-  spawnSync('node', [GATE, ...args], { input, encoding: 'utf8', env: { ...process.env, ...(root ? { CLAUDE_PROJECT_DIR: root } : {}), ...env } });
+  spawnSync(process.execPath, [GATE, ...args], {
+    input, encoding: 'utf8', timeout: 10000,
+    env: { ...process.env, ORBIT_GATE: undefined, ...(root ? { CLAUDE_PROJECT_DIR: root } : {}), ...env },
+  });
 
 test('B1: .orbit/ 산출물 소유자 판정은 대소문자를 무시한다(NTFS)', () => {
   const root = project('quick');
@@ -315,10 +318,20 @@ test('R6: Lead의 .orbit/current 내용은 run-id 한 줄만', () => {
   for (const content of ['../x', 'a b', '.hidden']) assert.match(decide(wr(root, '.orbit/current', undefined, { content }), root), /run-id/, content);
 });
 
-test('R7: design-warn — #ffffff와 #fff는 값 해석 없이 문자열 포함으로만 대조(한계 고정), 오류 입력은 조용히 exit 0', () => {
+test('N3: design-warn — 값 정확 일치(3자리 hex 펼침·대소문자 무시), 키·설명·더 긴 값의 일부는 불일치', () => {
   const root = project('quick');
-  assert.match(warn(root, 'src/a.css', 'a{color:#ffffff}', '{"c":"#fff"}').additionalContext, /#ffffff/); // 같은 색이지만 경고
-  assert.equal(warn(root, 'src/a.css', 'a{color:#fff}', '{"c":"#ffffff"}'), ''); // 부분 문자열이라 통과
+  assert.equal(warn(root, 'src/a.css', 'a{color:#fff}', '{"c":"#FFFFFF"}'), ''); // 같은 색
+  assert.equal(warn(root, 'src/a.css', 'a{color:#FFFFFF}', '{"c":"#fff"}'), ''); // 같은 색
+  assert.match(warn(root, 'src/a.css', 'a{color:#fff000}', '{"c":"#fff"}').additionalContext, /#fff000/);
+  assert.match(warn(root, 'src/a.css', 'a{margin:16px}', '{"s":"116px"}').additionalContext, /16px/);
+  assert.match(warn(root, 'src/a.css', 'a{margin:16px}', '{"16px":"x"}').additionalContext, /16px/); // 키 이름
+  assert.match(warn(root, 'src/a.css', 'a{margin:16px}', '{"desc":"use 16px here"}').additionalContext, /16px/); // 설명 문구
+  assert.match(warn(root, 'src/a.css', 'a{color:#ff0000cc}', '{"c":"#ff0000"}').additionalContext, /#ff0000cc/); // 알파는 펼치지 않음
+  assert.equal(warn(root, 'src/a.css', 'a{margin:16px;z-index:4px}', '{"s":{"a":"16px","n":[4]},"z":"4px"}'), '');
+});
+
+test('R7: design-warn 오류 입력은 조용히 exit 0', () => {
+  const root = project('quick');
   const run = (input) => spawnGate(['design-warn'], { input, root });
   for (const input of ['not json', JSON.stringify({ tool_name: 'Write', cwd: root, tool_input: { file_path: join(root, 'src/none.css') } })]) {
     const r = run(input);

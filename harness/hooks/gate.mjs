@@ -255,17 +255,25 @@ function cli(args) {
   return code;
 }
 
-// PostToolUse 경고(막지 않음): design/tokens.json 본문에 없는 hex 색·Npx를 additionalContext로 알린다. 어떤 오류도 조용히 통과.
-// shortcut: tokens.json은 값 해석 없이 문자열 포함으로만 대조(#fff vs #ffffff는 다른 값), 필요해지면 토큰 구조를 읽는다.
+// PostToolUse 경고(막지 않음): design/tokens.json의 값(문자열·숫자 leaf)에 없는 hex 색·Npx를 additionalContext로 알린다. 어떤 오류도 조용히 통과.
+// 색은 소문자·3자리→6자리로 맞춰 비교(4·8자리 알파는 소문자만), 크기는 문자열 정확 일치.
+const tokenValues = (n, out = new Set()) => {
+  if (n && typeof n === 'object') Object.values(n).forEach((v) => tokenValues(v, out));
+  else if (typeof n === 'string' || typeof n === 'number') out.add(String(n));
+  return out;
+};
+const norm = (v) => {
+  v = v.toLowerCase();
+  return /^#[0-9a-f]{3}$/.test(v) ? '#' + [...v.slice(1)].map((c) => c + c).join('') : v;
+};
 const STYLE_FILE = /\.(css|scss|less|tsx|jsx|vue|svelte|html)$/i;
 export function designWarn(p, root = ROOT) {
   const file = p.tool_input?.file_path;
   if (!['Edit', 'Write'].includes(p.tool_name) || typeof file !== 'string' || !STYLE_FILE.test(file)) return null;
-  const tokens = readFileSync(join(root, 'design/tokens.json'), 'utf8').toLowerCase();
-  JSON.parse(tokens); // 잘못된 tokens.json은 예외 → 조용히 통과
+  const tokens = new Set([...tokenValues(JSON.parse(readFileSync(join(root, 'design/tokens.json'), 'utf8')))].map(norm)); // 잘못된 tokens.json은 예외 → 조용히 통과
   const text = readFileSync(resolve(p.cwd ?? root, file), 'utf8');
-  const found = new Set((text.match(/#[0-9a-f]{3,8}\b|\b\d+(\.\d+)?px\b/gi) ?? []).map((v) => v.toLowerCase()));
-  const extra = [...found].filter((v) => !tokens.includes(v));
+  const found = new Set((text.match(/#[0-9a-f]{3,8}\b|\b\d+(\.\d+)?px\b/gi) ?? []).map(norm));
+  const extra = [...found].filter((v) => !tokens.has(v));
   return extra.length ? `design/tokens.json에 없는 값이 ${file}에 하드코딩됨: ${extra.join(', ')}. 토큰을 쓰거나 designer와 토큰 추가를 협의할 것.` : null;
 }
 

@@ -41,7 +41,7 @@ FAIL이 나오면 다음 단계로 가지 않는다. 산출물의 VERDICT 줄을
 - **보호 경로**: 어느 위치에 있든 `.claude-plugin/`, `hooks/` 아래의 `hooks.json`·`gate.mjs`·`gate.test.mjs`, 실행 중인 gate.mjs가 있는 폴더, `.claude/` 아래 `hooks/` 폴더, `.claude/` 아래 `settings*.json`은 모든 에이전트가 쓸 수 없다.
 - **설정 경로**: CLAUDE.md, CLAUDE.local.md, `.claude/` 폴더 전체, `.mcp.json`은 현재 run이 full 트랙이고 STATE.json의 `approvals`에 `config` 승인이 있을 때만 쓸 수 있다. 그 뒤에도 아래 역할 범위가 적용된다.
 - **쓰기 범위**: Lead는 `.orbit/`만. engineer·debugger·devops는 그 밖 전부(`.orbit/` 안에서는 소유자가 정해진 파일 제외). librarian은 `*.md`, `docs/**`, `CHANGELOG*`. designer는 `design/**`. 나머지 역할과 모르는 에이전트는 `.orbit/`만.
-- **셸**: Lead는 관문 확인 명령과 `git status/log/diff/show/branch/switch/merge`만. 읽기 전용 리뷰어와 모르는 에이전트는 `git status/log/diff/show`만(plan-checker는 추가로 `grep`, `claude plugin validate <경로>`). 리다이렉션·파이프로 쓰는 형태는 차단된다.
+- **셸**: Lead는 관문 확인 명령과 `git status/log/diff/show/branch/worktree list/switch/merge`만. 읽기 전용 리뷰어와 모르는 에이전트는 `git status/log/diff/show`만(plan-checker는 추가로 `grep`, `claude plugin validate <경로>`). 리다이렉션·파이프로 쓰는 형태는 차단된다.
 
 **강제되지 않는 것(경계는 권한 확인 창과 샌드박스다)**
 
