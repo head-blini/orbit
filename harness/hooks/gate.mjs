@@ -255,7 +255,28 @@ function cli(args) {
   return code;
 }
 
+// PostToolUse 경고(막지 않음): design/tokens.json 본문에 없는 hex 색·Npx를 additionalContext로 알린다. 어떤 오류도 조용히 통과.
+// shortcut: tokens.json은 값 해석 없이 문자열 포함으로만 대조(#fff vs #ffffff는 다른 값), 필요해지면 토큰 구조를 읽는다.
+const STYLE_FILE = /\.(css|scss|less|tsx|jsx|vue|svelte|html)$/i;
+export function designWarn(p, root = ROOT) {
+  const file = p.tool_input?.file_path;
+  if (!['Edit', 'Write'].includes(p.tool_name) || typeof file !== 'string' || !STYLE_FILE.test(file)) return null;
+  const tokens = readFileSync(join(root, 'design/tokens.json'), 'utf8').toLowerCase();
+  JSON.parse(tokens); // 잘못된 tokens.json은 예외 → 조용히 통과
+  const text = readFileSync(resolve(p.cwd ?? root, file), 'utf8');
+  const found = new Set((text.match(/#[0-9a-f]{3,8}\b|\b\d+(\.\d+)?px\b/gi) ?? []).map((v) => v.toLowerCase()));
+  const extra = [...found].filter((v) => !tokens.includes(v));
+  return extra.length ? `design/tokens.json에 없는 값이 ${file}에 하드코딩됨: ${extra.join(', ')}. 토큰을 쓰거나 designer와 토큰 추가를 협의할 것.` : null;
+}
+
 if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === 'design-warn') {
+    try {
+      const msg = designWarn(JSON.parse(readFileSync(0, 'utf8')));
+      if (msg) console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: msg } }));
+    } catch {}
+    process.exit(0);
+  }
   if (process.argv.length > 2) process.exit(cli(process.argv.slice(2)));
   if (process.env.ORBIT_GATE === 'off') process.exit(0);
   let reason;

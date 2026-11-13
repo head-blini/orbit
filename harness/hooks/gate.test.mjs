@@ -232,3 +232,31 @@ test('STATE.json을 읽을 수 없으면 설정 경로는 닫힘', () => {
   writeFileSync(join(root, '.orbit/runs/r1/STATE.json'), '{broken');
   assert.notEqual(decide(wr(root, 'CLAUDE.md', 'orbit:engineer'), root), null);
 });
+
+// ---- T8: 디자인 토큰 경고 (PostToolUse, 막지 않음) ----
+const warn = (root, file, content, tokens) => {
+  mkdirSync(join(root, 'design'), { recursive: true });
+  if (tokens !== undefined) writeFileSync(join(root, 'design/tokens.json'), tokens);
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, file), content);
+  const payload = JSON.stringify({ tool_name: 'Write', cwd: root, tool_input: { file_path: join(root, file).replaceAll('\\', '/') } });
+  const out = execFileSync('node', [GATE, 'design-warn'], { input: payload, encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: root } });
+  return out ? JSON.parse(out).hookSpecificOutput : '';
+};
+const TOK = '{"color":{"bg":"#1E1E2E"},"space":{"md":"16px"}}';
+
+test('design-warn: tokens.json 없음, tokens에 있는 값, 잘못된 tokens.json은 출력 없음', () => {
+  assert.equal(warn(project('quick'), 'src/a.css', 'a{color:#ff0000}'), '');
+  assert.equal(warn(project('quick'), 'src/a.css', 'a{color:#1e1e2e;padding:16px}', TOK), '');
+  assert.equal(warn(project('quick'), 'src/a.css', 'a{color:#ff0000}', '{nope'), '');
+});
+
+test('design-warn: tokens 밖 색·px는 additionalContext로 경고, 다른 파일 종류는 무시', () => {
+  const root = project('quick');
+  const w = warn(root, 'src/a.css', 'a{color:#ff0000;margin:13px;padding:16px}', TOK);
+  assert.equal(w.hookEventName, 'PostToolUse');
+  assert.match(w.additionalContext, /#ff0000/);
+  assert.match(w.additionalContext, /13px/);
+  assert.doesNotMatch(w.additionalContext, /16px/);
+  assert.equal(warn(root, 'src/a.ts', 'const c="#ff0000"', TOK), '');
+});

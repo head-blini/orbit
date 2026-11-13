@@ -7,6 +7,14 @@
           { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs"], "timeout": 10 }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs", "design-warn"], "timeout": 5 }
+        ]
+      }
     ]
   }
 }
