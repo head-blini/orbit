@@ -1,21 +1,24 @@
 {
+  "extraKnownMarketplaces": {
+    "orbit-local": { "source": { "source": "directory", "path": "./" } }
+  },
+  "enabledPlugins": { "orbit@orbit-local": true },
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Edit|Write|NotebookEdit|Bash|PowerShell",
         "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/gate.mjs"],
-            "timeout": 10
-          }
+          { "type": "command", "command": "node", "args": ["${CLAUDE_PROJECT_DIR}/harness/hooks/gate.mjs"], "timeout": 10 }
         ]
       }
     ]
   },
-  "extraKnownMarketplaces": {
-    "orbit-local": { "source": { "source": "directory", "path": "./" } }
-  },
-  "enabledPlugins": { "orbit@orbit-local": true }
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)"
+    ]
+  }
 }
