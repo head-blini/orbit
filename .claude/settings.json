@@ -13,5 +13,9 @@
         ]
       }
     ]
-  }
+  },
+  "extraKnownMarketplaces": {
+    "orbit-local": { "source": { "source": "directory", "path": "./" } }
+  },
+  "enabledPlugins": { "orbit@orbit-local": true }
 }
