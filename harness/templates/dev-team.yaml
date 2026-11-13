@@ -1,0 +1,35 @@
+# .orbit/team.yaml 템플릿 (개발팀). 프로젝트의 .orbit/team.yaml로 복사해 쓴다.
+# 에이전트는 이 파일을 쓸 수 없다(관문이 막는다). 사용자나 오르빗 UI가 쓴다.
+# 파일이 없으면 전부 기본값이다. 사용자의 CLAUDE.md와 충돌하면 CLAUDE.md가 우선한다.
+version: 1
+
+# 역할 켜기/끄기: on | off | auto
+# auto = .orbit/profile.json의 감지 신호와 작업 내용을 보고 Lead가 판단한다.
+# 핵심 역할(lead, researcher, product, architect, plan-checker, engineer, debugger,
+# reviewer-correctness/tests/maintainability/rules, qa, security, librarian)은 끌 수 없다.
+roles:
+  designer: auto
+  data: auto
+  devops: auto
+  security-deep: auto
+  qa-mobile: auto
+  reviewer-performance: auto
+  reviewer-accessibility: auto
+  reviewer-data: auto
+  reviewer-idiom: auto
+
+# 역할별 모델: <역할>: opus | sonnet | haiku. 비우면 역할 파일의 기본 모델을 쓴다.
+# 예) models: { architect: opus, plan-checker: haiku }
+models: {}
+
+# 시작 트랙: quick | standard | full | auto (auto = Lead가 요청을 보고 정한다)
+track: auto
+
+# 예산. loops만 Lead가 지킨다(지시 수준). *_usd는 오르빗 엔진 몫이라 형식만 고정한다.
+budget:
+  run_usd: null
+  day_usd: null
+  loops: { plan: 3, review: 3, debug: 2, security: 2 }
+
+# 추가 규칙 문장(역할 호출 때 GOAL에 덧붙는다).
+rules: []
