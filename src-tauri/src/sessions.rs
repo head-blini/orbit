@@ -3,16 +3,46 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 pub const MAX_EVENTS: usize = 500;
+pub const MAX_AGENTS: usize = 200;
+pub const STALL_MS: u64 = 600_000;
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source { Hook, Log, Both }
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Phase { Call, Result }
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum State { Working, Waiting, Done, Error }
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeState { Running, Waiting, Done, Failed, Unknown }
+
+#[derive(Clone, serde::Serialize)]
+pub struct Agent {
+    pub tool_use_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub kind: Option<String>,
+    pub description: Option<String>,
+    pub state: NodeState,
+    pub started_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub tokens: Option<u64>,
+}
 
 #[derive(Clone, serde::Serialize)]
 pub struct Event {
     #[serde(skip)]
     pub key: String,
     pub tool_use_id: Option<String>,
-    pub phase: &'static str,
+    pub phase: Phase,
     pub tool: String,
     pub at_ms: u64,
-    pub source: &'static str,
+    pub source: Source,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -21,9 +51,21 @@ pub struct Session {
     pub cwd: Option<String>,
     pub started_ms: Option<u64>,
     pub last_ms: u64,
-    pub source: &'static str,
+    pub source: Source,
     pub ver: u64,
+    pub state: State,
+    pub agents: Vec<Agent>,
+    pub stalled: bool,
+    /// 내부 중복 제거 전용. 화면으로 보내지 않는다.
+    #[serde(skip)]
     pub events: Vec<Event>,
+}
+
+/// 내보내기용 복제본. 멈춤 판정은 여기서만 한다.
+pub fn snapshot(s: &Session, now: u64) -> Session {
+    let mut c = s.clone();
+    c.stalled = s.state == State::Working && now.saturating_sub(s.last_ms) > STALL_MS;
+    c
 }
 
 #[derive(Default)]
@@ -33,8 +75,8 @@ pub struct Store {
     ver: u64,
 }
 
-fn merge(a: &'static str, b: &'static str) -> &'static str {
-    if a == b { a } else { "both" }
+fn merge(a: Source, b: Source) -> Source {
+    if a == b { a } else { Source::Both }
 }
 
 fn add_event(sess: &mut Session, seen: &mut HashSet<String>, ev: Event) {
@@ -45,12 +87,15 @@ fn add_event(sess: &mut Session, seen: &mut HashSet<String>, ev: Event) {
         }
     } else if let Some(e) = sess.events.iter_mut().find(|e| e.key == ev.key) {
         e.source = merge(e.source, ev.source);
+        if e.tool.is_empty() {
+            e.tool = ev.tool;
+        }
     }
 }
 
 impl Store {
     /// 세션을 만들거나 갱신하고 ver를 올린다.
-    fn touch(&mut self, id: &str, source: &'static str, cwd: Option<&str>, at: u64, started: Option<u64>) {
+    fn touch(&mut self, id: &str, source: Source, cwd: Option<&str>, at: u64, started: Option<u64>) {
         self.ver += 1;
         let ver = self.ver;
         let s = self.sessions.entry(id.to_string()).or_insert_with(|| Session {
@@ -60,6 +105,9 @@ impl Store {
             last_ms: 0,
             source,
             ver,
+            state: State::Working,
+            agents: Vec::new(),
+            stalled: false,
             events: Vec::new(),
         });
         s.ver = ver;
@@ -82,20 +130,32 @@ impl Store {
 
     pub fn ingest_hook(&mut self, v: &Value, now_ms: u64) -> Option<String> {
         let sid = v.get("session_id")?.as_str()?;
-        self.touch(sid, "hook", v.get("cwd").and_then(Value::as_str), now_ms, None);
-        let phase = match v.get("hook_event_name").and_then(Value::as_str) {
-            Some("PreToolUse") => "call",
-            Some("PostToolUse") | Some("PostToolUseFailure") => "result",
+        self.touch(sid, Source::Hook, v.get("cwd").and_then(Value::as_str), now_ms, None);
+        let name = v.get("hook_event_name").and_then(Value::as_str);
+        let note = v.get("notification_type").and_then(Value::as_str);
+        let state = match (name, note) {
+            (Some("UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure"), _) => Some(State::Working),
+            (Some("PermissionRequest"), _) | (Some("Notification"), Some("permission_prompt")) => Some(State::Waiting),
+            (Some("Stop" | "SessionEnd"), _) | (Some("Notification"), Some("idle_prompt")) => Some(State::Done),
+            (Some("StopFailure"), _) => Some(State::Error),
+            _ => None,
+        };
+        if let (Some(st), Some(s)) = (state, self.sessions.get_mut(sid)) {
+            s.state = st;
+        }
+        let phase = match name {
+            Some("PreToolUse") => Phase::Call,
+            Some("PostToolUse") | Some("PostToolUseFailure") => Phase::Result,
             _ => return Some(sid.to_string()),
         };
         if let Some(id) = v.get("tool_use_id").and_then(Value::as_str) {
             let ev = Event {
-                key: format!("{phase}:{id}"),
+                key: format!("{}:{id}", if phase == Phase::Call { "call" } else { "result" }),
                 tool_use_id: Some(id.to_string()),
                 phase,
                 tool: v.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string(),
                 at_ms: now_ms,
-                source: "hook",
+                source: Source::Hook,
             };
             self.push(sid, ev);
         }
@@ -106,22 +166,24 @@ impl Store {
         let obj = v.as_object()?;
         let ts = obj.get("timestamp").and_then(Value::as_str).and_then(parse_ms);
         let at = ts.unwrap_or(read_ms);
-        self.touch(session, "log", obj.get("cwd").and_then(Value::as_str), at, ts);
+        // timestamp 없는 줄은 last_ms를 올리지 못한다(max)
+        self.touch(session, Source::Log, obj.get("cwd").and_then(Value::as_str), ts.unwrap_or(0), ts);
         let uuid = obj.get("uuid").and_then(Value::as_str);
         let blocks = obj.get("message").and_then(|m| m.get("content")).and_then(Value::as_array);
         for (i, b) in blocks.into_iter().flatten().enumerate() {
             let (phase, id) = match b.get("type").and_then(Value::as_str) {
-                Some("tool_use") => ("call", b.get("id")),
-                Some("tool_result") => ("result", b.get("tool_use_id")),
+                Some("tool_use") => (Phase::Call, b.get("id")),
+                Some("tool_result") => (Phase::Result, b.get("tool_use_id")),
                 _ => continue,
             };
             let id = id.and_then(Value::as_str);
+            let pn = if phase == Phase::Call { "call" } else { "result" };
             let key = match (id, uuid) {
-                (Some(id), _) => format!("{phase}:{id}"),
+                (Some(id), _) => format!("{pn}:{id}"),
                 (None, Some(u)) => format!("uuid:{u}:{i}"),
                 (None, None) => continue,
             };
-            let tool = if phase == "call" {
+            let tool = if phase == Phase::Call {
                 b.get("name").and_then(Value::as_str).map(str::to_string)
             } else {
                 id.and_then(|id| {
@@ -136,7 +198,7 @@ impl Store {
                 phase,
                 tool: tool.unwrap_or_default(),
                 at_ms: at,
-                source: "log",
+                source: Source::Log,
             };
             self.push(session, ev);
         }
@@ -227,11 +289,11 @@ mod tests {
         let mut st = Store::default();
         assert_eq!(st.ingest_log(S, &use_line("t1", "Read"), 5).as_deref(), Some(S));
         let s = st.get(S).unwrap();
-        assert_eq!(s.source, "log");
+        assert_eq!(s.source, Source::Log);
         assert_eq!(s.cwd.as_deref(), Some("/w"));
         assert_eq!(s.started_ms, Some(951868800000));
         let e = &s.events[0];
-        assert_eq!((e.phase, e.tool.as_str(), e.source), ("call", "Read", "log"));
+        assert_eq!((e.phase, e.tool.as_str(), e.source), (Phase::Call, "Read", Source::Log));
         assert_eq!(e.at_ms, 951868800000);
     }
 
@@ -241,15 +303,15 @@ mod tests {
         st.ingest_hook(&hook("PreToolUse", Some("t1")), 1);
         st.ingest_log(S, &use_line("t1", "Read"), 2);
         assert_eq!(evs(&st).len(), 1);
-        assert_eq!(evs(&st)[0].source, "both");
+        assert_eq!(evs(&st)[0].source, Source::Both);
         assert_eq!(evs(&st)[0].at_ms, 1);
-        assert_eq!(st.get(S).unwrap().source, "both");
+        assert_eq!(st.get(S).unwrap().source, Source::Both);
 
         let mut st = Store::default();
         st.ingest_log(S, &use_line("t1", "Read"), 2);
         st.ingest_hook(&hook("PreToolUse", Some("t1")), 1);
         assert_eq!(evs(&st).len(), 1);
-        assert_eq!(evs(&st)[0].source, "both");
+        assert_eq!(evs(&st)[0].source, Source::Both);
     }
 
     #[test]
@@ -259,13 +321,13 @@ mod tests {
             st.ingest_hook(&hook(ev, Some("t1")), 1);
             st.ingest_log(S, &res_line("t1"), 2);
             assert_eq!(evs(&st).len(), 1);
-            assert_eq!((evs(&st)[0].phase, evs(&st)[0].source), ("result", "both"));
+            assert_eq!((evs(&st)[0].phase, evs(&st)[0].source), (Phase::Result, Source::Both));
         }
         let mut st = Store::default();
         st.ingest_log(S, &use_line("t1", "Read"), 1);
         st.ingest_log(S, &res_line("t1"), 2);
         assert_eq!(evs(&st).len(), 2);
-        assert_eq!((evs(&st)[1].phase, evs(&st)[1].tool.as_str()), ("result", "Read"));
+        assert_eq!((evs(&st)[1].phase, evs(&st)[1].tool.as_str()), (Phase::Result, "Read"));
     }
 
     #[test]
@@ -325,7 +387,7 @@ mod tests {
         let v = json!({"hook_event_name":"UserPromptSubmit","session_id":S,"cwd":"/h"});
         assert_eq!(st.ingest_hook(&v, 9).as_deref(), Some(S));
         let s = st.get(S).unwrap();
-        assert_eq!((s.source, s.events.len(), s.started_ms, s.last_ms), ("hook", 0, None, 9));
+        assert_eq!((s.source, s.events.len(), s.started_ms, s.last_ms), (Source::Hook, 0, None, 9));
         assert_eq!(s.cwd.as_deref(), Some("/h"));
         assert!(st.ingest_hook(&json!({"hook_event_name":"Stop"}), 1).is_none());
         assert!(st.ingest_hook(&json!({"session_id":3}), 1).is_none());
@@ -375,5 +437,97 @@ mod tests {
         ] {
             assert_eq!(parse_ms(bad), None, "{bad}");
         }
+    }
+
+    fn st_of(st: &Store) -> State {
+        st.get(S).unwrap().state
+    }
+    fn h(ev: &str) -> Value {
+        json!({"hook_event_name":ev,"session_id":S})
+    }
+    fn notif(t: Value) -> Value {
+        json!({"hook_event_name":"Notification","session_id":S,"notification_type":t})
+    }
+
+    #[test]
+    fn l_state_table() {
+        let mut st = Store::default();
+        let steps = [
+            (h("UserPromptSubmit"), State::Working), (h("PermissionRequest"), State::Waiting),
+            (h("PreToolUse"), State::Working), (notif(json!("permission_prompt")), State::Waiting),
+            (h("PostToolUse"), State::Working), (h("Stop"), State::Done),
+            (h("StopFailure"), State::Error), (h("UserPromptSubmit"), State::Working),
+            (notif(json!("idle_prompt")), State::Done), (h("SessionEnd"), State::Done),
+            (h("SubagentStart"), State::Done), (notif(json!("auth_success")), State::Done),
+            (notif(json!(5)), State::Done), (h("Zzz"), State::Done),
+        ];
+        for (v, want) in steps {
+            st.ingest_hook(&v, 1);
+            assert_eq!(st_of(&st), want, "{v}");
+        }
+    }
+
+    #[test]
+    fn m_log_does_not_change_state() {
+        let mut st = Store::default();
+        st.ingest_log(S, &use_line("t1", "Read"), 1);
+        assert_eq!(st_of(&st), State::Working);
+        st.ingest_hook(&h("Stop"), 1);
+        st.ingest_log(S, &res_line("t1"), 2);
+        assert_eq!(st_of(&st), State::Done);
+    }
+
+    #[test]
+    fn n_last_ms_only_from_timestamps() {
+        let mut st = Store::default();
+        st.ingest_log(S, &use_line("t1", "Read"), 5);
+        st.ingest_log(S, &json!({"uuid":"z"}), 9_000_000_000_000);
+        assert_eq!(st.get(S).unwrap().last_ms, 951868800000);
+        st.ingest_log("s2", &json!({"uuid":"z"}), 9_000_000_000_000);
+        assert_eq!(st.get("s2").unwrap().last_ms, 0);
+    }
+
+    #[test]
+    fn o_fill_empty_tool() {
+        let mut st = Store::default();
+        st.ingest_log(S, &res_line("t1"), 1);
+        assert_eq!(evs(&st)[0].tool, "");
+        st.ingest_hook(&hook("PostToolUse", Some("t1")), 2);
+        assert_eq!(evs(&st).len(), 1);
+        assert_eq!(evs(&st)[0].tool, "Read");
+    }
+
+    #[test]
+    fn p_json_shape() {
+        let mut st = Store::default();
+        st.ingest_hook(&hook("PreToolUse", Some("t1")), 1);
+        st.ingest_log(S, &use_line("t1", "Read"), 2);
+        let v = serde_json::to_value(st.get(S).unwrap()).unwrap();
+        assert_eq!(v["source"], "both");
+        assert_eq!(v["state"], "working");
+        assert_eq!(v["agents"], json!([]));
+        assert_eq!(v["stalled"], false);
+        assert!(v.get("events").is_none());
+    }
+
+    #[test]
+    fn q_snapshot_stall() {
+        let mut st = Store::default();
+        st.ingest_hook(&h("UserPromptSubmit"), 1000);
+        let s = st.get(S).unwrap();
+        assert!(!snapshot(s, 1000 + STALL_MS).stalled);
+        let late = snapshot(s, 1000 + STALL_MS + 1);
+        assert!(late.stalled);
+        assert_eq!(serde_json::to_value(&late).unwrap()["stalled"], true);
+        assert!(!snapshot(s, 5).stalled);
+        assert!(!st.get(S).unwrap().stalled);
+        for (ev, want) in [("PermissionRequest", State::Waiting), ("Stop", State::Done), ("StopFailure", State::Error)] {
+            st.ingest_hook(&h(ev), 1000);
+            let s = st.get(S).unwrap();
+            assert_eq!(s.state, want);
+            assert!(!snapshot(s, 1000 + STALL_MS + 1).stalled);
+        }
+        st.ingest_log("s2", &json!({"uuid":"z"}), 1);
+        assert!(snapshot(st.get("s2").unwrap(), 9_000_000_000_000).stalled);
     }
 }
