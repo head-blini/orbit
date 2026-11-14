@@ -3,16 +3,48 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 pub const MAX_EVENTS: usize = 500;
+pub const MAX_AGENTS: usize = 200;
+pub const STALL_MS: u64 = 600_000;
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source { Hook, Log, Both }
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Phase { Call, Result }
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum State { Working, Waiting, Done, Error }
+
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeState { Running, Waiting, Done, Failed, Unknown }
+
+#[derive(Clone, serde::Serialize)]
+pub struct Agent {
+    pub tool_use_id: Option<String>,
+    pub agent_id: Option<String>,
+    pub kind: Option<String>,
+    pub description: Option<String>,
+    pub state: NodeState,
+    pub started_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub tokens: Option<u64>,
+    /// 단계 열(1부터). 생성 때 한 번 정해지고 합치기(min) 외에는 바뀌지 않는다.
+    pub col: u32,
+}
 
 #[derive(Clone, serde::Serialize)]
 pub struct Event {
     #[serde(skip)]
     pub key: String,
     pub tool_use_id: Option<String>,
-    pub phase: &'static str,
+    pub phase: Phase,
     pub tool: String,
     pub at_ms: u64,
-    pub source: &'static str,
+    pub source: Source,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -21,9 +53,25 @@ pub struct Session {
     pub cwd: Option<String>,
     pub started_ms: Option<u64>,
     pub last_ms: u64,
-    pub source: &'static str,
+    pub source: Source,
     pub ver: u64,
+    pub state: State,
+    pub agents: Vec<Agent>,
+    pub stalled: bool,
+    /// 내부 중복 제거 전용. 화면으로 보내지 않는다.
+    #[serde(skip)]
     pub events: Vec<Event>,
+}
+
+/// 내보내기용 복제본. 멈춤 판정은 여기서만 한다.
+pub fn snapshot(s: &Session, now: u64) -> Session {
+    stalled(s.clone(), now)
+}
+
+/// 이미 복제한 값을 소비해 멈춤만 채운다.
+pub fn stalled(mut c: Session, now: u64) -> Session {
+    c.stalled = c.state == State::Working && now.saturating_sub(c.last_ms) > STALL_MS;
+    c
 }
 
 #[derive(Default)]
@@ -33,8 +81,8 @@ pub struct Store {
     ver: u64,
 }
 
-fn merge(a: &'static str, b: &'static str) -> &'static str {
-    if a == b { a } else { "both" }
+fn merge(a: Source, b: Source) -> Source {
+    if a == b { a } else { Source::Both }
 }
 
 fn add_event(sess: &mut Session, seen: &mut HashSet<String>, ev: Event) {
@@ -45,12 +93,178 @@ fn add_event(sess: &mut Session, seen: &mut HashSet<String>, ev: Event) {
         }
     } else if let Some(e) = sess.events.iter_mut().find(|e| e.key == ev.key) {
         e.source = merge(e.source, ev.source);
+        if e.tool.is_empty() {
+            e.tool = ev.tool;
+        }
+    }
+}
+
+fn is_agent_tool(name: Option<&str>) -> bool {
+    matches!(name, Some("Agent" | "Task")) // "Task"는 옛 이름(미확인)
+}
+
+/// tool_use_id 노드의 위치. 없으면 만들고(가장 오래된 노드부터 뺀다) 새 위치를 돌려준다.
+fn node_by_tool(agents: &mut Vec<Agent>, tuid: &str) -> usize {
+    if let Some(i) = agents.iter().position(|a| a.tool_use_id.as_deref() == Some(tuid)) {
+        return i;
+    }
+    push_agent(agents, Some(tuid.to_string()), None, NodeState::Unknown, None)
+}
+
+fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>, state: NodeState, started: Option<u64>) -> usize {
+    // 마지막 열에 이미 끝난 노드가 하나라도 있으면 다음 열. 시각이 아니라 생성 순서로 안다.
+    let last = agents.iter().map(|a| a.col).max().unwrap_or(1);
+    let finished = agents.iter().any(|a| a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
+    let col = if finished { last + 1 } else { last };
+    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col });
+    if agents.len() > MAX_AGENTS {
+        agents.remove(0);
+    }
+    agents.len() - 1
+}
+
+fn nonempty(v: Option<&Value>) -> Option<&str> {
+    v.and_then(Value::as_str).filter(|s| !s.is_empty())
+}
+
+/// 비어 있는 칸만 채운다.
+fn fill_from_input(a: &mut Agent, input: Option<&Value>) {
+    if a.kind.is_none() {
+        a.kind = input.and_then(|i| i.get("subagent_type")).and_then(Value::as_str).map(str::to_string);
+    }
+    if a.description.is_none() {
+        a.description = input.and_then(|i| i.get("description")).and_then(Value::as_str).map(str::to_string);
+    }
+}
+
+fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
+    let aid = v.get("agent_id").and_then(Value::as_str);
+    let tuid = v.get("tool_use_id").and_then(Value::as_str);
+    let by_aid = |ag: &[Agent], id: &str| ag.iter().position(|a| a.agent_id.as_deref() == Some(id));
+    let tool_node = is_agent_tool(v.get("tool_name").and_then(Value::as_str)) && aid.is_none();
+    match name {
+        "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PermissionRequest" | "Notification" => {
+            let waits = name == "PermissionRequest" || v.get("notification_type").and_then(Value::as_str) == Some("permission_prompt");
+            if let Some(i) = aid.and_then(|id| by_aid(agents, id)) {
+                match (waits, agents[i].state) {
+                    (true, NodeState::Running) => agents[i].state = NodeState::Waiting,
+                    (false, NodeState::Waiting) if matches!(name, "PreToolUse" | "PostToolUse" | "PostToolUseFailure") => agents[i].state = NodeState::Running,
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+    match name {
+        "PreToolUse" if tool_node => {
+            let Some(t) = tuid else { return };
+            let i = node_by_tool(agents, t);
+            let a = &mut agents[i];
+            fill_from_input(a, v.get("tool_input"));
+            a.started_ms.get_or_insert(now);
+            if a.state == NodeState::Unknown {
+                a.state = NodeState::Running;
+            }
+        }
+        "PostToolUseFailure" if tool_node => {
+            if let Some(t) = tuid {
+                let i = node_by_tool(agents, t);
+                agents[i].state = NodeState::Failed;
+            }
+        }
+        "PostToolUse" if tool_node => {
+            let Some(t) = tuid else { return };
+            let mut i = node_by_tool(agents, t);
+            let Some(r) = v.get("tool_response").and_then(Value::as_object) else { return };
+            if let Some(id) = r.get("agentId").and_then(Value::as_str) {
+                if let Some(j) = agents.iter().enumerate().position(|(k, a)| k != i && a.agent_id.as_deref() == Some(id)) {
+                    if agents[j].tool_use_id.is_some() {
+                        // 자기 호출을 가진 노드는 합치지 않는다. 엇갈린 짝짓기였으니 id만 비운다.
+                        agents[j].agent_id = None;
+                    } else {
+                        let o = agents.remove(j);
+                        if j < i {
+                            i -= 1;
+                        }
+                        let a = &mut agents[i];
+                        a.kind = a.kind.take().or(o.kind);
+                        a.description = a.description.take().or(o.description);
+                        a.started_ms = a.started_ms.into_iter().chain(o.started_ms).min();
+                        a.duration_ms = a.duration_ms.or(o.duration_ms);
+                        a.tokens = a.tokens.or(o.tokens);
+                        a.col = a.col.min(o.col);
+                    }
+                }
+                agents[i].agent_id = Some(id.to_string());
+            }
+            let a = &mut agents[i];
+            if let Some(t) = r.get("totalTokens").and_then(Value::as_u64) {
+                a.tokens = Some(t);
+            }
+            if let Some(d) = r.get("totalDurationMs").and_then(Value::as_u64) {
+                a.duration_ms = Some(d);
+            }
+            a.state = if r.get("status").and_then(Value::as_str) == Some("async_launched") { NodeState::Running } else { NodeState::Done };
+        }
+        "SubagentStart" => {
+            let Some(id) = aid else { return };
+            if let Some(i) = by_aid(agents, id) {
+                agents[i].state = NodeState::Running;
+            } else if let Some(ty) = nonempty(v.get("agent_type")) {
+                // 추정 짝짓기: agent_id 없는 가장 오래된 running 노드 중 kind가 같거나 없는 것
+                let pair = agents.iter().position(|a| a.agent_id.is_none() && a.state == NodeState::Running && a.kind.as_deref().is_none_or(|k| k == ty));
+                let i = pair.unwrap_or_else(|| push_agent(agents, None, None, NodeState::Running, Some(now)));
+                let a = &mut agents[i];
+                a.agent_id = Some(id.to_string());
+                a.kind.get_or_insert_with(|| ty.to_string());
+            }
+        }
+        "SubagentStop" => {
+            let Some(id) = aid else { return };
+            if let Some(i) = by_aid(agents, id) {
+                let a = &mut agents[i];
+                if matches!(a.state, NodeState::Running | NodeState::Waiting) {
+                    a.state = NodeState::Done;
+                    if a.duration_ms.is_none() {
+                        a.duration_ms = a.started_ms.map(|s| now.saturating_sub(s));
+                    }
+                }
+            } else if let Some(ty) = nonempty(v.get("agent_type")) {
+                let i = push_agent(agents, None, Some(id.to_string()), NodeState::Done, None);
+                agents[i].kind = Some(ty.to_string());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn log_agent(agents: &mut Vec<Agent>, b: &Value, phase: Phase, id: &str, ts: Option<u64>) {
+    if phase == Phase::Call {
+        if !is_agent_tool(b.get("name").and_then(Value::as_str)) {
+            return;
+        }
+        let i = node_by_tool(agents, id);
+        let a = &mut agents[i];
+        fill_from_input(a, b.get("input"));
+        if a.started_ms.is_none() {
+            a.started_ms = ts;
+        }
+    } else if let Some(a) = agents.iter_mut().find(|a| a.tool_use_id.as_deref() == Some(id)) {
+        if b.get("is_error").and_then(Value::as_bool) == Some(true) {
+            a.state = NodeState::Failed;
+        } else if a.state == NodeState::Unknown {
+            a.state = NodeState::Done;
+        }
+        // 실행 중·대기 노드의 시간은 훅(SubagentStop·Post)이 채운다
+        if a.duration_ms.is_none() && !matches!(a.state, NodeState::Running | NodeState::Waiting) {
+            a.duration_ms = a.started_ms.zip(ts).map(|(s, e)| e.saturating_sub(s));
+        }
     }
 }
 
 impl Store {
     /// 세션을 만들거나 갱신하고 ver를 올린다.
-    fn touch(&mut self, id: &str, source: &'static str, cwd: Option<&str>, at: u64, started: Option<u64>) {
+    fn touch(&mut self, id: &str, source: Source, cwd: Option<&str>, at: u64, started: Option<u64>) {
         self.ver += 1;
         let ver = self.ver;
         let s = self.sessions.entry(id.to_string()).or_insert_with(|| Session {
@@ -60,6 +274,9 @@ impl Store {
             last_ms: 0,
             source,
             ver,
+            state: State::Working,
+            agents: Vec::new(),
+            stalled: false,
             events: Vec::new(),
         });
         s.ver = ver;
@@ -82,20 +299,35 @@ impl Store {
 
     pub fn ingest_hook(&mut self, v: &Value, now_ms: u64) -> Option<String> {
         let sid = v.get("session_id")?.as_str()?;
-        self.touch(sid, "hook", v.get("cwd").and_then(Value::as_str), now_ms, None);
-        let phase = match v.get("hook_event_name").and_then(Value::as_str) {
-            Some("PreToolUse") => "call",
-            Some("PostToolUse") | Some("PostToolUseFailure") => "result",
+        self.touch(sid, Source::Hook, v.get("cwd").and_then(Value::as_str), now_ms, None);
+        let name = v.get("hook_event_name").and_then(Value::as_str);
+        let note = v.get("notification_type").and_then(Value::as_str);
+        let state = match (name, note) {
+            (Some("UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure"), _) => Some(State::Working),
+            (Some("PermissionRequest"), _) | (Some("Notification"), Some("permission_prompt")) => Some(State::Waiting),
+            (Some("Stop" | "SessionEnd"), _) | (Some("Notification"), Some("idle_prompt")) => Some(State::Done),
+            (Some("StopFailure"), _) => Some(State::Error),
+            _ => None,
+        };
+        if let (Some(st), Some(s)) = (state, self.sessions.get_mut(sid)) {
+            s.state = st;
+        }
+        if let (Some(n), Some(s)) = (name, self.sessions.get_mut(sid)) {
+            hook_agents(&mut s.agents, v, n, now_ms);
+        }
+        let phase = match name {
+            Some("PreToolUse") => Phase::Call,
+            Some("PostToolUse") | Some("PostToolUseFailure") => Phase::Result,
             _ => return Some(sid.to_string()),
         };
         if let Some(id) = v.get("tool_use_id").and_then(Value::as_str) {
             let ev = Event {
-                key: format!("{phase}:{id}"),
+                key: format!("{}:{id}", if phase == Phase::Call { "call" } else { "result" }),
                 tool_use_id: Some(id.to_string()),
                 phase,
                 tool: v.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string(),
                 at_ms: now_ms,
-                source: "hook",
+                source: Source::Hook,
             };
             self.push(sid, ev);
         }
@@ -106,22 +338,28 @@ impl Store {
         let obj = v.as_object()?;
         let ts = obj.get("timestamp").and_then(Value::as_str).and_then(parse_ms);
         let at = ts.unwrap_or(read_ms);
-        self.touch(session, "log", obj.get("cwd").and_then(Value::as_str), at, ts);
+        // timestamp 없는 줄은 last_ms를 올리지 못한다(max)
+        self.touch(session, Source::Log, obj.get("cwd").and_then(Value::as_str), ts.unwrap_or(0), ts);
+        let sidechain = obj.get("isSidechain").and_then(Value::as_bool) == Some(true);
         let uuid = obj.get("uuid").and_then(Value::as_str);
         let blocks = obj.get("message").and_then(|m| m.get("content")).and_then(Value::as_array);
         for (i, b) in blocks.into_iter().flatten().enumerate() {
             let (phase, id) = match b.get("type").and_then(Value::as_str) {
-                Some("tool_use") => ("call", b.get("id")),
-                Some("tool_result") => ("result", b.get("tool_use_id")),
+                Some("tool_use") => (Phase::Call, b.get("id")),
+                Some("tool_result") => (Phase::Result, b.get("tool_use_id")),
                 _ => continue,
             };
             let id = id.and_then(Value::as_str);
+            if let (Some(id), Some(s), false) = (id, self.sessions.get_mut(session), sidechain) {
+                log_agent(&mut s.agents, b, phase, id, ts);
+            }
+            let pn = if phase == Phase::Call { "call" } else { "result" };
             let key = match (id, uuid) {
-                (Some(id), _) => format!("{phase}:{id}"),
+                (Some(id), _) => format!("{pn}:{id}"),
                 (None, Some(u)) => format!("uuid:{u}:{i}"),
                 (None, None) => continue,
             };
-            let tool = if phase == "call" {
+            let tool = if phase == Phase::Call {
                 b.get("name").and_then(Value::as_str).map(str::to_string)
             } else {
                 id.and_then(|id| {
@@ -136,7 +374,7 @@ impl Store {
                 phase,
                 tool: tool.unwrap_or_default(),
                 at_ms: at,
-                source: "log",
+                source: Source::Log,
             };
             self.push(session, ev);
         }
@@ -227,11 +465,11 @@ mod tests {
         let mut st = Store::default();
         assert_eq!(st.ingest_log(S, &use_line("t1", "Read"), 5).as_deref(), Some(S));
         let s = st.get(S).unwrap();
-        assert_eq!(s.source, "log");
+        assert_eq!(s.source, Source::Log);
         assert_eq!(s.cwd.as_deref(), Some("/w"));
         assert_eq!(s.started_ms, Some(951868800000));
         let e = &s.events[0];
-        assert_eq!((e.phase, e.tool.as_str(), e.source), ("call", "Read", "log"));
+        assert_eq!((e.phase, e.tool.as_str(), e.source), (Phase::Call, "Read", Source::Log));
         assert_eq!(e.at_ms, 951868800000);
     }
 
@@ -241,15 +479,15 @@ mod tests {
         st.ingest_hook(&hook("PreToolUse", Some("t1")), 1);
         st.ingest_log(S, &use_line("t1", "Read"), 2);
         assert_eq!(evs(&st).len(), 1);
-        assert_eq!(evs(&st)[0].source, "both");
+        assert_eq!(evs(&st)[0].source, Source::Both);
         assert_eq!(evs(&st)[0].at_ms, 1);
-        assert_eq!(st.get(S).unwrap().source, "both");
+        assert_eq!(st.get(S).unwrap().source, Source::Both);
 
         let mut st = Store::default();
         st.ingest_log(S, &use_line("t1", "Read"), 2);
         st.ingest_hook(&hook("PreToolUse", Some("t1")), 1);
         assert_eq!(evs(&st).len(), 1);
-        assert_eq!(evs(&st)[0].source, "both");
+        assert_eq!(evs(&st)[0].source, Source::Both);
     }
 
     #[test]
@@ -259,13 +497,13 @@ mod tests {
             st.ingest_hook(&hook(ev, Some("t1")), 1);
             st.ingest_log(S, &res_line("t1"), 2);
             assert_eq!(evs(&st).len(), 1);
-            assert_eq!((evs(&st)[0].phase, evs(&st)[0].source), ("result", "both"));
+            assert_eq!((evs(&st)[0].phase, evs(&st)[0].source), (Phase::Result, Source::Both));
         }
         let mut st = Store::default();
         st.ingest_log(S, &use_line("t1", "Read"), 1);
         st.ingest_log(S, &res_line("t1"), 2);
         assert_eq!(evs(&st).len(), 2);
-        assert_eq!((evs(&st)[1].phase, evs(&st)[1].tool.as_str()), ("result", "Read"));
+        assert_eq!((evs(&st)[1].phase, evs(&st)[1].tool.as_str()), (Phase::Result, "Read"));
     }
 
     #[test]
@@ -325,7 +563,7 @@ mod tests {
         let v = json!({"hook_event_name":"UserPromptSubmit","session_id":S,"cwd":"/h"});
         assert_eq!(st.ingest_hook(&v, 9).as_deref(), Some(S));
         let s = st.get(S).unwrap();
-        assert_eq!((s.source, s.events.len(), s.started_ms, s.last_ms), ("hook", 0, None, 9));
+        assert_eq!((s.source, s.events.len(), s.started_ms, s.last_ms), (Source::Hook, 0, None, 9));
         assert_eq!(s.cwd.as_deref(), Some("/h"));
         assert!(st.ingest_hook(&json!({"hook_event_name":"Stop"}), 1).is_none());
         assert!(st.ingest_hook(&json!({"session_id":3}), 1).is_none());
@@ -375,5 +613,439 @@ mod tests {
         ] {
             assert_eq!(parse_ms(bad), None, "{bad}");
         }
+    }
+
+    fn st_of(st: &Store) -> State {
+        st.get(S).unwrap().state
+    }
+    fn h(ev: &str) -> Value {
+        json!({"hook_event_name":ev,"session_id":S})
+    }
+    fn notif(t: Value) -> Value {
+        json!({"hook_event_name":"Notification","session_id":S,"notification_type":t})
+    }
+
+    #[test]
+    fn l_state_table() {
+        let mut st = Store::default();
+        let steps = [
+            (h("UserPromptSubmit"), State::Working), (h("PermissionRequest"), State::Waiting),
+            (h("PreToolUse"), State::Working), (notif(json!("permission_prompt")), State::Waiting),
+            (h("PostToolUse"), State::Working), (h("Stop"), State::Done),
+            (h("StopFailure"), State::Error), (h("UserPromptSubmit"), State::Working),
+            (notif(json!("idle_prompt")), State::Done), (h("SessionEnd"), State::Done),
+            (h("SubagentStart"), State::Done), (notif(json!("auth_success")), State::Done),
+            (notif(json!(5)), State::Done), (h("Zzz"), State::Done),
+        ];
+        for (v, want) in steps {
+            st.ingest_hook(&v, 1);
+            assert_eq!(st_of(&st), want, "{v}");
+        }
+    }
+
+    #[test]
+    fn m_log_does_not_change_state() {
+        let mut st = Store::default();
+        st.ingest_log(S, &use_line("t1", "Read"), 1);
+        assert_eq!(st_of(&st), State::Working);
+        st.ingest_hook(&h("Stop"), 1);
+        st.ingest_log(S, &res_line("t1"), 2);
+        assert_eq!(st_of(&st), State::Done);
+    }
+
+    #[test]
+    fn n_last_ms_only_from_timestamps() {
+        let mut st = Store::default();
+        st.ingest_log(S, &use_line("t1", "Read"), 5);
+        st.ingest_log(S, &json!({"uuid":"z"}), 9_000_000_000_000);
+        assert_eq!(st.get(S).unwrap().last_ms, 951868800000);
+        st.ingest_log("s2", &json!({"uuid":"z"}), 9_000_000_000_000);
+        assert_eq!(st.get("s2").unwrap().last_ms, 0);
+    }
+
+    #[test]
+    fn o_fill_empty_tool() {
+        let mut st = Store::default();
+        st.ingest_log(S, &res_line("t1"), 1);
+        assert_eq!(evs(&st)[0].tool, "");
+        st.ingest_hook(&hook("PostToolUse", Some("t1")), 2);
+        assert_eq!(evs(&st).len(), 1);
+        assert_eq!(evs(&st)[0].tool, "Read");
+    }
+
+    #[test]
+    fn p_json_shape() {
+        let mut st = Store::default();
+        st.ingest_hook(&hook("PreToolUse", Some("t1")), 1);
+        st.ingest_log(S, &use_line("t1", "Read"), 2);
+        let v = serde_json::to_value(st.get(S).unwrap()).unwrap();
+        assert_eq!(v["source"], "both");
+        assert_eq!(v["state"], "working");
+        assert_eq!(v["agents"], json!([]));
+        assert_eq!(v["stalled"], false);
+        assert!(v.get("events").is_none());
+    }
+
+    #[test]
+    fn q_snapshot_stall() {
+        let mut st = Store::default();
+        st.ingest_hook(&h("UserPromptSubmit"), 1000);
+        let s = st.get(S).unwrap();
+        assert!(!snapshot(s, 1000 + STALL_MS).stalled);
+        let late = snapshot(s, 1000 + STALL_MS + 1);
+        assert!(late.stalled);
+        assert_eq!(serde_json::to_value(&late).unwrap()["stalled"], true);
+        assert!(!snapshot(s, 5).stalled);
+        assert!(!st.get(S).unwrap().stalled);
+        for (ev, want) in [("PermissionRequest", State::Waiting), ("Stop", State::Done), ("StopFailure", State::Error)] {
+            st.ingest_hook(&h(ev), 1000);
+            let s = st.get(S).unwrap();
+            assert_eq!(s.state, want);
+            assert!(!snapshot(s, 1000 + STALL_MS + 1).stalled);
+        }
+        st.ingest_log("s2", &json!({"uuid":"z"}), 1);
+        assert!(snapshot(st.get("s2").unwrap(), 9_000_000_000_000).stalled);
+    }
+
+    fn ag(st: &Store) -> &Vec<Agent> {
+        &st.get(S).unwrap().agents
+    }
+    fn ah(ev: &str, tool: &str, tuid: &str, extra: Value) -> Value {
+        let mut v = json!({"hook_event_name":ev,"session_id":S,"tool_name":tool,"tool_use_id":tuid});
+        for (k, x) in extra.as_object().unwrap() {
+            v[k] = x.clone();
+        }
+        v
+    }
+    fn sub(ev: &str, aid: &str, ty: Value) -> Value {
+        json!({"hook_event_name":ev,"session_id":S,"agent_id":aid,"agent_type":ty})
+    }
+    fn alog(id: &str, name: &str, input: Value, ts: &str, side: bool) -> Value {
+        json!({"timestamp":ts,"isSidechain":side,
+            "message":{"content":[{"type":"tool_use","id":id,"name":name,"input":input}]}})
+    }
+    fn rlog(id: &str, ts: &str, err: bool) -> Value {
+        json!({"timestamp":ts,"message":{"content":[{"type":"tool_result","tool_use_id":id,"is_error":err}]}})
+    }
+
+    #[test]
+    fn r_agent_lifecycle() {
+        let mut st = Store::default();
+        let inp = json!({"tool_input":{"subagent_type":"engineer","description":"d"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", inp), 100);
+        assert_eq!((ag(&st).len(), ag(&st)[0].state), (1, NodeState::Running));
+        assert_eq!(ag(&st)[0].kind.as_deref(), Some("engineer"));
+        assert_eq!(ag(&st)[0].description.as_deref(), Some("d"));
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("engineer")), 110);
+        assert_eq!(ag(&st).len(), 1);
+        assert_eq!(ag(&st)[0].agent_id.as_deref(), Some("a1"));
+        st.ingest_hook(&sub("SubagentStop", "a1", json!("engineer")), 150);
+        assert_eq!((ag(&st)[0].state, ag(&st)[0].duration_ms), (NodeState::Done, Some(50)));
+        let post = json!({"tool_response":{"status":"completed","agentId":"a1","totalTokens":5,"totalDurationMs":7}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t1", post), 200);
+        let a = &ag(&st)[0];
+        assert_eq!((ag(&st).len(), a.state, a.tokens, a.duration_ms), (1, NodeState::Done, Some(5), Some(7)));
+        // 모르는 agent_id + 빈 agent_type → 무시
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStop", "zz", json!("")), 1);
+        st.ingest_hook(&sub("SubagentStart", "zz", json!("")), 1);
+        assert_eq!(ag(&st).len(), 0);
+        // 타입이 있으면 done 노드
+        st.ingest_hook(&sub("SubagentStop", "zz", json!("Explore")), 1);
+        assert_eq!((ag(&st).len(), ag(&st)[0].state), (1, NodeState::Done));
+    }
+
+    #[test]
+    fn s_agent_merge_on_post() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "a2", json!("Explore")), 10);
+        let inp = json!({"tool_input":{"subagent_type":"Plan"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", inp), 20);
+        assert_eq!(ag(&st).len(), 2);
+        let post = json!({"tool_response":{"status":"completed","agentId":"a2"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t2", post), 30);
+        let a = &ag(&st)[0];
+        assert_eq!(ag(&st).len(), 1);
+        assert_eq!((a.tool_use_id.as_deref(), a.agent_id.as_deref(), a.started_ms), (Some("t2"), Some("a2"), Some(10)));
+    }
+
+    #[test]
+    fn s2_merge_keeps_node_with_own_tool_use_id() {
+        let mut st = Store::default();
+        let inp = json!({"tool_input":{"subagent_type":"x","description":"d"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", inp.clone()), 10);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", inp), 11);
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("x")), 12);
+        st.ingest_hook(&sub("SubagentStart", "a2", json!("x")), 13);
+        // 엇갈린 짝: t2의 Post가 a1을 알린다. a1을 가진 t1은 아직 실행 중이다.
+        let post = json!({"tool_response":{"status":"completed","agentId":"a1"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t2", post), 30);
+        assert_eq!(ag(&st).len(), 2);
+        let t1 = ag(&st).iter().find(|a| a.tool_use_id.as_deref() == Some("t1")).unwrap();
+        assert_eq!((t1.kind.as_deref(), t1.description.as_deref(), t1.state), (Some("x"), Some("d"), NodeState::Running));
+    }
+
+    #[test]
+    fn t2_log_result_does_not_fix_duration_of_running_node() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t8", json!({})), 1);
+        st.ingest_log(S, &alog("t8", "Agent", json!({}), "2000-03-01T00:00:00Z", false), 1);
+        let post = json!({"tool_response":{"status":"async_launched"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t8", post), 2);
+        st.ingest_log(S, &rlog("t8", "2000-03-01T00:00:01Z", false), 1);
+        assert_eq!((ag(&st)[0].state, ag(&st)[0].duration_ms), (NodeState::Running, None));
+    }
+
+    #[test]
+    fn t_agent_fail_and_async() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PostToolUseFailure", "Agent", "t3", json!({})), 1);
+        assert_eq!(ag(&st)[0].state, NodeState::Failed);
+        let post = json!({"tool_response":{"status":"async_launched"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t4", post), 1);
+        assert_eq!(ag(&st)[1].state, NodeState::Running);
+    }
+
+    #[test]
+    fn u_agent_from_log() {
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("t5", "Agent", json!({"subagent_type":"qa"}), "2000-03-01T00:00:00Z", false), 1);
+        assert_eq!((ag(&st)[0].state, ag(&st)[0].kind.as_deref()), (NodeState::Unknown, Some("qa")));
+        st.ingest_log(S, &rlog("t5", "2000-03-01T00:00:02Z", false), 1);
+        assert_eq!((ag(&st)[0].state, ag(&st)[0].duration_ms), (NodeState::Done, Some(2000)));
+        st.ingest_log(S, &alog("t6", "Task", json!({"description":"x"}), "2000-03-01T00:00:00Z", false), 1);
+        assert_eq!((ag(&st)[1].kind.clone(), ag(&st)[1].description.as_deref()), (None, Some("x")));
+        st.ingest_log(S, &rlog("t6", "2000-03-01T00:00:01Z", true), 1);
+        assert_eq!(ag(&st)[1].state, NodeState::Failed);
+        // Agent가 아닌 도구의 결과는 노드를 만들지 않는다
+        st.ingest_log(S, &rlog("other", "2000-03-01T00:00:01Z", true), 1);
+        assert_eq!(ag(&st).len(), 2);
+    }
+
+    #[test]
+    fn v_hook_running_survives_log_result() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t7", json!({})), 1);
+        st.ingest_log(S, &alog("t7", "Agent", json!({}), "2000-03-01T00:00:00Z", false), 1);
+        st.ingest_log(S, &rlog("t7", "2000-03-01T00:00:01Z", false), 1);
+        assert_eq!((ag(&st).len(), ag(&st)[0].state), (1, NodeState::Running));
+        let post = json!({"tool_response":{"status":"completed"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t7", post), 2);
+        assert_eq!(ag(&st)[0].state, NodeState::Done);
+    }
+
+    #[test]
+    fn w_no_grandchildren() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "g1", json!({"agent_id":"a1"})), 1);
+        st.ingest_log(S, &alog("g2", "Agent", json!({}), "2000-03-01T00:00:00Z", true), 1);
+        assert_eq!(ag(&st).len(), 0);
+    }
+
+    #[test]
+    fn x_agent_waiting() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("engineer")), 1);
+        let mut p = h("PermissionRequest");
+        p["agent_id"] = json!("a1");
+        st.ingest_hook(&p, 2);
+        assert_eq!(ag(&st)[0].state, NodeState::Waiting);
+        let mut r = hook("PreToolUse", Some("r1"));
+        r["agent_id"] = json!("a1");
+        st.ingest_hook(&r, 3);
+        assert_eq!(ag(&st)[0].state, NodeState::Running);
+        let mut n = notif(json!("permission_prompt"));
+        n["agent_id"] = json!("a1");
+        st.ingest_hook(&n, 4);
+        assert_eq!(ag(&st)[0].state, NodeState::Waiting);
+    }
+
+    #[test]
+    fn y_agent_odd_shapes_cap_and_text() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "o1", json!({"tool_input":"str"})), 1);
+        st.ingest_hook(&ah("PostToolUse", "Agent", "o2", json!({"tool_response":5})), 1);
+        st.ingest_hook(&ah("PostToolUse", "Agent", "o3", json!({"tool_response":{"agentId":{"a":1},"totalTokens":"x"}})), 1);
+        st.ingest_hook(&sub("SubagentStart", "n1", json!(7)), 1);
+        st.ingest_hook(&sub("SubagentStop", "n1", json!(7)), 1);
+        assert_eq!(ag(&st).len(), 3);
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "x1", json!("<b>x</b>")), 1);
+        assert_eq!(ag(&st)[0].kind.as_deref(), Some("<b>x</b>"));
+        let mut st = Store::default();
+        for i in 0..=MAX_AGENTS {
+            st.ingest_hook(&ah("PreToolUse", "Agent", &format!("c{i}"), json!({})), 1);
+        }
+        assert_eq!(ag(&st).len(), MAX_AGENTS);
+        assert_eq!(ag(&st)[0].tool_use_id.as_deref(), Some("c1"));
+    }
+
+    fn pre(st: &mut Store, id: &str) {
+        st.ingest_hook(&ah("PreToolUse", "Agent", id, json!({})), 1);
+    }
+    fn post(st: &mut Store, id: &str) {
+        st.ingest_hook(&ah("PostToolUse", "Agent", id, json!({"tool_response":{"status":"completed"}})), 1);
+    }
+    fn cols(st: &Store) -> Vec<u32> {
+        ag(st).iter().map(|a| a.col).collect()
+    }
+    fn no_ts(mut v: Value) -> Value {
+        v.as_object_mut().unwrap().remove("timestamp");
+        v
+    }
+    const T0: &str = "2000-03-01T00:00:00Z";
+
+    #[test]
+    fn r_col_parallel_then_next() {
+        let mut st = Store::default();
+        for t in ["t1", "t2", "t3"] {
+            pre(&mut st, t);
+        }
+        assert_eq!(cols(&st), [1, 1, 1]);
+        post(&mut st, "t2");
+        pre(&mut st, "t4");
+        pre(&mut st, "t5");
+        assert_eq!(cols(&st), [1, 1, 1, 2, 2]);
+    }
+
+    fn decisions13(st: &mut Store) {
+        for t in ["a", "p"] {
+            pre(st, t);
+            post(st, t);
+        }
+        for t in ["e1", "e2", "e3"] {
+            pre(st, t);
+        }
+        post(st, "e1");
+        pre(st, "r");
+    }
+
+    #[test]
+    fn r_col_decisions_example() {
+        let mut st = Store::default();
+        decisions13(&mut st);
+        assert_eq!(cols(&st), [1, 2, 3, 3, 3, 4]);
+    }
+
+    #[test]
+    fn r_col_is_immutable() {
+        let mut st = Store::default();
+        decisions13(&mut st);
+        let key = |st: &Store| -> Vec<(Option<String>, u32)> { ag(st).iter().map(|a| (a.tool_use_id.clone(), a.col)).collect() };
+        let before = key(&st);
+        post(&mut st, "e2");
+        post(&mut st, "e3");
+        let e = json!({"tool_input":{"subagent_type":"engineer"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "e3", e), 1); // no-op re-Pre
+        st.ingest_hook(&sub("SubagentStart", "z1", json!("engineer")), 1);
+        st.ingest_hook(&sub("SubagentStop", "z1", json!("engineer")), 1);
+        st.ingest_hook(&sub("SubagentStart", "z1", json!("engineer")), 1);
+        let mut p = h("PermissionRequest");
+        p["agent_id"] = json!("z1");
+        st.ingest_hook(&p, 1);
+        st.ingest_log(S, &alog("e1", "Agent", json!({}), T0, false), 1);
+        st.ingest_log(S, &rlog("e1", T0, false), 1);
+        st.ingest_log(S, &alog("n1", "Agent", json!({}), T0, false), 1);
+        st.ingest_hook(&ah("PostToolUseFailure", "Agent", "f1", json!({})), 1);
+        let after = key(&st);
+        assert_eq!(&after[..before.len()], &before[..]);
+        assert!(after[before.len()..].iter().all(|(_, c)| *c >= 4));
+    }
+
+    #[test]
+    fn r_col_unfinished_stays_in_column() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "w1", json!("engineer")), 1);
+        let mut p = h("PermissionRequest");
+        p["agent_id"] = json!("w1");
+        st.ingest_hook(&p, 1);
+        assert_eq!(ag(&st)[0].state, NodeState::Waiting);
+        pre(&mut st, "t2");
+        assert_eq!(cols(&st), [1, 1]);
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("u1", "Agent", json!({}), T0, false), 1);
+        pre(&mut st, "t2");
+        assert_eq!((ag(&st)[0].state, cols(&st)), (NodeState::Unknown, vec![1, 1]));
+    }
+
+    #[test]
+    fn r_col_failure_counts_as_finished() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PostToolUseFailure", "Agent", "t1", json!({})), 1);
+        pre(&mut st, "t2");
+        assert_eq!(cols(&st), [1, 2]);
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("u1", "Agent", json!({}), T0, false), 1);
+        st.ingest_log(S, &rlog("u1", T0, true), 1);
+        st.ingest_log(S, &alog("u2", "Agent", json!({}), T0, false), 1);
+        assert_eq!(cols(&st), [1, 2]);
+    }
+
+    #[test]
+    fn r_col_log_restore() {
+        for strip in [false, true] {
+            let f = |v: Value| if strip { no_ts(v) } else { v };
+            let mut st = Store::default();
+            st.ingest_log(S, &f(alog("u1", "Agent", json!({}), "2000-03-01T00:00:00Z", false)), 1);
+            st.ingest_log(S, &f(rlog("u1", "2000-03-01T00:00:02Z", false)), 1);
+            st.ingest_log(S, &f(alog("u2", "Agent", json!({}), "2000-03-01T00:00:03Z", false)), 1);
+            st.ingest_log(S, &f(alog("u3", "Agent", json!({}), "2000-03-01T00:00:04Z", false)), 1);
+            assert_eq!(cols(&st), [1, 2, 2]);
+        }
+    }
+
+    #[test]
+    fn r_col_mixed_clocks_use_event_order() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 9_000_000_000_000);
+        st.ingest_log(S, &alog("u2", "Agent", json!({}), T0, false), 1);
+        assert_eq!(ag(&st)[0].tool_use_id.as_deref(), Some("t1"));
+        assert_eq!(cols(&st), [1, 1]);
+        post(&mut st, "t1");
+        st.ingest_log(S, &alog("u3", "Agent", json!({}), T0, false), 1);
+        assert_eq!(cols(&st), [1, 1, 2]);
+    }
+
+    #[test]
+    fn r_col_born_finished() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStop", "zz", json!("x")), 1);
+        assert_eq!((ag(&st)[0].state, cols(&st)), (NodeState::Done, vec![1]));
+        pre(&mut st, "t2");
+        assert_eq!(cols(&st), [1, 2]);
+    }
+
+    #[test]
+    fn r_col_merge_takes_min() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "a2", json!("Explore")), 1);
+        pre(&mut st, "t9");
+        post(&mut st, "t9");
+        let inp = json!({"tool_input":{"subagent_type":"Plan"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", inp), 1);
+        assert_eq!(cols(&st), [1, 1, 2]);
+        let p = json!({"tool_response":{"status":"completed","agentId":"a2"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t2", p), 1);
+        assert_eq!((ag(&st).len(), ag(&st)[1].tool_use_id.as_deref(), ag(&st)[1].col), (2, Some("t2"), 1));
+    }
+
+    #[test]
+    fn r_col_eviction_keeps_cols() {
+        let mut st = Store::default();
+        for i in 0..=MAX_AGENTS {
+            pre(&mut st, &format!("c{i}"));
+        }
+        assert_eq!(ag(&st).len(), MAX_AGENTS);
+        assert!(cols(&st).iter().all(|c| *c == 1));
+        post(&mut st, "c5");
+        pre(&mut st, "next");
+        assert_eq!(ag(&st).last().unwrap().col, 2);
+    }
+
+    #[test]
+    fn r_col_json() {
+        let mut st = Store::default();
+        pre(&mut st, "t1");
+        assert_eq!(serde_json::to_value(&ag(&st)[0]).unwrap()["col"], 1);
     }
 }

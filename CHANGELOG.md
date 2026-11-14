@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- 마일스톤 ④: 화면을 확정 디자인(`design/reference/layout_v4.html`)으로 다시 만듦. 상단 바 / 세션 목록 / 에이전트 그래프 / 넓은 채팅 틀 / 상세·하네스를 "설정" 묶음으로 / 게임기 액정. 세션 상태는 작업 중·대기·완료·에러·멈춤(추정, 10분 무활동). 타임라인과 도구 호출 목록은 삭제.
+- 에이전트 그래프: 훅과 메인 로그의 Agent 호출에서 만든다(메인 → 서브에이전트 1단계). 노드 모양 E(둥근 이중 테두리, 반전 없음), 항상 큰 상자(168x60), 단계 열 배치(지금 마지막 열의 노드 중 하나라도 끝난 뒤 시작하면 다음 열), 넘치면 패널 안 스크롤과 실행 중인 열 자동 스크롤. 기준 시안은 `design/reference/graph_variants.html`, 토큰은 `design/tokens.json`.
+- 게임기 액정: `screens/` 폴더의 PNG·JPG·GIF·WebP를 보여 준다(asset 프로토콜 scope는 그 한 폴더). CSP 켬. Galmuri11 글꼴 번들(OFL 1.1). SPEC.md 화면 절 문구를 맞춤. 새 의존성: Cargo feature `protocol-asset`·`http-range`, 글꼴 파일.
+- 알려진 한계: 채팅은 틀만(대화는 ⑥). DB가 없어 재시작하면 훅 전용 상태가 사라지고 Lead가 "실행 중"으로 보인다. 손자·Workflow 노드 없음. 실패 `✕`는 확인될 때만. 사용자 확인 대기(DECISIONS 15): 기준 8 빈 액정 화면, 기준 15 네트워크 없는 실행. Security 권고 G1~G9와 리뷰 참고 항목은 `.orbit/decisions.md` 14번. 배운 것은 `docs/solutions/ui-reference-fidelity.md`.
 - 마일스톤 ③: 세션 로그 감시. `~/.claude/projects`(`CLAUDE_CONFIG_DIR` 존중)의 JSONL을 1초 폴링으로 읽어 세션 목록과 도구 호출·결과 타임라인을 만들고, ②의 훅 이벤트와 합쳐 같은 호출은 한 줄(출처 로그/훅/둘 다)로 보인다. 메모리에만 저장하며 세션당 이벤트 500개, 줄 16 MiB 상한, 서브에이전트 로그 제외. 새 의존성 없음. 프론트로는 `hook-event` 대신 고른 필드만 담은 `session-update`가 간다.
 - 알려진 한계: 실제 `~/.claude/projects`와 훅 `tool_use_id`·로그 `tool_use.id` 일치는 사용자 확인 대기. 후속은 `.orbit/decisions.md` 13번과 보안 권고 A1~A8. 상세는 `docs/solutions/session-log-watch.md`.
 - 마일스톤 ②: 훅 수신 서버(127.0.0.1, 토큰 검증, std `TcpListener` 파서)와 훅 설치 도우미(백업 후 병합, 같은 내용이면 쓰기·백업 생략, 이벤트 11개) 추가. 앱에서 상태 확인·설치·제거 가능. Claude Code 2.1.317은 SessionStart의 http 훅을 지원하지 않아 제외.

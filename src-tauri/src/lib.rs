@@ -1,5 +1,6 @@
 mod config;
 mod hooks;
+mod screens;
 mod server;
 mod sessions;
 mod watch;
@@ -16,6 +17,7 @@ struct AppState {
     settings_path: Result<PathBuf, String>,
     store: Arc<Mutex<sessions::Store>>,
     projects_dir: Result<PathBuf, String>,
+    screens_dir: Result<PathBuf, String>,
 }
 
 #[derive(serde::Serialize)]
@@ -27,6 +29,7 @@ struct Status {
     settings_error: Option<String>,
     projects_dir: String,
     projects_error: Option<String>,
+    screens_dir: String,
 }
 
 fn lock(s: &Mutex<sessions::Store>) -> std::sync::MutexGuard<'_, sessions::Store> {
@@ -42,7 +45,8 @@ fn poll_round(w: &mut watch::Watcher, store: &Mutex<sessions::Store>) -> Vec<ses
         }
     });
     let st = lock(store);
-    changed.iter().filter_map(|id| st.get(id).cloned()).collect()
+    let now = sessions::now_ms();
+    changed.iter().filter_map(|id| st.get(id).map(|s| sessions::snapshot(s, now))).collect()
 }
 
 fn settings_path(state: &AppState) -> Result<&PathBuf, String> {
@@ -66,12 +70,30 @@ fn get_status(state: State<AppState>) -> Status {
         Ok(p) => (p.display().to_string(), None),
         Err(e) => (String::new(), Some(e.clone())),
     };
-    Status { listen_addr, server_error, settings_path: path, installed, settings_error, projects_dir, projects_error }
+    let screens_dir = state.screens_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+    Status { listen_addr, server_error, settings_path: path, installed, settings_error, projects_dir, projects_error, screens_dir }
 }
 
 #[tauri::command(async)]
 fn get_sessions(state: State<AppState>) -> Vec<sessions::Session> {
-    lock(&state.store).all()
+    let now = sessions::now_ms();
+    lock(&state.store).all().into_iter().map(|s| sessions::stalled(s, now)).collect()
+}
+
+#[tauri::command(async)]
+fn list_screens(state: State<AppState>) -> Vec<String> {
+    match &state.screens_dir {
+        Ok(d) => screens::list(d).iter().map(|p| p.display().to_string()).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+#[tauri::command(async)]
+fn open_screens_dir(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let d = state.screens_dir.as_ref().map_err(|e| e.clone())?;
+    std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    app.opener().open_path(d.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -105,7 +127,8 @@ pub fn run() {
                     server::start(c.port, c.token.clone(), move |v| {
                         let snap = {
                             let mut st = lock(&store);
-                            st.ingest_hook(&v, sessions::now_ms()).and_then(|id| st.get(&id).cloned())
+                            let now = sessions::now_ms();
+                            st.ingest_hook(&v, now).and_then(|id| st.get(&id).map(|s| sessions::snapshot(s, now)))
                         };
                         if let Some(s) = snap {
                             let _ = handle.emit("session-update", vec![s]);
@@ -152,10 +175,18 @@ pub fn run() {
                     }
                 });
             }
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir });
+            let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_status, get_sessions, install_hooks, uninstall_hooks])
+        .invoke_handler(tauri::generate_handler![
+            get_status,
+            get_sessions,
+            list_screens,
+            open_screens_dir,
+            install_hooks,
+            uninstall_hooks
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -193,6 +224,26 @@ mod tests {
         assert_eq!(count(&mut w), 2);
         std::fs::OpenOptions::new().append(true).open(&f).unwrap().write_all(line("t3").as_bytes()).unwrap();
         assert_eq!(count(&mut w), 3);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn poll_round_marks_old_working_session_stalled() {
+        let root = std::env::temp_dir()
+            .join(format!("orbit-lib-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        let dir = root.join("slug");
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("11111111-2222-3333-4444-555555555555.jsonl");
+        std::fs::write(
+            &f,
+            "{\"uuid\":\"u1\",\"timestamp\":\"2000-03-01T00:00:00Z\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"Read\"}]}}\n",
+        )
+        .unwrap();
+        let mut w = watch::Watcher::new(root.clone());
+        let store = std::sync::Mutex::new(sessions::Store::default());
+        let snaps = poll_round(&mut w, &store);
+        assert_eq!(snaps.len(), 1);
+        assert!(snaps[0].stalled);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -1,0 +1,366 @@
+<!doctype html>
+<!-- 선택됨: 노드 모양 E, 배치 2, 열 규칙 '다음 열로' (2026-11-14) -->
+<!--
+  그래프 노드 모양 비교 시안 (run 20261114-graph-ui). 확정 아님 — 사용자가 고르기 위한 비교용.
+  고정: 4명암만, 가로 흐름, 직각 네모 점선 간선, 노드 168x60, 상태는 기호로, 픽셀 글꼴은 이름·상태 문구만.
+  스크립트 없음, 외부 요청 없음. 데이터는 예시. 패널 크기는 실제 앱 그래프 패널(약 741x486)에 맞춤.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit 그래프 노드 후보 비교</title>
+<style>
+@font-face {
+  font-family: "Galmuri11";
+  src: url("../../src/assets/fonts/Galmuri11.woff2") format("woff2");
+  font-display: swap;
+}
+:root {
+  --c-paper: #f8f8ec; --c-light: #b4b8a4; --c-dark: #5c6052; --c-ink: #1c1e18;
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
+  --f-pixel: "Galmuri11", monospace;
+  --f-body: "Segoe UI", system-ui, sans-serif;
+  --fs-meta: 11px; --fs-pixel: 12px; --fs-body: 13px;
+  --b-panel: 3px solid var(--c-ink);
+  --sh-panel: inset 0 0 0 2px var(--c-paper), inset 0 0 0 4px var(--c-ink);
+  --b-box: 2px solid var(--c-ink);
+  --b-box-fail: 2px dashed var(--c-ink);
+  --m-blink: 1s; --m-flow: 0.8s; --m-bar: 1.2s;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--c-light); color: var(--c-ink); font: var(--fs-body)/1.5 var(--f-body); }
+h1 { margin: 0 0 4px; font: 20px var(--f-pixel); }
+.lede { margin: 0 0 16px; max-width: 1500px; }
+.px { font-family: var(--f-pixel); font-size: var(--fs-pixel); }
+:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+
+.grid { display: flex; flex-wrap: wrap; gap: 24px 16px; }
+figure { margin: 0; width: 741px; }
+figcaption { margin: 0 0 6px; min-height: 40px; }
+figcaption b { font-family: var(--f-pixel); font-weight: normal; font-size: 14px; }
+
+/* 그래프 패널: 앱과 같은 이중 테두리, 741x486 */
+.panel {
+  width: 741px; height: 486px;
+  background: var(--c-paper);
+  border: var(--b-panel); border-radius: 6px; box-shadow: var(--sh-panel);
+  padding: var(--s-3) var(--s-4);
+  overflow: hidden;
+}
+.panel > h2 { margin: 0 0 var(--s-2); font-weight: normal; }
+
+/* 공통 그래프 (현재 Graph.css와 같은 값) */
+.canvas { position: relative; width: 432px; height: 410px; margin: 0 0 0 var(--s-2); --gap: 10px; }
+.edges { position: absolute; inset: 0; overflow: visible; }
+.edge { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-dasharray: 4 4; }
+.edge.flow { animation: flow var(--m-flow) linear infinite; }
+@keyframes flow { from { stroke-dashoffset: 8; } to { stroke-dashoffset: 0; } }
+.nodes { list-style: none; margin: 0; padding: 0; }
+.nodes li { position: absolute; width: 168px; height: 60px; left: 248px; top: calc(var(--i) * (60px + var(--gap))); }
+.nodes li.lead { left: 0; top: calc((6 * 60px + 5 * var(--gap)) / 2 - 30px); }
+.node {
+  width: 100%; height: 100%;
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: 16px 16px 16px; align-items: center;
+  padding: var(--s-1) var(--s-2);
+  text-align: left; color: var(--c-ink); background: var(--c-paper);
+  border: var(--b-box); border-radius: 0;
+  font: inherit; cursor: pointer;
+}
+.node .n-name { grid-column: 1; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node .n-name::before { content: "▶ "; visibility: hidden; }
+.node[aria-current="true"] .n-name::before { visibility: visible; }
+.node .n-state { grid-column: 1; grid-row: 2; }
+.node .sym { grid-column: 2; grid-row: 1 / 3; font-family: var(--f-pixel); font-size: var(--fs-pixel); min-width: 20px; text-align: right; }
+.node .n-meta { grid-column: 1 / 3; grid-row: 3; font-size: var(--fs-meta); color: var(--c-dark); white-space: nowrap; overflow: hidden; }
+.pbar { grid-column: 1 / 3; grid-row: 3; position: relative; height: 8px; border: 1px solid currentColor; overflow: hidden; }
+.pbar i { position: absolute; top: 0; bottom: 0; left: 0; width: 35%; background: currentColor; animation: bar var(--m-bar) steps(6) infinite; }
+@keyframes bar { from { left: -35%; } to { left: 100%; } }
+.blink { animation: blink var(--m-blink) step-end infinite; }
+@keyframes blink { 50% { visibility: hidden; } }
+.node.is-fail { border: var(--b-box-fail); }
+.node.is-wait { background: var(--c-light); }
+.node.is-wait .n-meta { color: var(--c-ink); }
+
+/* A. 현재 구현: 각진 모서리, 실행 중 = 통째 반전 */
+.vA .node.is-run, .vB .node.is-run { background: var(--c-ink); color: var(--c-paper); }
+
+/* B. 모서리만 둥글게 */
+.vB .node { border-radius: 4px; }
+.vB .pbar { border-radius: 2px; }
+
+/* C. 둥근 모서리 + 실행 중 = 밝은 바탕 + 3px 테두리 + 진행 막대 */
+.vC .node { border-radius: 4px; }
+.vC .pbar { border-radius: 2px; }
+.vC .node.is-run { border-width: 3px; padding: 3px 7px; }
+
+/* D. 둥근 모서리 + 실행 중 = 이름 줄만 검은 띠 */
+.vD .node { border-radius: 4px; }
+.vD .pbar { border-radius: 2px; }
+.vD .node.is-run { background: linear-gradient(var(--c-ink) 0 21px, var(--c-paper) 21px); }
+.vD .node.is-run .n-name { color: var(--c-paper); }
+
+/* E. RPG 대화창: 얇은 이중 테두리, 6px 둥글림, 간격 넓힘, 실행 중 = 패널과 같은 굵은 이중 테두리 */
+.vE .canvas { --gap: 12px; width: 448px; height: 420px; }
+.vE .nodes li { left: 264px; }
+.vE .nodes li.lead { left: 0; }
+.vE .node {
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--c-paper), inset 0 0 0 3px var(--c-ink);
+  padding: var(--s-1) 10px;
+}
+.vE .node.is-fail { box-shadow: none; }
+.vE .node.is-wait { box-shadow: inset 0 0 0 2px var(--c-light), inset 0 0 0 3px var(--c-ink); }
+.vE .node.is-run { border-width: 3px; padding: 3px 9px; box-shadow: var(--sh-panel); }
+.vE .pbar { height: 8px; border-radius: 4px; }
+.vE .pbar i { border-radius: 2px; }
+
+/* 배치 묶음: 노드 모양은 E. li는 inline left/top으로 놓는다 */
+h1.second { margin-top: 40px; }
+.lay .canvas { margin: 0; }
+.lay .nodes li { left: auto; }
+.hscroll { overflow-x: auto; overflow-y: hidden; margin-left: var(--s-2); padding: 2px 0 var(--s-2); scrollbar-color: var(--c-ink) var(--c-light); }
+/* 정적 시안에서 "최신 열로 스크롤된" 상태를 흉내 낸다. 앱에서는 실행 중/선택 노드를 scrollIntoView. */
+.hscroll.end { direction: rtl; }
+.hscroll.end > .canvas { direction: ltr; }
+
+@media (prefers-reduced-motion: reduce) {
+  .edge.flow, .pbar i, .blink { animation: none; }
+  .pbar i { left: 0; }
+}
+</style>
+</head>
+<body>
+<h1>그래프 노드 후보 A~E</h1>
+<p class="lede">모두 같은 데이터: Lead(실행 중) + 서브에이전트 6개(끝남 1 · 실행 중 3 · 실패 1 · 대기 1), engineer가 선택(▶). 간선·색·노드 크기는 고정, 노드 모양만 다르다.</p>
+
+<div class="grid">
+
+<!-- ===== A ===== -->
+<figure class="vA">
+  <figcaption><b>A. 현재 구현</b> — 모서리 0, 실행 중·Lead는 검은 바탕 통째 반전.</figcaption>
+  <section class="panel" aria-label="후보 A">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="canvas">
+      <svg class="edges" width="416" height="410" viewBox="0 0 416 410" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 205 H208 V30 H248"/>
+        <path class="edge flow" d="M168 205 H208 V100 H248"/>
+        <path class="edge flow" d="M168 205 H208 V170 H248"/>
+        <path class="edge flow" d="M168 205 H208 V240 H248"/>
+        <path class="edge" d="M168 205 H208 V310 H248"/>
+        <path class="edge" d="M168 205 H208 V380 H248"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li class="lead"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:0"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+        <li style="--i:1"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:2"><button type="button" class="node is-run"><span class="n-name px">designer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:3"><button type="button" class="node is-run"><span class="n-name px">librarian</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:4"><button type="button" class="node is-fail"><span class="n-name px">qa</span><span class="n-state px">실패</span><span class="sym" aria-hidden="true">✕</span><span class="n-meta">48초 · —</span></button></li>
+        <li style="--i:5"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+      </ol>
+    </div>
+  </section>
+</figure>
+
+<!-- ===== B ===== -->
+<figure class="vB">
+  <figcaption><b>B. 모서리만 둥글게</b> — 노드 radius 0→4px, 진행 막대 2px. 실행 중 통째 반전은 그대로.</figcaption>
+  <section class="panel" aria-label="후보 B">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="canvas">
+      <svg class="edges" width="416" height="410" viewBox="0 0 416 410" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 205 H208 V30 H248"/>
+        <path class="edge flow" d="M168 205 H208 V100 H248"/>
+        <path class="edge flow" d="M168 205 H208 V170 H248"/>
+        <path class="edge flow" d="M168 205 H208 V240 H248"/>
+        <path class="edge" d="M168 205 H208 V310 H248"/>
+        <path class="edge" d="M168 205 H208 V380 H248"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li class="lead"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:0"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+        <li style="--i:1"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:2"><button type="button" class="node is-run"><span class="n-name px">designer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:3"><button type="button" class="node is-run"><span class="n-name px">librarian</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:4"><button type="button" class="node is-fail"><span class="n-name px">qa</span><span class="n-state px">실패</span><span class="sym" aria-hidden="true">✕</span><span class="n-meta">48초 · —</span></button></li>
+        <li style="--i:5"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+      </ol>
+    </div>
+  </section>
+</figure>
+
+<!-- ===== C ===== -->
+<figure class="vC">
+  <figcaption><b>C. 밝은 바탕 + 굵은 테두리</b> — radius 4px, 실행 중·Lead는 반전 대신 테두리 2→3px + 진행 막대. 검은 면 없음.</figcaption>
+  <section class="panel" aria-label="후보 C">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="canvas">
+      <svg class="edges" width="416" height="410" viewBox="0 0 416 410" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 205 H208 V30 H248"/>
+        <path class="edge flow" d="M168 205 H208 V100 H248"/>
+        <path class="edge flow" d="M168 205 H208 V170 H248"/>
+        <path class="edge flow" d="M168 205 H208 V240 H248"/>
+        <path class="edge" d="M168 205 H208 V310 H248"/>
+        <path class="edge" d="M168 205 H208 V380 H248"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li class="lead"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:0"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+        <li style="--i:1"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:2"><button type="button" class="node is-run"><span class="n-name px">designer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:3"><button type="button" class="node is-run"><span class="n-name px">librarian</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:4"><button type="button" class="node is-fail"><span class="n-name px">qa</span><span class="n-state px">실패</span><span class="sym" aria-hidden="true">✕</span><span class="n-meta">48초 · —</span></button></li>
+        <li style="--i:5"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+      </ol>
+    </div>
+  </section>
+</figure>
+
+<!-- ===== D ===== -->
+<figure class="vD">
+  <figcaption><b>D. 이름 띠만 반전</b> — radius 4px, 실행 중·Lead는 윗부분 21px만 검은 띠(이름 흰 글자), 아래는 밝은 바탕 + 진행 막대.</figcaption>
+  <section class="panel" aria-label="후보 D">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="canvas">
+      <svg class="edges" width="416" height="410" viewBox="0 0 416 410" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 205 H208 V30 H248"/>
+        <path class="edge flow" d="M168 205 H208 V100 H248"/>
+        <path class="edge flow" d="M168 205 H208 V170 H248"/>
+        <path class="edge flow" d="M168 205 H208 V240 H248"/>
+        <path class="edge" d="M168 205 H208 V310 H248"/>
+        <path class="edge" d="M168 205 H208 V380 H248"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li class="lead"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:0"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+        <li style="--i:1"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:2"><button type="button" class="node is-run"><span class="n-name px">designer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:3"><button type="button" class="node is-run"><span class="n-name px">librarian</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:4"><button type="button" class="node is-fail"><span class="n-name px">qa</span><span class="n-state px">실패</span><span class="sym" aria-hidden="true">✕</span><span class="n-meta">48초 · —</span></button></li>
+        <li style="--i:5"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+      </ol>
+    </div>
+  </section>
+</figure>
+
+<!-- ===== E ===== -->
+<figure class="vE">
+  <figcaption><b>E. 작은 RPG 대화창</b> — radius 6px(패널과 같음), 모든 노드에 얇은 이중 테두리(2px + 안쪽 1px 선), 세로 간격 10→12px·단계 간격 80→96px, 진행 막대 알약형(4px). 실행 중·Lead = 패널과 같은 굵은 이중 테두리(3px + 안쪽 선), 바탕은 밝게.</figcaption>
+  <section class="panel" aria-label="후보 E">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="canvas">
+      <svg class="edges" width="432" height="420" viewBox="0 0 432 420" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 210 H216 V30 H264"/>
+        <path class="edge flow" d="M168 210 H216 V102 H264"/>
+        <path class="edge flow" d="M168 210 H216 V174 H264"/>
+        <path class="edge flow" d="M168 210 H216 V246 H264"/>
+        <path class="edge" d="M168 210 H216 V318 H264"/>
+        <path class="edge" d="M168 210 H216 V390 H264"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li class="lead"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:0"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+        <li style="--i:1"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:2"><button type="button" class="node is-run"><span class="n-name px">designer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:3"><button type="button" class="node is-run"><span class="n-name px">librarian</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="--i:4"><button type="button" class="node is-fail"><span class="n-name px">qa</span><span class="n-state px">실패</span><span class="sym" aria-hidden="true">✕</span><span class="n-meta">48초 · —</span></button></li>
+        <li style="--i:5"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+      </ol>
+    </div>
+  </section>
+</figure>
+
+</div>
+
+<h1 class="second">배치 1 · 2</h1>
+<p class="lede">노드 모양은 모두 E. 같은 run: Lead(실행 중) → architect(끝남) → plan-checker(끝남) → engineer 3개(동시 시작, 2 끝남 · 1 실행 중) → reviewer 1개(대기, 아직 시작 전인 reviewer는 그리지 않음).</p>
+
+<div class="grid">
+
+<!-- ===== 배치 1 ===== -->
+<figure class="vE lay">
+  <figcaption><b>배치 1. 현재 — 한 열</b> — Lead 오른쪽 한 열에 시작 순으로 전부 세로로. 단계가 안 보인다.</figcaption>
+  <section class="panel" aria-label="배치 1">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="canvas" style="margin-left:8px">
+      <svg class="edges" width="432" height="420" viewBox="0 0 432 420" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 210 H216 V30 H264"/>
+        <path class="edge" d="M168 210 H216 V102 H264"/>
+        <path class="edge" d="M168 210 H216 V174 H264"/>
+        <path class="edge" d="M168 210 H216 V246 H264"/>
+        <path class="edge flow" d="M168 210 H216 V318 H264"/>
+        <path class="edge" d="M168 210 H216 V390 H264"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li style="left:0;top:180px"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="left:264px;top:0"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+        <li style="left:264px;top:72px"><button type="button" class="node"><span class="n-name px">plan-checker</span><span class="n-state px">끝남</span><span class="n-meta">40초 · 12k 토큰</span></button></li>
+        <li style="left:264px;top:144px"><button type="button" class="node"><span class="n-name px">engineer</span><span class="n-state px">끝남</span><span class="n-meta">5분 2초 · 88k 토큰</span></button></li>
+        <li style="left:264px;top:216px"><button type="button" class="node"><span class="n-name px">engineer</span><span class="n-state px">끝남</span><span class="n-meta">4분 31초 · 70k 토큰</span></button></li>
+        <li style="left:264px;top:288px"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+        <li style="left:264px;top:360px"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+      </ol>
+    </div>
+  </section>
+</figure>
+
+<!-- ===== 배치 2: 처음 위치 ===== -->
+<figure class="vE lay">
+  <figcaption><b>배치 2. 단계 열 — 스크롤 처음</b> — 실행 구간이 겹치면 같은 열, 앞 열이 다 끝난 뒤 시작하면 다음 열. 열 간격 48px · 노드 세로 간격 12px. 패널 안에 <b>3열</b>(3×168+2×48=600px, 보이는 폭 약 695px)까지 들어가고 4열째는 앞 47px만 보여 넘친다는 신호가 된다 → 패널 안 가로 스크롤. 주의: reviewer는 engineer#3이 끝나기 전에 시작했으므로 이 규칙대로면 engineer 열에 들어간다.</figcaption>
+  <section class="panel" aria-label="배치 2 스크롤 처음">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="hscroll">
+      <div class="canvas" style="width:816px;height:276px">
+        <svg class="edges" width="816" height="276" viewBox="0 0 816 276" shape-rendering="crispEdges" aria-hidden="true">
+          <path class="edge" d="M168 138 H216"/>
+          <path class="edge" d="M384 138 H432"/>
+          <path class="edge" d="M600 138 H624 M624 30 V246"/>
+          <path class="edge" d="M624 30 H648 M624 102 H648 M624 246 H648"/>
+          <path class="edge flow" d="M624 174 H648"/>
+        </svg>
+        <ol class="nodes" aria-label="에이전트">
+          <li style="left:0;top:108px"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+          <li style="left:216px;top:108px"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+          <li style="left:432px;top:108px"><button type="button" class="node"><span class="n-name px">plan-checker</span><span class="n-state px">끝남</span><span class="n-meta">40초 · 12k 토큰</span></button></li>
+          <li style="left:648px;top:0"><button type="button" class="node"><span class="n-name px">engineer</span><span class="n-state px">끝남</span><span class="n-meta">5분 2초 · 88k 토큰</span></button></li>
+          <li style="left:648px;top:72px"><button type="button" class="node"><span class="n-name px">engineer</span><span class="n-state px">끝남</span><span class="n-meta">4분 31초 · 70k 토큰</span></button></li>
+          <li style="left:648px;top:144px"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+          <li style="left:648px;top:216px"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</figure>
+
+<!-- ===== 배치 2: 최신 열로 스크롤 ===== -->
+<figure class="vE lay">
+  <figcaption><b>배치 2. 넘칠 때 — 최신 열로 스크롤</b> — 노드는 168×60 그대로 두고(줄이지 않음) 그래프 패널 안에서만 가로 스크롤. 새 열이 생기거나 노드를 고르면 실행 중/선택 노드가 보이게 오른쪽으로 옮긴다. 간선: 앞 열 오른쪽 → 24px 뒤 세로 버스 하나 → 다음 열 각 노드 왼쪽(1:1이면 곧은 선). 흐름 표시는 실행 중 노드로 들어가는 마지막 가지만.</figcaption>
+  <section class="panel" aria-label="배치 2 최신 열로 스크롤">
+    <h2 class="px">에이전트 그래프</h2>
+    <div class="hscroll end">
+      <div class="canvas" style="width:816px;height:276px">
+        <svg class="edges" width="816" height="276" viewBox="0 0 816 276" shape-rendering="crispEdges" aria-hidden="true">
+          <path class="edge" d="M168 138 H216"/>
+          <path class="edge" d="M384 138 H432"/>
+          <path class="edge" d="M600 138 H624 M624 30 V246"/>
+          <path class="edge" d="M624 30 H648 M624 102 H648 M624 246 H648"/>
+          <path class="edge flow" d="M624 174 H648"/>
+        </svg>
+        <ol class="nodes" aria-label="에이전트">
+          <li style="left:0;top:108px"><button type="button" class="node is-run"><span class="n-name px">Lead</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+          <li style="left:216px;top:108px"><button type="button" class="node"><span class="n-name px">architect</span><span class="n-state px">끝남</span><span class="n-meta">2분 10초 · 41k 토큰</span></button></li>
+          <li style="left:432px;top:108px"><button type="button" class="node"><span class="n-name px">plan-checker</span><span class="n-state px">끝남</span><span class="n-meta">40초 · 12k 토큰</span></button></li>
+          <li style="left:648px;top:0"><button type="button" class="node"><span class="n-name px">engineer</span><span class="n-state px">끝남</span><span class="n-meta">5분 2초 · 88k 토큰</span></button></li>
+          <li style="left:648px;top:72px"><button type="button" class="node"><span class="n-name px">engineer</span><span class="n-state px">끝남</span><span class="n-meta">4분 31초 · 70k 토큰</span></button></li>
+          <li style="left:648px;top:144px"><button type="button" class="node is-run" aria-current="true"><span class="n-name px">engineer</span><span class="n-state px">실행 중</span><span class="pbar" aria-hidden="true"><i></i></span></button></li>
+          <li style="left:648px;top:216px"><button type="button" class="node is-wait"><span class="n-name px">reviewer</span><span class="n-state px">대기</span><span class="sym blink" aria-hidden="true">!</span><span class="n-meta">권한 요청</span></button></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</figure>
+
+</div>
+</body>
+</html>

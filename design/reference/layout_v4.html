@@ -1,0 +1,399 @@
+<!doctype html>
+<!--
+  Orbit 기준 시안 orbit_gameboy_rpg_layout_v4 (파일로 다시 만든 것).
+  근거: .orbit/decisions.md "화면 디자인 방향 확정" 절의 최종·확정 줄, run 20261114-graph-ui DESIGN.md.
+  스크립트 없음, 외부 요청 없음. 데이터는 모두 예시다. 값은 design/tokens.json과 같다.
+  Galmuri11 파일은 아직 없으므로 @font-face 없이 "Galmuri11", monospace 대체만 둔다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit 기준 시안 layout_v4</title>
+<style>
+:root {
+  /* color: 4명암만 (decisions.md 35, 49) */
+  --c-paper: #f8f8ec;
+  --c-light: #b4b8a4;
+  --c-dark: #5c6052;
+  --c-ink: #1c1e18;
+  /* space */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
+  --gap-panel: 8px;
+  /* font */
+  --f-pixel: "Galmuri11", monospace;
+  --f-body: "Segoe UI", system-ui, sans-serif;
+  --f-mono: "Cascadia Mono", Consolas, monospace;
+  --fs-meta: 11px; --fs-pixel: 12px; --fs-body: 13px; --fs-brand: 24px;
+  /* border (decisions.md 36) */
+  --b-panel: 3px solid var(--c-ink);
+  --sh-panel: inset 0 0 0 2px var(--c-paper), inset 0 0 0 4px var(--c-ink);
+  --r-panel: 6px;
+  --b-box: 2px solid var(--c-ink);
+  --b-box-fail: 2px dashed var(--c-ink);
+  --b-chip: 1px solid var(--c-ink);
+  /* 그래프 노드 E (run DECISIONS 11) */
+  --r-node: 6px;
+  --sh-node: inset 0 0 0 2px var(--c-paper), inset 0 0 0 3px var(--c-ink);
+  --sh-node-wait: inset 0 0 0 2px var(--c-light), inset 0 0 0 3px var(--c-ink);
+  --r-pbar: 4px; --r-pbar-fill: 2px;
+  --pad-node: var(--s-1) 10px; --pad-node-run: 3px 9px; /* 테두리 2→3px일 때 안쪽 칸 48px 유지 */
+  --r-bezel: 6px 6px 24px 6px;
+  /* motion */
+  --m-blink: 1s; --m-flow: 0.8s; --m-bar: 1.2s;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--c-light);
+  color: var(--c-ink);
+  font: var(--fs-body)/1.5 var(--f-body);
+  overflow: auto;
+}
+.px { font-family: var(--f-pixel); font-size: var(--fs-pixel); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+
+/* 격자: 패널마다 칸을 명시한다 (decisions.md 47) */
+.shell {
+  height: 100%;
+  min-width: 960px;
+  min-height: 640px;
+  display: grid;
+  gap: var(--gap-panel);
+  padding: var(--gap-panel);
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2.6fr) minmax(280px, 1.2fr);
+  grid-template-rows: auto minmax(0, 3fr) minmax(0, 2fr);
+}
+.topbar   { grid-column: 1 / 4; grid-row: 1; }
+.sessions { grid-column: 1;     grid-row: 2; }
+.graph    { grid-column: 2;     grid-row: 2; }
+.detail   { grid-column: 3;     grid-row: 2; }
+.chat     { grid-column: 1 / 3; grid-row: 3; }
+.console  { grid-column: 3;     grid-row: 3; }
+
+/* 패널: RPG 대화창 이중 테두리 (decisions.md 36) */
+.panel {
+  background: var(--c-paper);
+  border: var(--b-panel);
+  border-radius: var(--r-panel);
+  box-shadow: var(--sh-panel);
+  padding: var(--s-3) var(--s-4);
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+.panel > h2 { margin: 0 0 var(--s-2); font-weight: normal; }
+.empty { color: var(--c-dark); margin: 0; }
+
+/* 상단 바 */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: var(--s-2) var(--s-4); }
+.topbar h1 { margin: 0; font-family: var(--f-pixel); font-size: var(--fs-brand); font-weight: normal; letter-spacing: 2px; }
+
+/* 세션 목록 */
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+.sess {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--s-1);
+  padding: var(--s-1) var(--s-2);
+  text-align: left;
+  color: var(--c-ink);
+  background: var(--c-paper);
+  border: var(--b-box);
+  border-radius: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.sess .cur { grid-row: 1 / 3; visibility: hidden; }
+.sess[aria-current="true"] .cur { visibility: visible; }
+.sess .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sess .sym { justify-self: end; }
+.sess .time { grid-column: 2 / 4; color: var(--c-dark); font-size: var(--fs-meta); }
+.sess:hover { background: var(--c-light); }
+
+/* 상태 기호 */
+.sym { font-family: var(--f-pixel); font-size: var(--fs-pixel); display: inline-flex; align-items: center; min-width: 20px; justify-content: flex-end; }
+.blink { animation: blink var(--m-blink) step-end infinite; }
+@keyframes blink { 50% { visibility: hidden; } }
+.bar-mini { position: relative; width: 20px; height: 8px; border: var(--b-chip); overflow: hidden; }
+.bar-mini i, .pbar i {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 35%;
+  background: currentColor;
+  animation: bar var(--m-bar) steps(6) infinite;
+}
+@keyframes bar { from { left: -35%; } to { left: 100%; } }
+
+/* 그래프: 가로 흐름 (decisions.md 46), 직각 간선·네모 점선 (decisions.md 39)
+   개정(run DECISIONS 11~13): 노드 = E "작은 RPG 대화창", 배치 = 단계 열(열 간격 48, 세로 간격 12, 버스 = 앞 열 오른쪽 +24).
+   넘치면 .gscroll 안에서 가로·세로 스크롤. 정적 시안이라 "실행 중/대기 열이 보이게 옮긴" 상태를 rtl로 흉내 낸다(앱은 scrollIntoView). */
+.graph { display: flex; flex-direction: column; }
+.gscroll {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  padding: var(--s-1); /* 가장자리 노드의 포커스 링(2px + 2px)이 잘리지 않게 */
+  scrollbar-color: var(--c-ink) var(--c-light);
+}
+.gscroll.end { direction: rtl; }
+.gscroll.end > .canvas { direction: ltr; }
+.canvas { position: relative; }
+.edges { position: absolute; inset: 0; overflow: visible; }
+.edge { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-dasharray: 4 4; }
+.edge.flow { animation: flow var(--m-flow) linear infinite; }
+@keyframes flow { from { stroke-dashoffset: 8; } to { stroke-dashoffset: 0; } }
+.nodes { list-style: none; margin: 0; padding: 0; }
+.nodes li { position: absolute; width: 168px; height: 60px; }
+.node {
+  width: 100%; height: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: 16px 16px 16px;
+  align-items: center;
+  padding: var(--pad-node);
+  text-align: left;
+  color: var(--c-ink);
+  background: var(--c-paper);
+  border: var(--b-box);
+  border-radius: var(--r-node);
+  box-shadow: var(--sh-node);
+  font: inherit;
+  cursor: pointer;
+}
+.node .n-name { grid-column: 1; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node .n-name::before { content: "▶ "; visibility: hidden; }
+.node[aria-current="true"] .n-name::before { visibility: visible; }
+.node .n-state { grid-column: 1; grid-row: 2; }
+.node .sym { grid-column: 2; grid-row: 1 / 3; }
+.node .n-meta { grid-column: 1 / 3; grid-row: 3; font-size: var(--fs-meta); color: var(--c-dark); white-space: nowrap; overflow: hidden; }
+/* 실행 중·Lead = 패널과 같은 굵은 이중 테두리 + 밝은 바탕 + 알약형 진행 막대 (반전 없음) */
+.node.is-run { border: var(--b-panel); box-shadow: var(--sh-panel); padding: var(--pad-node-run); }
+.pbar { grid-column: 1 / 3; grid-row: 3; position: relative; height: 8px; border: 1px solid currentColor; border-radius: var(--r-pbar); overflow: hidden; }
+.pbar i { border-radius: var(--r-pbar-fill); }
+/* 실패 = 이중선 없이 점선 테두리 + ✕ */
+.node.is-fail { border: var(--b-box-fail); box-shadow: none; }
+/* 대기 = 회색 바탕(틈도 회색) + 깜빡이는 ! */
+.node.is-wait { background: var(--c-light); box-shadow: var(--sh-node-wait); }
+.node.is-wait .n-meta { color: var(--c-ink); }
+
+/* 상세·하네스 */
+.detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; }
+.detail h3:first-of-type { margin-top: 0; }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s-2); }
+dt { color: var(--c-dark); }
+dd { margin: 0; overflow-wrap: anywhere; }
+.path { font-family: var(--f-mono); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.note { color: var(--c-dark); font-size: var(--fs-meta); margin: var(--s-1) 0 0; }
+.actions { display: flex; gap: var(--s-2); margin: var(--s-1) 0; }
+.btn {
+  min-height: 24px;
+  padding: 2px var(--s-3);
+  font-family: var(--f-pixel); font-size: var(--fs-pixel);
+  color: var(--c-ink); background: var(--c-paper);
+  border: var(--b-box); border-radius: 0; cursor: pointer;
+}
+.btn:hover { background: var(--c-ink); color: var(--c-paper); }
+.btn:disabled { border-style: dashed; color: var(--c-dark); cursor: default; background: var(--c-paper); }
+
+/* 채팅: 틀과 빈 상태 (run DECISIONS 1) */
+.chat { display: flex; flex-direction: column; }
+.chat-body { flex: 1; display: grid; place-items: center; min-height: 0; }
+.input-row {
+  display: flex; align-items: center; gap: var(--s-2);
+  margin-top: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 2px dashed var(--c-dark);
+  background: var(--c-paper);
+}
+.input-row input {
+  flex: 1; min-width: 0;
+  border: 0; background: transparent;
+  font: var(--fs-body) var(--f-body); color: var(--c-dark);
+}
+.input-row input::placeholder { color: var(--c-dark); }
+.tag { padding: 0 var(--s-1); border: var(--b-chip); color: var(--c-ink); white-space: nowrap; }
+
+/* 게임기 화면: 패널이 아니라 베젤 자체가 독립 상자 (decisions.md 52, 67) */
+.console {
+  display: flex;
+  min-height: 0;
+  padding: var(--s-4);
+  background: var(--c-dark);
+  border: var(--b-panel);
+  border-radius: var(--r-bezel);
+}
+.lcd {
+  flex: 1;
+  min-width: 0;
+  background: var(--c-light);
+  border: var(--b-panel);
+  cursor: pointer;
+}
+.lcd:focus-visible { outline-color: var(--c-paper); }
+
+@media (prefers-reduced-motion: reduce) {
+  .blink, .edge.flow, .bar-mini i, .pbar i { animation: none; }
+  .bar-mini i, .pbar i { left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="panel topbar">
+    <h1>ORBIT</h1>
+    <span class="px" role="status">127.0.0.1:47600에서 듣는 중</span>
+  </header>
+
+  <!-- 왼쪽 위: 세션 목록. 줄 = 폴더 이름 + 상태 기호 + 마지막 활동 시각 -->
+  <section class="panel sessions" aria-labelledby="h-sessions">
+    <h2 id="h-sessions" class="px">세션</h2>
+    <ul class="list">
+      <li><button type="button" class="sess" aria-current="true">
+        <span class="cur px" aria-hidden="true">▶</span>
+        <span class="name px">orbit</span>
+        <span class="sym"><span class="bar-mini" aria-hidden="true"><i></i></span><span class="sr">작업 중</span></span>
+        <span class="time">14:32</span>
+      </button></li>
+      <li><button type="button" class="sess">
+        <span class="cur px" aria-hidden="true">▶</span>
+        <span class="name px">my-blog</span>
+        <span class="sym"><span class="blink" aria-hidden="true">!</span><span class="sr">대기</span></span>
+        <span class="time">14:29</span>
+      </button></li>
+      <li><button type="button" class="sess">
+        <span class="cur px" aria-hidden="true">▶</span>
+        <span class="name px">api-server</span>
+        <span class="sym"><span aria-hidden="true">✕</span><span class="sr">에러</span></span>
+        <span class="time">13:05</span>
+      </button></li>
+      <li><button type="button" class="sess">
+        <span class="cur px" aria-hidden="true">▶</span>
+        <span class="name px">notes</span>
+        <span class="sym"><span aria-hidden="true">?</span><span class="sr">멈춤(추정)</span></span>
+        <span class="time">11/12 09:10</span>
+      </button></li>
+    </ul>
+  </section>
+
+  <!-- 가운데 위: 에이전트 그래프. 왼쪽 Lead → 오른쪽 서브에이전트(같은 단계는 세로로 쌓음) -->
+  <section class="panel graph" aria-labelledby="h-graph">
+    <h2 id="h-graph" class="px">에이전트 그래프</h2>
+    <!-- 열 x = 열번호 × (168 + 48). 세로는 가장 높은 열(engineer×3 = 3×60 + 2×12 = 204)의 가운데 102에 맞춘다.
+         열 규칙 "다음 열로": reviewer는 engineer 하나가 끝난 뒤 시작했으므로 다음 열. 스크롤은 실행 중·대기 노드가 있는 가장 오른쪽 열의 끝. -->
+    <div class="gscroll end">
+    <div class="canvas" style="width:1032px;height:204px">
+      <svg class="edges" width="1032" height="204" viewBox="0 0 1032 204" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 102 H216"/>
+        <path class="edge" d="M384 102 H432"/>
+        <path class="edge" d="M600 102 H624 M624 30 V174 M624 30 H648 M624 102 H648"/>
+        <path class="edge flow" d="M624 174 H648"/>
+        <path class="edge" d="M816 30 H840 M816 102 H840 M816 174 H840 M840 30 V174 M840 102 H864"/>
+      </svg>
+      <ol class="nodes" aria-label="에이전트">
+        <li style="left:0;top:72px"><button type="button" class="node is-run">
+          <span class="n-name px">Lead</span>
+          <span class="n-state px">실행 중</span>
+          <span class="pbar" aria-hidden="true"><i></i></span>
+        </button></li>
+        <li style="left:216px;top:72px"><button type="button" class="node">
+          <span class="n-name px">architect</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">2분 10초 · 41k 토큰</span>
+        </button></li>
+        <li style="left:432px;top:72px"><button type="button" class="node">
+          <span class="n-name px">plan-checker</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">40초 · 12k 토큰</span>
+        </button></li>
+        <li style="left:648px;top:0"><button type="button" class="node">
+          <span class="n-name px">engineer</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">5분 2초 · 88k 토큰</span>
+        </button></li>
+        <li style="left:648px;top:72px"><button type="button" class="node">
+          <span class="n-name px">engineer</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">4분 31초 · 70k 토큰</span>
+        </button></li>
+        <li style="left:648px;top:144px"><button type="button" class="node is-run" aria-current="true">
+          <span class="n-name px">engineer</span>
+          <span class="n-state px">실행 중</span>
+          <span class="pbar" aria-hidden="true"><i></i></span>
+        </button></li>
+        <li style="left:864px;top:72px"><button type="button" class="node is-wait">
+          <span class="n-name px">reviewer</span>
+          <span class="n-state px">대기</span>
+          <span class="sym blink" aria-hidden="true">!</span>
+          <span class="n-meta">권한 요청</span>
+        </button></li>
+      </ol>
+    </div>
+    </div>
+  </section>
+
+  <!-- 오른쪽 위: 상세·하네스 -->
+  <section class="panel detail" aria-labelledby="h-detail">
+    <h2 id="h-detail" class="px">상세 · 하네스</h2>
+
+    <h3 class="px">세션</h3>
+    <dl>
+      <dt>폴더</dt><dd>orbit</dd>
+      <dt>상태</dt><dd>작업 중</dd>
+      <dt>id</dt><dd class="path">3f2a9c1e-5b7d-4e08-9a61-0c4d2b8e7f15</dd>
+      <dt>출처</dt><dd>훅 + 로그</dd>
+      <dt>마지막</dt><dd>14:32</dd>
+    </dl>
+
+    <h3 class="px">노드</h3>
+    <dl>
+      <dt>종류</dt><dd>engineer</dd>
+      <dt>상태</dt><dd>실행 중</dd>
+      <dt>시작</dt><dd>14:28</dd>
+      <dt>시간</dt><dd>—</dd>
+      <dt>토큰</dt><dd>—</dd>
+    </dl>
+
+    <h3 class="px">설정</h3>
+    <dl>
+      <dt>훅</dt><dd class="px">설치됨</dd>
+    </dl>
+    <div class="actions">
+      <button type="button" class="btn">설치</button>
+      <button type="button" class="btn">제거</button>
+    </div>
+    <p class="note" role="status">성공 · 백업: C:\Users\you\.claude\settings.json.orbit-bak</p>
+    <p class="note">토큰이 settings 파일에 평문으로 저장됩니다.</p>
+    <p class="note">이벤트가 오지 않으면 settings의 allowedHttpHookUrls·disableAllHooks를 확인하세요.</p>
+    <dl style="margin-top:8px">
+      <dt>대상</dt><dd class="path">C:\Users\you\.claude\settings.json</dd>
+      <dt>로그</dt><dd class="path">C:\Users\you\.claude\projects</dd>
+      <dt>액정</dt><dd class="path">C:\Users\you\AppData\Roaming\dev.orbit.app\screens</dd>
+    </dl>
+    <div class="actions">
+      <button type="button" class="btn">폴더 열기</button>
+    </div>
+  </section>
+
+  <!-- 아래(왼쪽+가운데): 채팅. 틀과 빈 상태만 -->
+  <section class="panel chat" aria-labelledby="h-chat">
+    <h2 id="h-chat" class="px">채팅</h2>
+    <div class="chat-body"><p class="empty">대화 기능은 ⑥에서 연결됩니다.</p></div>
+    <div class="input-row">
+      <span class="px" aria-hidden="true">▶</span>
+      <input type="text" disabled aria-label="Claude Code에게 보낼 말 (⑥에서 연결)" placeholder="Claude Code에게 무엇을 시킬까?">
+      <span class="px" aria-hidden="true">▼</span>
+      <span class="tag px">⑥에서 연결</span>
+    </div>
+  </section>
+
+  <!-- 오른쪽 아래: 게임기 화면 틀. 빈 액정 -->
+  <div class="console">
+    <div class="lcd" role="img" aria-label="빈 액정"></div>
+  </div>
+
+</div>
+</body>
+</html>
