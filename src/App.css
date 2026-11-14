@@ -60,3 +60,21 @@ body { background: var(--bg); color: var(--text); }
 .actions { display: flex; gap: 8px; margin-bottom: 8px; }
 
 .events { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+
+.sessions { list-style: none; margin: 0; padding: 0; }
+
+.sessions button {
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sessions button[aria-pressed="true"] { border-color: var(--accent); background: var(--bg); }
