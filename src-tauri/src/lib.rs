@@ -1,5 +1,6 @@
 mod config;
 mod hooks;
+mod roadmap;
 mod screens;
 mod server;
 mod sessions;
