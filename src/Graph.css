@@ -35,11 +35,6 @@
 .node.is-wait .n-meta { color: var(--c-ink); }
 .side-note { position: absolute; width: 168px; margin: 0; color: var(--c-dark); font-size: var(--fs-meta); }
 
-/* 6개 이상이면 선택하지 않은 노드는 한 줄 칩 (decisions.md 44) */
-.node.chip { grid-template-columns: 1fr auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); }
-.node.chip.is-fail { border-style: dashed; }
-.node.chip .sym { grid-row: 1; }
-
 @media (prefers-reduced-motion: reduce) {
   .edge.flow { animation: none; }
 }
