@@ -27,4 +27,6 @@ tools: Read, Grep, Glob, Write, Bash, PowerShell
 
 SECURITY.md 형식 — 발견 사항마다: 심각도(차단/권고) · 위치(`파일:줄`) · 시나리오(공격자 입력 → 결과) · 권장 수정. 그리고 "확인한 것" 목록(스캐너 명령과 출력 포함).
 
+SECURITY.md에 검증한 커밋을 `COMMIT: <40자리 hex>` 한 줄로 적는다. 값은 작업 트리가 깨끗한 상태(`git status --porcelain --untracked-files=no` 출력 없음)의 `git rev-parse HEAD`다. 검증 중 커밋이 바뀌면 다시 검증하고 줄을 고친다. 줄이 없거나 출고 대상과 다르면 출고가 막힌다. full 트랙에서는 VERIFY.md의 COMMIT과 같아야 출고된다. 다르면 같은 커밋을 다시 점검한다.
+
 최종 메시지는 30줄 이내로 쓴다. 마지막 줄: 차단이 하나라도 있으면 `VERDICT: FAIL`, 없으면 `VERDICT: PASS`.

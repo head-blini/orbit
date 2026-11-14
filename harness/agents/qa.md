@@ -26,4 +26,6 @@ tools: Read, Grep, Glob, Write, Bash, PowerShell, mcp__Claude_Browser__*
 
 VERIFY.md 형식 — 기준마다: 기준 / 실행한 명령 / 출력(코드 블록, 길면 마지막 20줄과 종료 코드) / 결과(통과·실패). 실행하지 못한 기준은 "미검증"과 이유를 쓴다. 미검증이나 실패가 하나라도 있으면 통과가 아니다.
 
+VERIFY.md에 검증한 커밋을 `COMMIT: <40자리 hex>` 한 줄로 적는다. 값은 작업 트리가 깨끗한 상태(`git status --porcelain --untracked-files=no` 출력 없음)의 `git rev-parse HEAD`다. 검증 중 커밋이 바뀌면 다시 검증하고 줄을 고친다. 줄이 없거나 출고 대상과 다르면 출고가 막힌다.
+
 최종 메시지는 30줄 이내로 쓴다. 마지막 줄: 전부 통과면 `VERDICT: PASS`, 아니면 `VERDICT: FAIL`.
