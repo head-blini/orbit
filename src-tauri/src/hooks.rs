@@ -85,12 +85,25 @@ fn suffixed(path: &Path, suffix: &str) -> PathBuf {
 
 /// 기존 파일이 있으면 바이트 동일 백업을 만들고, 임시 파일 → rename으로 교체한다.
 fn write_atomic(path: &Path, root: &Value) -> Result<Option<PathBuf>, String> {
+    let mut text = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
+    text.push('\n');
     let backup = if path.exists() {
+        // 내용이 같으면 쓰지도 백업하지도 않는다.
+        if fs::read(path).map_err(|e| format!("settings 읽기 실패: {e}"))? == text.as_bytes() {
+            return Ok(None);
+        }
         let ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let b = suffixed(path, &format!(".orbit-backup-{ms}"));
+        // 같은 ms에 또 쓰면 기존 백업을 덮지 않고 번호를 붙인다.
+        let mut b = suffixed(path, &format!(".orbit-backup-{ms}"));
+        for n in 1.. {
+            if !b.exists() {
+                break;
+            }
+            b = suffixed(path, &format!(".orbit-backup-{ms}-{n}"));
+        }
         fs::copy(path, &b).map_err(|e| format!("백업 실패: {e}"))?;
         Some(b)
     } else {
@@ -99,8 +112,6 @@ fn write_atomic(path: &Path, root: &Value) -> Result<Option<PathBuf>, String> {
         }
         None
     };
-    let mut text = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
-    text.push('\n');
     let tmp = suffixed(path, ".orbit-tmp");
     fs::write(&tmp, text).map_err(|e| format!("임시 파일 쓰기 실패: {e}"))?;
     fs::rename(&tmp, path).map_err(|e| {
@@ -197,7 +208,7 @@ mod tests {
             .unwrap()
             .iter()
             .flat_map(|g| g["hooks"].as_array().unwrap())
-            .filter(|h| is_orbit(h))
+            .filter(|h| h["headers"]["X-Orbit-Token"].is_string())
             .collect()
     }
 
@@ -245,6 +256,48 @@ mod tests {
         assert_eq!(v, serde_json::from_str::<Value>(FIXTURE).unwrap());
         let keys: Vec<_> = v.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["model", "permissions", "hooks"]);
+    }
+
+    #[test]
+    fn identical_reinstall_writes_and_backs_up_nothing() {
+        let d = Dir::new();
+        let p = d.file(FIXTURE);
+        install(&p, 4000, "tok").unwrap();
+        let before = fs::read(&p).unwrap();
+        let names = d.names().len();
+        assert_eq!(install(&p, 4000, "tok"), Ok(None));
+        assert_eq!(fs::read(&p).unwrap(), before);
+        assert_eq!(d.names().len(), names);
+    }
+
+    #[test]
+    fn rapid_writes_keep_original_backup() {
+        let d = Dir::new();
+        let p = d.file(FIXTURE);
+        for port in 4000..4005 {
+            install(&p, port, "tok").unwrap();
+        }
+        let backups: Vec<_> = d.names().into_iter().filter(|n| n.contains(".orbit-backup-")).collect();
+        assert_eq!(backups.len(), 5);
+        assert!(backups.iter().any(|n| fs::read(d.0.join(n)).unwrap() == FIXTURE.as_bytes()));
+    }
+
+    // 사용자 훅과 Orbit이 아닌 http 훅이 Orbit 핸들러와 같은 그룹에 섞여 있어도 보존된다.
+    #[test]
+    fn mixed_group_keeps_foreign_handlers() {
+        let mixed = r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo a"},{"type":"http","url":"http://x.example/e","headers":{"Authorization":"b"}},{"type":"http","url":"http://127.0.0.1:1/events","headers":{"X-Orbit-Token":"old"}}]}]}}"#;
+        let expected: Value = serde_json::from_str(
+            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo a"},{"type":"http","url":"http://x.example/e","headers":{"Authorization":"b"}}]}]}}"#,
+        )
+        .unwrap();
+        let d = Dir::new();
+        let p = d.file(mixed);
+        install(&p, 4000, "tok").unwrap();
+        let v = read(&p);
+        assert_eq!(v["hooks"]["Stop"][0], expected["hooks"]["Stop"][0]);
+        assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 2);
+        uninstall(&p).unwrap();
+        assert_eq!(read(&p), expected);
     }
 
     #[test]

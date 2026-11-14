@@ -31,6 +31,7 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
+  const [busy, setBusy] = useState(false);
   const [events, setEvents] = useState<HookEvent[]>([]);
   const nextId = useRef(0);
 
@@ -60,16 +61,18 @@ export default function App() {
   }, []);
 
   const run = (cmd: "install_hooks" | "uninstall_hooks") => {
+    setBusy(true);
+    setResult("처리 중…");
     invoke<string | null>(cmd)
       .then((backup) =>
         setResult(
           backup
             ? `성공 · 백업: ${backup}`
-            : cmd === "install_hooks" ? "성공 (새 파일)" : "제거할 항목 없음",
+            : cmd === "install_hooks" ? "성공 (백업 없음: 새 파일이거나 변경 없음)" : "제거할 항목 없음",
         ),
       )
       .catch((e) => setResult(`오류: ${String(e)}`))
-      .finally(refresh);
+      .finally(() => { setBusy(false); refresh(); });
   };
 
   const serverText = statusError
@@ -94,8 +97,8 @@ export default function App() {
         <p>대상 경로: <code>{status?.settings_path ?? "…"}</code></p>
         <p>훅 상태: {installText}</p>
         <div className="actions">
-          <button type="button" onClick={() => run("install_hooks")}>설치</button>
-          <button type="button" onClick={() => run("uninstall_hooks")}>제거</button>
+          <button type="button" disabled={busy} onClick={() => run("install_hooks")}>설치</button>
+          <button type="button" disabled={busy} onClick={() => run("uninstall_hooks")}>제거</button>
         </div>
         <p role="status" aria-live="polite">{result}</p>
         <p className="empty">토큰이 settings 파일에 평문으로 저장됩니다.</p>

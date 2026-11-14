@@ -25,7 +25,7 @@ fn settings_path(state: &AppState) -> Result<&PathBuf, String> {
     state.settings_path.as_ref().map_err(|e| e.clone())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_status(state: State<AppState>) -> Status {
     let (listen_addr, server_error) = match &state.server {
         Ok(a) => (Some(a.to_string()), None),
@@ -41,14 +41,14 @@ fn get_status(state: State<AppState>) -> Status {
     Status { listen_addr, server_error, settings_path: path, installed, settings_error }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn install_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     let cfg = state.cfg.as_ref().map_err(|e| e.clone())?;
     let backup = hooks::install(settings_path(&state)?, cfg.port, &cfg.token)?;
     Ok(backup.map(|p| p.display().to_string()))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn uninstall_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     let backup = hooks::uninstall(settings_path(&state)?)?;
     Ok(backup.map(|p| p.display().to_string()))

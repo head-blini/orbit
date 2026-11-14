@@ -34,7 +34,10 @@ pub fn load_or_create(dir: &Path) -> Result<Config, String> {
     let json = serde_json::to_vec(&cfg).map_err(|e| e.to_string())?;
     std::fs::write(&tmp, json)
         .and_then(|_| std::fs::rename(&tmp, &path))
-        .map_err(|e| format!("{} 저장 실패: {e}", path.display()))?;
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("{} 저장 실패: {e}", path.display())
+        })?;
     Ok(cfg)
 }
 
