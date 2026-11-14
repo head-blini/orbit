@@ -52,7 +52,7 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
 
   const st = shownState(session);
   const lead: Box = {
-    key: "lead", name: "Lead", label: LEAD_LABEL[st], run: false, meta: "", x: 0, y: (ch - H) / 2, target: false,
+    key: "lead", name: "Lead", label: LEAD_LABEL[st], run: false, meta: st === "waiting" ? "권한 요청" : "— · —", x: 0, y: (ch - H) / 2, target: false,
     cls: st === "working" ? "run" : st === "waiting" ? "wait" : st === "error" ? "fail" : "none",
     sym: st === "waiting" ? "!" : st === "error" ? "✕" : st === "stalled" ? "?" : "", blink: st === "waiting",
   };
