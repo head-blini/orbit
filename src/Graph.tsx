@@ -19,6 +19,8 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
 
   useEffect(() => { manual.current = false; }, [session?.id]);
   useEffect(() => {
+    // 키보드 포커스가 그래프 안이면 포커스된 노드가 밀리지 않게 스크롤하지 않는다.
+    if (targetRef.current?.closest(".gscroll")?.contains(document.activeElement)) return;
     targetRef.current?.scrollIntoView({
       inline: manual.current || selected ? "nearest" : "end", block: "nearest",
       behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",

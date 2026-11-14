@@ -3,6 +3,7 @@
 .gscroll {
   flex: 1; min-height: 0;
   overflow: auto;
+  scroll-padding: var(--s-1);
   padding: var(--s-1); /* 가장자리 노드의 포커스 링(2px + 2px)이 잘리지 않게 */
   scrollbar-color: var(--c-ink) var(--c-light);
 }
