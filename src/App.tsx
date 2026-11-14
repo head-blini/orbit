@@ -142,16 +142,12 @@ export default function App() {
     return () => clearTimeout(t);
   }, [result]);
 
-  const run = (cmd: "install_hooks" | "uninstall_hooks") => {
+  const run = (cmd: "install_hooks") => {
     setBusy(true);
     setResult("처리 중…");
     invoke<string | null>(cmd)
       .then((backup) =>
-        setResult(
-          backup
-            ? `성공 · 백업: ${backup}`
-            : cmd === "install_hooks" ? "성공 (백업 없음: 새 파일이거나 변경 없음)" : "제거할 항목 없음",
-        ),
+        setResult(backup ? `성공 · 백업: ${backup}` : "성공 (백업 없음: 새 파일이거나 변경 없음)"),
       )
       .catch((e) => setResult(`✕ 오류: ${String(e)}`))
       .finally(() => { setBusy(false); refresh(); });
