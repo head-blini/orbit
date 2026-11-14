@@ -1,0 +1,102 @@
+use std::path::{Path, PathBuf};
+
+pub const EXTS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+
+/// dir 바로 아래 그림 파일(dir.join(이름)), 이름순. dir이 없거나 못 읽으면 빈 목록.
+pub fn list(dir: &Path) -> Vec<PathBuf> {
+    let (Ok(canon), Ok(rd)) = (dir.canonicalize(), std::fs::read_dir(dir)) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = rd
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| dir.join(e.file_name()))
+        .filter(|p| {
+            let ext = p.extension().and_then(|x| x.to_str()).map(str::to_ascii_lowercase);
+            ext.is_some_and(|x| EXTS.contains(&x.as_str())) && inside(&canon, p)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn inside(dir_canon: &Path, p: &Path) -> bool {
+    p.canonicalize().ok().and_then(|c| c.parent().map(|d| d == dir_canon)).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static N: AtomicU32 = AtomicU32::new(0);
+
+    fn tmp() -> PathBuf {
+        let root = std::env::temp_dir()
+            .join(format!("orbit-screens-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        std::fs::create_dir_all(root.join("screens")).unwrap();
+        root
+    }
+
+    #[test]
+    fn missing_and_empty_dir_give_empty() {
+        let root = tmp();
+        assert!(list(&root.join("nope")).is_empty());
+        assert!(list(&root.join("screens")).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn picks_images_sorted_and_joined() {
+        let root = tmp();
+        let dir = root.join("screens");
+        for n in ["e.jpg", "d.webp", "c.jpeg", "b.GIF", "a.png"] {
+            std::fs::write(dir.join(n), b"x").unwrap();
+        }
+        let want: Vec<PathBuf> = ["a.png", "b.GIF", "c.jpeg", "d.webp", "e.jpg"].iter().map(|n| dir.join(n)).collect();
+        assert_eq!(list(&dir), want);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn excludes_non_images_and_folders() {
+        let root = tmp();
+        let dir = root.join("screens");
+        std::fs::write(dir.join("x.svg"), b"x").unwrap();
+        std::fs::write(dir.join("y.txt"), b"x").unwrap();
+        std::fs::write(dir.join("z"), b"x").unwrap();
+        std::fs::create_dir_all(dir.join("sub.png")).unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub").join("in.png"), b"x").unwrap();
+        assert!(list(&dir).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inside_checks_parent() {
+        let root = tmp();
+        let dir = root.join("screens");
+        std::fs::write(root.join("out.png"), b"x").unwrap();
+        std::fs::write(dir.join("a.png"), b"x").unwrap();
+        let canon = dir.canonicalize().unwrap();
+        assert!(!inside(&canon, &dir.join("..").join("out.png")));
+        assert!(inside(&canon, &dir.join("a.png")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn symlink_out_is_excluded() {
+        let root = tmp();
+        let dir = root.join("screens");
+        std::fs::write(root.join("out.png"), b"x").unwrap();
+        #[cfg(windows)]
+        let r = std::os::windows::fs::symlink_file(root.join("out.png"), dir.join("link.png"));
+        #[cfg(unix)]
+        let r = std::os::unix::fs::symlink(root.join("out.png"), dir.join("link.png"));
+        // 권한이 없어 링크를 못 만들면(Windows 일반 사용자) 이 단언은 건너뛴다.
+        if r.is_ok() {
+            assert!(list(&dir).is_empty());
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

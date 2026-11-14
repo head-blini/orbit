@@ -1,5 +1,6 @@
 mod config;
 mod hooks;
+mod screens;
 mod server;
 mod sessions;
 mod watch;
