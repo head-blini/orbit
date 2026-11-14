@@ -1,5 +1,6 @@
 mod config;
 mod hooks;
+mod roadmap;
 mod screens;
 mod server;
 mod sessions;
@@ -24,12 +25,9 @@ struct AppState {
 struct Status {
     listen_addr: Option<String>,
     server_error: Option<String>,
-    settings_path: String,
     installed: Option<bool>,
     settings_error: Option<String>,
-    projects_dir: String,
     projects_error: Option<String>,
-    screens_dir: String,
 }
 
 fn lock(s: &Mutex<sessions::Store>) -> std::sync::MutexGuard<'_, sessions::Store> {
@@ -59,19 +57,21 @@ fn get_status(state: State<AppState>) -> Status {
         Ok(a) => (Some(a.to_string()), None),
         Err(e) => (None, Some(e.clone())),
     };
-    let (path, installed, settings_error) = match &state.settings_path {
+    let (installed, settings_error) = match &state.settings_path {
         Ok(p) => match hooks::is_installed(p) {
-            Ok(b) => (p.display().to_string(), Some(b), None),
-            Err(e) => (p.display().to_string(), None, Some(e)),
+            Ok(b) => (Some(b), None),
+            Err(e) => (None, Some(e)),
         },
-        Err(e) => (String::new(), None, Some(e.clone())),
+        Err(e) => (None, Some(e.clone())),
     };
-    let (projects_dir, projects_error) = match &state.projects_dir {
-        Ok(p) => (p.display().to_string(), None),
-        Err(e) => (String::new(), Some(e.clone())),
-    };
-    let screens_dir = state.screens_dir.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
-    Status { listen_addr, server_error, settings_path: path, installed, settings_error, projects_dir, projects_error, screens_dir }
+    let projects_error = state.projects_dir.as_ref().err().cloned();
+    Status { listen_addr, server_error, installed, settings_error, projects_error }
+}
+
+#[tauri::command(async)]
+fn get_roadmap(state: State<AppState>, id: String) -> roadmap::Roadmap {
+    let cwd = lock(&state.store).get(&id).and_then(|s| s.cwd.clone());
+    roadmap::for_cwd(cwd.as_deref())
 }
 
 #[tauri::command(async)]
@@ -181,6 +181,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
+            get_roadmap,
             get_sessions,
             list_screens,
             open_screens_dir,

@@ -7,6 +7,10 @@ export type Agent = { tool_use_id: string | null; agent_id: string | null; kind:
 export type Session = { id: string; cwd: string | null; started_ms: number | null; last_ms: number; source: Source;
   ver: number; state: SessionState; agents: Agent[]; stalled: boolean };
 
+export type RoadmapLine = { mark: "heading" | "done" | "todo"; text: string };
+export type Roadmap = { kind: "missing" } | { kind: "toobig"; max_bytes: number; max_entries: number }
+  | { kind: "error"; reason: string } | { kind: "found"; lines: RoadmapLine[]; skipped: boolean };
+
 export const CHIP_AT = 6;
 export const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
 export const LEAD_LABEL = { working: "실행 중", waiting: "대기", done: "끝남", error: "실패", stalled: "멈춤(추정)" } as const;

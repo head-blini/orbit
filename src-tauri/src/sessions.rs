@@ -68,9 +68,17 @@ pub fn snapshot(s: &Session, now: u64) -> Session {
     stalled(s.clone(), now)
 }
 
-/// 이미 복제한 값을 소비해 멈춤만 채운다.
+/// 표시용 노드 이름: 마지막 `:` 뒤. 비면 None.
+pub fn short_kind(k: &str) -> Option<String> {
+    k.rsplit(':').next().filter(|s| !s.is_empty()).map(str::to_string)
+}
+
+/// 내보내기 직전: 멈춤 판정 + 표시용 kind. 이미 복제한 값을 소비한다.
 pub fn stalled(mut c: Session, now: u64) -> Session {
     c.stalled = c.state == State::Working && now.saturating_sub(c.last_ms) > STALL_MS;
+    for a in &mut c.agents {
+        a.kind = a.kind.as_deref().and_then(short_kind);
+    }
     c
 }
 
@@ -726,6 +734,29 @@ mod tests {
     }
     fn rlog(id: &str, ts: &str, err: bool) -> Value {
         json!({"timestamp":ts,"message":{"content":[{"type":"tool_result","tool_use_id":id,"is_error":err}]}})
+    }
+
+    #[test]
+    fn short_kind_strips_prefix() {
+        assert_eq!(short_kind("orbit:qa").as_deref(), Some("qa"));
+        assert_eq!(short_kind("orbit:engineer").as_deref(), Some("engineer"));
+        assert_eq!(short_kind("general-purpose").as_deref(), Some("general-purpose"));
+        assert_eq!(short_kind("a:b:c").as_deref(), Some("c"));
+        assert_eq!(short_kind("orbit:"), None);
+        assert_eq!(short_kind(""), None);
+    }
+
+    #[test]
+    fn snapshot_shortens_kind_but_store_keeps_original() {
+        let mut st = Store::default();
+        let inp = json!({"tool_input":{"subagent_type":"orbit:qa"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", inp), 100);
+        let snap = snapshot(st.get(S).unwrap(), 100);
+        assert_eq!(snap.agents[0].kind.as_deref(), Some("qa"));
+        assert!(!serde_json::to_value(&snap).unwrap().to_string().contains("orbit:"));
+        assert_eq!(ag(&st)[0].kind.as_deref(), Some("orbit:qa"));
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("orbit:qa")), 110);
+        assert_eq!(ag(&st).len(), 1);
     }
 
     #[test]
