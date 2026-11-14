@@ -8,10 +8,11 @@ type Item =
   | { k: "sep"; name: string }
   | { k: "me"; text: string }
   | { k: "ai"; text: string; live: boolean }
-  | { k: "permit"; id: string; tool: string; target: string; result: string | null }
-  | { k: "ask"; id: string; questions: ChatQuestion[]; result: string | null; free: boolean }
+  | { k: "permit"; id: string; gen: number; tool: string; target: string; result: string | null }
+  | { k: "ask"; id: string; gen: number; questions: ChatQuestion[]; result: string | null; free: boolean }
   | { k: "end"; kind: "done" | "stopped" | "err"; text: string };
 
+const sid = (i: { id: string; gen: number }) => `${i.gen}-${i.id}`; // 화면 id: 사이드카가 다시 떠도 겹치지 않게
 const WAIT = "고를 때까지 기다리고 있다…";
 const scope = (tool: string) => (tool === "Bash" ? "이 명령만" : `${tool} 전부`);
 const targetLabel = (tool: string) =>
@@ -33,9 +34,9 @@ function AskCard({ item, onAnswer }: { item: Extract<Item, { k: "ask" }>; onAnsw
   return (
     <div className="card">
       {qs.map((q, qi) => (
-        <div key={qi} role="group" aria-labelledby={`q-${item.id}-${qi}`} style={{ display: "grid", gap: "var(--s-1)" }}>
+        <div key={qi} role="group" aria-labelledby={`q-${sid(item)}-${qi}`} style={{ display: "grid", gap: "var(--s-1)" }}>
           <span className="tag px" style={{ justifySelf: "start" }}>{q.header}</span>
-          <p className="q" id={`q-${item.id}-${qi}`}>{q.question}</p>
+          <p className="q" id={`q-${sid(item)}-${qi}`}>{q.question}</p>
           {open && (
             <ul className={immediate ? "choices one" : "choices"}>
               {q.options.map((o) => {
@@ -58,7 +59,7 @@ function AskCard({ item, onAnswer }: { item: Extract<Item, { k: "ask" }>; onAnsw
       {open && !immediate && (
         <button type="button" className="btn send" disabled={sel.some((s) => s.length === 0)} onClick={() => send(sel)}>보내기</button>
       )}
-      {!open && <p className={item.free ? "done free" : "done"} data-done={item.id} tabIndex={-1}>{item.result}</p>}
+      {!open && <p className={item.free ? "done free" : "done"} data-done={sid(item)} tabIndex={-1}>{item.result}</p>}
     </div>
   );
 }
@@ -76,12 +77,15 @@ export default function Chat({ session }: { session: Session | null }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const refocus = useRef(false); // 실행이 끝났을 때 포커스가 입력 줄에 있었다
   const focusDone = useRef<string | null>(null); // 답한 카드의 결과 줄로 포커스를 옮긴다
+  const gen = useRef(0); // 대화(사이드카 프로세스)마다 올린다
+  const afterReset = useRef(false);
   const noteTimer = useRef<number | undefined>(undefined);
 
   // 같은 문구도 다시 낭독되게 비웠다가 넣는다
   const say = (s: string) => { clearTimeout(noteTimer.current); setNote(""); noteTimer.current = window.setTimeout(() => setNote(s), 50); };
   const run = (v: boolean) => {
-    if (!v && rowRef.current?.contains(document.activeElement)) refocus.current = true;
+    const a = document.activeElement;
+    if (!v && (a === document.body || rowRef.current?.contains(a))) refocus.current = true;
     runRef.current = v; setRunning(v); if (!v) setStopping(false);
   };
   const finish = (kind: "done" | "stopped" | "err", end: string, msg: string) => {
@@ -105,16 +109,16 @@ export default function Chat({ session }: { session: Session | null }) {
           });
           break;
         case "permit":
-          setItems((p) => [...settle(p), { k: "permit", id: m.id, tool: String(m.tool), target: String(m.target), result: null }]);
+          setItems((p) => [...settle(p), { k: "permit", id: m.id, gen: gen.current, tool: String(m.tool), target: String(m.target), result: null }]);
           say(`권한 요청: ${m.tool}. 채팅에서 허용, 거부, 이 세션 동안 중 고르세요`);
           break;
         case "ask":
           if (!Array.isArray(m.questions)) break;
-          setItems((p) => [...settle(p), { k: "ask", id: m.id, questions: m.questions, result: null, free: false }]);
+          setItems((p) => [...settle(p), { k: "ask", id: m.id, gen: gen.current, questions: m.questions, result: null, free: false }]);
           say(`질문: ${m.questions[0]?.header ?? ""}`);
           break;
         case "closed":
-          setItems((p) => p.map((i) => ((i.k === "permit" || i.k === "ask") && i.id === m.id && i.result === null
+          setItems((p) => p.map((i) => ((i.k === "permit" || i.k === "ask") && i.id === m.id && i.gen === gen.current && i.result === null
             ? { ...i, result: i.k === "permit" ? "→ 거부됨 (중단)" : "→ 답하지 않음 (중단)" } : i)));
           break;
         case "done":
@@ -124,6 +128,7 @@ export default function Chat({ session }: { session: Session | null }) {
         case "stopped": finish("stopped", "중단됨", "중단됨"); break;
         case "error": finish("err", String(m.message), `✕ 오류: ${String(m.message)}`); break;
         case "exit":
+          gen.current++;
           setOpen(false);
           setItems((p) => p.map((i) => ((i.k === "permit" || i.k === "ask") && i.result === null
             ? { ...i, result: i.k === "permit" ? "→ 거부됨 (사이드카 종료)" : "→ 답하지 않음 (사이드카 종료)" } : i)));
@@ -150,6 +155,12 @@ export default function Chat({ session }: { session: Session | null }) {
     [...document.querySelectorAll<HTMLElement>("[data-done]")].find((e) => e.dataset.done === id)?.focus();
   }, [items]);
   useEffect(() => {
+    if (!afterReset.current) return;
+    afterReset.current = false;
+    const t = taRef.current;
+    if (t && !t.disabled) t.focus(); else document.getElementById("h-chat")?.focus();
+  }, [items]);
+  useEffect(() => {
     if (!running && refocus.current) { refocus.current = false; taRef.current?.focus(); }
   }, [running]);
 
@@ -165,14 +176,16 @@ export default function Chat({ session }: { session: Session | null }) {
   const typing = canSend || askOne !== null;
 
   const answer = (id: string, answers: Record<string, string>, shown: string, free: boolean) => {
-    focusDone.current = id;
-    setItems((p) => p.map((i) => (i.k === "ask" && i.id === id ? { ...i, result: `→ ${shown}`, free } : i)));
+    const c = items.find((i) => i.k === "ask" && i.id === id && i.result === null);
+    if (c?.k === "ask") focusDone.current = sid(c);
+    setItems((p) => p.map((i) => (i.k === "ask" && i.id === id && i.result === null ? { ...i, result: `→ ${shown}`, free } : i)));
     invoke("chat_answer", { id, answers }).catch(fail);
   };
   const permit = (id: string, tool: string, decision: "allow" | "deny" | "session") => {
     const shown = decision === "allow" ? "→ 허용함" : decision === "deny" ? "→ 거부함" : `→ 이 세션 동안 허용함 (${scope(tool)})`;
-    focusDone.current = id;
-    setItems((p) => p.map((i) => (i.k === "permit" && i.id === id ? { ...i, result: shown } : i)));
+    const c = items.find((i) => i.k === "permit" && i.id === id && i.result === null);
+    if (c?.k === "permit") focusDone.current = sid(c);
+    setItems((p) => p.map((i) => (i.k === "permit" && i.id === id && i.result === null ? { ...i, result: shown } : i)));
     invoke("chat_permit", { id, decision }).catch(fail);
   };
 
@@ -200,6 +213,7 @@ export default function Chat({ session }: { session: Session | null }) {
   };
   const reset = () => {
     invoke("chat_reset").catch(() => {});
+    gen.current++; refocus.current = false; afterReset.current = true;
     setItems([]); setOpen(false); clearTimeout(noteTimer.current); setNote(""); run(false);
   };
 
@@ -208,7 +222,7 @@ export default function Chat({ session }: { session: Session | null }) {
   return (
     <section className="panel chat" aria-labelledby="h-chat">
       <div className="chat-head">
-        <h2 id="h-chat" className="px">채팅</h2>
+        <h2 id="h-chat" className="px" tabIndex={-1}>채팅</h2>
         {items.length > 0 && <button type="button" className="btn" disabled={running} onClick={reset}>새 대화</button>}
       </div>
       {items.length === 0 ? <div className="chat-body"><p className="empty">{emptyText}</p></div> : (
@@ -223,8 +237,8 @@ export default function Chat({ session }: { session: Session | null }) {
                     <p className="txt">{i.text}{i.live && <span className="caret blink" aria-hidden="true" />}</p></div>
                 );
                 case "permit": return (
-                  <div className="card" role="group" aria-labelledby={`q-${i.id}`} key={n}>
-                    <p className="q px" id={`q-${i.id}`}>{i.tool} 실행을 허용할까요?</p>
+                  <div className="card" role="group" aria-labelledby={`q-${sid(i)}`} key={n}>
+                    <p className="q px" id={`q-${sid(i)}`}>{i.tool} 실행을 허용할까요?</p>
                     <pre className="cmd" tabIndex={0} aria-label={targetLabel(i.tool)}>{i.target}</pre>
                     {i.result === null ? (
                       <div className="menu">
@@ -232,7 +246,7 @@ export default function Chat({ session }: { session: Session | null }) {
                         <button type="button" className="opt" onClick={() => permit(i.id, i.tool, "deny")}><span className="cur" aria-hidden="true">▶</span>거부</button>
                         <button type="button" className="opt" onClick={() => permit(i.id, i.tool, "session")}><span className="cur" aria-hidden="true">▶</span>이 세션 동안 ({scope(i.tool)})</button>
                       </div>
-                    ) : <p className="done" data-done={i.id} tabIndex={-1}>{i.result}</p>}
+                    ) : <p className="done" data-done={sid(i)} tabIndex={-1}>{i.result}</p>}
                   </div>
                 );
                 case "ask": return <AskCard key={n} item={i} onAnswer={(a, shown) => answer(i.id, a, shown, false)} />;
