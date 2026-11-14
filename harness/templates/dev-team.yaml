@@ -1,6 +1,7 @@
 # .orbit/team.yaml 템플릿 (개발팀). 프로젝트의 .orbit/team.yaml로 복사해 쓴다.
 # 에이전트는 이 파일을 쓸 수 없다(관문이 막는다). 사용자나 오르빗 UI가 쓴다.
 # 파일이 없으면 전부 기본값이다. 사용자의 CLAUDE.md와 충돌하면 CLAUDE.md가 우선한다.
+# 단 사람 승인·관문·트랙 상향·쓰기 범위 제외: CLAUDE.md로 바꿀 수 없다.
 version: 1
 
 # 역할 켜기/끄기: on | off | auto

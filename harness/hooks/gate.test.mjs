@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decide, shipFailures } from './gate.mjs';
+import { homedir } from 'node:os';
+import { resolve as resolvePath } from 'node:path';
+import { memorySlug } from './gate.mjs';
 
 function project(track, files = {}, state = {}) {
   const root = mkdtempSync(join(tmpdir(), 'orbit-gate-'));
@@ -45,7 +48,7 @@ test('머지/푸시는 관문 통과 전까지 누구에게나 차단', () => {
   assert.match(decide(bash('git push origin main', 'agent-1'), blocked), /차단/);
   assert.match(decide(bash('cd x && git merge feat', 'agent-1'), blocked), /차단/);
   const open = project('quick', { 'VERIFY.md': EVIDENCE });
-  assert.equal(decide(bash('git merge feat', 'agent-1'), open), null);
+  assert.equal(decide(bash('git merge orbit/r1', 'agent-1'), open), null); // S1: orbit/<id>가 아닌 머지는 항상 차단(Q5)
   assert.equal(decide(bash('git commit -m "merge notes"', 'agent-1'), blocked), null);
 });
 
@@ -120,7 +123,7 @@ const wr = (root, file, agent_type, extra) => write(root, file, agent_type && 'a
 const CONFIG_OK = { approvals: [{ gate: 'config', result: 'approved' }] };
 const G = 'gi' + 't', P = 'pu' + 'sh';
 
-test('SECURITY.md 6) 우회 재현 22사례: 21 BLOCK + 1 ALLOW(미룸 H1)', () => {
+test('SECURITY.md 6) 우회 재현 22사례: 22 BLOCK (S13 이후)', () => {
   const root = gitRoot('full');
   const cases = [
     ['Lead newline', sh(root, `${G} status\nnpm run build`), 'BLOCK'],
@@ -133,7 +136,7 @@ test('SECURITY.md 6) 우회 재현 22사례: 21 BLOCK + 1 ALLOW(미룸 H1)', () 
     ['ship alias', sh(root, `${G} config alias.p ${P} && ${G} p`, 'orbit:engineer'), 'BLOCK'],
     ['ship gh pr merge', sh(root, 'gh pr merge 1 --merge', 'orbit:engineer'), 'BLOCK'],
     ['ship update-ref main', sh(root, `${G} update-ref refs/heads/main HEAD`, 'orbit:engineer'), 'BLOCK'],
-    ['qa Bash write hooks (미룸 H1)', sh(root, 'echo x > .claude/hooks/gate.mjs', 'orbit:qa'), 'ALLOW'],
+    ['qa Bash write hooks (S13)', sh(root, 'echo x > .claude/hooks/gate.mjs', 'orbit:qa'), 'BLOCK'],
     ['reviewer Bash write src', sh(root, `node -e "require('fs').writeFileSync('src/a.ts','x')"`, 'orbit:reviewer-rules'), 'BLOCK'],
     ['qa Write forged SECURITY.md', wr(root, '.orbit/runs/r1/SECURITY.md', 'orbit:qa'), 'BLOCK'],
     ['engineer Write STATE.json', wr(root, '.orbit/runs/r1/STATE.json', 'orbit:engineer'), 'BLOCK'],
@@ -338,4 +341,220 @@ test('R7: design-warn 오류 입력은 조용히 exit 0', () => {
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');
   }
+});
+
+// ---- hardening K1: S1 · S3 · S4 · S8 (훅을 실제로 실행해 exit code를 본다) ----
+const FULL_PASS = { 'PLAN_CHECK.md': PASS, 'REVIEW.md': PASS, 'VERIFY.md': EVIDENCE, 'SECURITY.md': PASS };
+const gitProject = (branch, track, files, state) => {
+  const root = project(track, files, state);
+  execFileSync('git', ['init', '-q', '-b', branch], { cwd: root });
+  return root;
+};
+const exitOf = (root, command, agent_type) => spawnGate([], { input: JSON.stringify(sh(root, command, agent_type)), root }).status;
+
+test('S1: 출고는 명령 안의 orbit/<id>가 현재 run과 같을 때만, 대체는 ref 없는 push에만', () => {
+  const quick = gitProject('main', 'quick', { 'VERIFY.md': EVIDENCE });
+  assert.equal(exitOf(quick, `${G} merge orbit/other`), 2); // current=r1이 아닌 run의 브랜치
+  assert.equal(exitOf(quick, `${G} merge orbit/r1 orbit/other`), 2); // 하나라도 다르면
+  assert.equal(exitOf(quick, `${G} merge orbit/r1`), 0);
+  assert.equal(exitOf(quick, `${G} merge feat`), 2); // F1: main에서 ref가 orbit/<id>가 아님
+  const full = gitProject('orbit/r1', 'full', FULL_PASS);
+  assert.equal(exitOf(full, `${G} switch main && ${G} merge feat`, 'orbit:engineer'), 2); // F1
+  assert.equal(exitOf(full, `${G} ${P}`, 'orbit:engineer'), 0); // 대체: 브랜치 orbit/r1 = current
+  const other = gitProject('orbit/zzz', 'full', FULL_PASS);
+  assert.equal(exitOf(other, `${G} ${P}`, 'orbit:engineer'), 2); // 브랜치 id가 current와 다름
+  const feat = gitProject('feature', 'full', FULL_PASS);
+  assert.equal(exitOf(feat, `${G} ${P}`, 'orbit:engineer'), 2); // orbit/<id>가 아닌 브랜치
+});
+
+test('S3: Lead의 git branch는 목록·--show-current만, 브랜치 이동·복사·강제는 차단', () => {
+  const root = gitProject('main', 'full', FULL_PASS);
+  for (const c of ['branch -m main old', 'branch -M orbit/x main', 'branch -df x', 'switch --force-create main'])
+    assert.equal(exitOf(root, `${G} ${c}`), 2, c);
+  for (const c of ['branch', 'branch --show-current']) assert.equal(exitOf(root, `${G} ${c}`), 0, c);
+  const std = gitProject('orbit/r1', 'standard'); // 엔지니어의 branch -m/-c도 출고로 본다
+  for (const c of ['branch -m orbit/r1 main', 'branch -c main x', 'branch --move a b']) assert.equal(exitOf(std, `${G} ${c}`, 'orbit:engineer'), 2, c);
+});
+
+test('S4: 따옴표 git, GIT_CONFIG_*, main에서의 pull·rebase·reset --hard는 출고', () => {
+  const root = gitProject('main', 'standard');
+  for (const c of [`"${G}" ${P} origin main`, `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.p GIT_CONFIG_VALUE_0=${P} ${G} p`, `${G} pull`, `${G} rebase feat`, `${G} reset --hard origin/main`])
+    assert.equal(exitOf(root, c, 'orbit:engineer'), 2, c);
+  const run = gitProject('orbit/r1', 'standard');
+  assert.equal(exitOf(run, `${G} rebase main`, 'orbit:engineer'), 0); // 대조: run 브랜치 안
+  assert.equal(exitOf(run, `${G} reset --hard HEAD~1`, 'orbit:engineer'), 0);
+  assert.equal(exitOf(run, `${G} -C . pull`, 'orbit:engineer'), 2); // 위치를 믿을 수 없음
+});
+
+test('S8: publish·deploy는 deploy 승인 + 관문 + run 브랜치가 모두 있어야', () => {
+  const DEPLOY = { approvals: [{ gate: 'deploy', result: 'approved' }] };
+  const cmds = ['npm publish', 'cargo publish', 'gh release create v1', 'vercel deploy --prod', 'npm -q publish'];
+  const none = gitProject('orbit/r1', 'full');
+  const noDeploy = gitProject('orbit/r1', 'full', FULL_PASS);
+  const gatesFail = gitProject('orbit/r1', 'full', {}, DEPLOY);
+  const ok = gitProject('orbit/r1', 'full', FULL_PASS, DEPLOY);
+  const onMain = gitProject('main', 'full', FULL_PASS, DEPLOY);
+  for (const role of ['orbit:engineer', 'orbit:devops'])
+    for (const c of cmds) {
+      for (const [name, root] of [['no gates', none], ['no deploy approval', noDeploy], ['gates fail', gatesFail], ['main branch', onMain]])
+        assert.equal(exitOf(root, c, role), 2, `${role} ${c} ${name}`);
+      assert.equal(exitOf(ok, c, role), 0, `${role} ${c} ok`);
+    }
+  assert.equal(exitOf(ok, 'npm run build', 'orbit:engineer'), 0);
+});
+
+// ---- hardening K2: S5 · S2/R11 · S13 · S7 · S10 · S11 ----
+const exitW = (root, file, agent_type, extra) => spawnGate([], { input: JSON.stringify(wr(root, file, agent_type, extra)), root }).status;
+
+test('S5: 메모리 쓰기는 Lead만, 현재 프로젝트 폴더만', () => {
+  assert.equal(memorySlug('C:\\Work\\Projects\\orbit'), 'C--Work-Projects-orbit');
+  assert.equal(memorySlug('a'.repeat(201)), null);
+  const root = gitProject('main', 'quick');
+  const mem = (slug) => join(homedir(), '.claude', 'projects', slug, 'memory', 'x.md');
+  const cur = memorySlug(resolvePath(root));
+  for (const who of ['orbit:qa', 'general-purpose', 'orbit:librarian']) assert.equal(exitW(root, mem(cur), who), 2, who);
+  assert.equal(exitW(root, mem('other-project'), undefined), 2);
+  assert.equal(exitW(root, mem(cur), undefined), 0);
+});
+
+test('S2/R11: librarian 셸은 허용 목록(check, git add/commit/switch/merge/status/log/diff)만', () => {
+  const root = gitProject('main', 'quick', { 'VERIFY.md': EVIDENCE });
+  assert.equal(exitOf(root, 'echo x >> CLAUDE.md', 'orbit:librarian'), 2);
+  assert.equal(exitOf(root, 'npm test', 'orbit:librarian'), 2);
+  assert.equal(exitOf(root, `${G} commit -m x`, 'orbit:librarian'), 0);
+  assert.equal(exitOf(root, `${G} add -- docs/a.md`, 'orbit:librarian'), 0);
+  assert.equal(exitOf(root, `node "${GATE}" check ship`, 'orbit:librarian'), 0);
+  assert.equal(exitOf(root, `${G} ${P}`, 'orbit:librarian'), 2);
+  assert.equal(exitOf(root, `${G} commit -m x; echo y > a`, 'orbit:librarian'), 2);
+});
+
+test('S13: 관문·설정 파일을 가리키는 셸 쓰기와 ORBIT_GATE·disableAllHooks는 모든 역할에서 차단', () => {
+  const root = gitProject('main', 'quick');
+  assert.equal(exitOf(root, 'echo x >> harness/hooks/gate.mjs', 'orbit:qa'), 2);
+  assert.equal(exitOf(root, 'echo {"disableAllHooks":true} > .claude/settings.local.json', 'orbit:security'), 2);
+  assert.equal(exitOf(root, `node -e "process.env.ORBIT_GATE='off'"`, 'orbit:reviewer-tests'), 2);
+  assert.equal(exitOf(root, 'echo x > .claude/settings.json', 'orbit:engineer'), 2);
+  assert.equal(exitOf(root, 'echo x > harness/hooks/hooks.json', 'orbit:devops'), 2);
+  assert.equal(exitOf(root, 'node --test harness/hooks/gate.test.mjs', 'orbit:qa'), 0); // 대조: 테스트 실행은 허용
+  assert.equal(exitOf(root, 'git diff harness/hooks/gate.mjs', 'orbit:qa'), 0);
+  assert.equal(exitOf(root, 'cat harness/hooks/gate.mjs', 'orbit:qa'), 0);
+  assert.equal(exitOf(root, 'cat harness/hooks/gate.mjs > x', 'orbit:qa'), 2);
+  assert.equal(exitOf(root, 'node --test -e x harness/hooks/gate.mjs', 'orbit:qa'), 2);
+});
+
+test('S7: ~/.claude.json, .git/hooks, .git/config는 서브에이전트도 수정 불가', () => {
+  const root = gitProject('main', 'quick');
+  for (const f of [join(homedir(), '.claude.json'), '.git/hooks/post-merge', '.git/config']) assert.equal(exitW(root, f, 'orbit:engineer'), 2, f);
+  assert.equal(exitW(root, 'src/a.ts', 'orbit:engineer'), 0);
+});
+
+test('S10: .orbit/wt/는 engineer·debugger·devops만 쓴다', () => {
+  const root = gitProject('main', 'quick');
+  assert.equal(exitW(root, '.orbit/wt/t1/src/a.ts', 'orbit:reviewer-rules'), 2);
+  assert.equal(exitW(root, '.orbit/wt/t1/src/a.ts', undefined), 2);
+  assert.equal(exitW(root, '.orbit/wt/t1/src/a.ts', 'orbit:engineer'), 0);
+});
+
+test('S11: design-warn은 값을 20개까지만 보이고 나머지는 "외 N개"', () => {
+  const root = project('quick');
+  const css = 'a{' + Array.from({ length: 200 }, (_, i) => `m${i}:${i + 1}px`).join(';') + '}';
+  const msg = warn(root, 'src/a.css', css, '{"c":"#fff"}').additionalContext;
+  assert.equal(msg.match(/\d+px/g).length, 20);
+  assert.match(msg, /외 180개/);
+});
+
+// ---- review-fix-1 (R1-R10, 참고 항목) ----
+const reasonOf = (root, command, agent_type) => spawnGate([], { input: JSON.stringify(sh(root, command, agent_type)), root }).stderr;
+
+test('R1: orbit/<id>가 아닌 ref가 섞인 merge는 출고 판정 때 차단(Q5), 연결된 merge도 각각 본다', () => {
+  const quick = gitProject('main', 'quick', { 'VERIFY.md': EVIDENCE });
+  assert.equal(exitOf(quick, `${G} merge orbit/r1 feat`), 2);
+  assert.equal(exitOf(quick, `${G} merge feat orbit/r1`), 2);
+  assert.equal(exitOf(quick, `${G} merge orbit/r1 && ${G} merge feat`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(quick, `${G} merge --no-ff orbit/r1 -m "release notes"`, 'orbit:engineer'), 0); // 대조: 옵션·메시지는 ref가 아님
+  assert.equal(exitOf(quick, `${G} merge orbit/r1`), 0);
+  // BRIEF 기준 2 그대로: current=A(통과한 quick), 브랜치 orbit/B(full, security 미통과) → Lead의 merge orbit/B는 2
+  assert.equal(exitOf(quick, `${G} merge orbit/B`), 2);
+  const full = gitProject('main', 'full', FULL_PASS); // current=B이고 B가 모두 통과면 0 (full 트랙)
+  assert.equal(exitOf(full, `${G} merge orbit/r1`), 0);
+  assert.equal(exitOf(full, `${G} merge orbit/r1 feat`), 2);
+});
+
+test('정당한 흐름: Lead의 switch -c orbit/<id>, librarian의 switch main → merge --no-ff orbit/<id>', () => {
+  const quick = gitProject('main', 'quick', { 'VERIFY.md': EVIDENCE });
+  assert.equal(exitOf(quick, `${G} switch -c orbit/r1`), 0);
+  assert.equal(exitOf(quick, `${G} switch main`, 'orbit:librarian'), 0);
+  assert.equal(exitOf(quick, `${G} merge --no-ff orbit/r1`, 'orbit:librarian'), 0);
+});
+
+test('R2: run 브랜치에서 멈춘 rebase의 --continue/--abort/--skip/--quit는 허용, 출고는 새로 열리지 않음', () => {
+  const root = gitProject('orbit/r1', 'standard');
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'x'], { cwd: root });
+  execFileSync('git', ['checkout', '-q', '--detach'], { cwd: root }); // rebase 도중의 detached HEAD
+  for (const f of ['--continue', '--abort', '--skip', '--quit']) assert.equal(exitOf(root, `${G} rebase ${f}`, 'orbit:engineer'), 0, f);
+  assert.equal(exitOf(root, `${G} rebase main`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(root, `${G} rebase --continue main`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(root, `${G} rebase --continue && ${G} ${P}`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(root, `${G} rebase --continue && ${G} merge feat`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(root, `cd .. && ${G} rebase --continue`, 'orbit:engineer'), 2); // 위치를 믿을 수 없음
+  assert.equal(exitOf(root, `${G} -C .. rebase --continue`, 'orbit:engineer'), 2);
+});
+
+test('R3·R9·R10: S13은 대소문자를 구분하지 않고, disableAllHooks·.claude-plugin을 각각 막는다', () => {
+  const root = gitProject('main', 'quick');
+  for (const c of ['echo x >> harness/hooks/Gate.mjs', 'echo {} > .CLAUDE/settings.local.json', 'echo x > x/.Claude-Plugin/plugin.json', 'node -e "1" --DISABLEALLHOOKS', 'set orbit_gate=off'])
+    assert.equal(exitOf(root, c, 'orbit:qa'), 2, c);
+  assert.equal(exitOf(root, 'node -e "1" --disableAllHooks', 'orbit:qa'), 2); // 설정 파일 경로 없이 disableAllHooks만
+  assert.equal(exitOf(root, 'echo x > x/.claude-plugin/plugin.json', 'orbit:qa'), 2); // .claude-plugin만 가리킴
+});
+
+test('R4: 막힌 사유가 실제 허용 목록을 말한다', () => {
+  const root = gitProject('main', 'quick');
+  assert.match(reasonOf(root, 'npm test', 'orbit:librarian'), /git add\/commit\/switch\/merge\/status\/log\/diff/);
+  assert.match(reasonOf(root, 'npm test'), /branch\(목록·--show-current만\)/);
+});
+
+test('R7: S3 사유까지 확인 — Lead는 branch 이동·삭제·생성 차단, engineer는 브랜치 강제 이동을 출고로 차단', () => {
+  const root = gitProject('main', 'full', FULL_PASS);
+  for (const c of ['branch -d x', 'branch newname']) assert.match(reasonOf(root, `${G} ${c}`), /Lead는/, c);
+  const std = gitProject('orbit/r1', 'standard');
+  for (const c of ['switch --force-create main', 'switch -C main', 'checkout -B main', 'branch -df x', 'branch --force x', 'branch -fm a b'])
+    assert.match(reasonOf(std, `${G} ${c}`, 'orbit:engineer'), /머지\/푸시\/배포 차단/, c);
+});
+
+test('R8: 대체는 위치·브랜치가 바뀌지 않는 ref 없는 push에만', () => {
+  const full = gitProject('orbit/r1', 'full', FULL_PASS);
+  assert.equal(exitOf(full, `${G} ${P}`, 'orbit:engineer'), 0); // 대조
+  assert.equal(exitOf(full, `cd ../other && ${G} ${P}`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(full, `${G} switch main && ${G} ${P}`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(full, `${G} branch -f main HEAD`, 'orbit:engineer'), 2); // ref 형태는 대체 대상이 아님
+});
+
+test('BRIEF 기준 5 그대로: main에서 관문 미통과 시 pull . · reset --hard · rebase는 2, reset --soft는 출고 아님', () => {
+  const root = gitProject('main', 'standard');
+  for (const c of [`${P} origin main`, `pull . orbit/x`, `reset --hard orbit/x`, `rebase orbit/x`]) assert.equal(exitOf(root, `${G} ${c}`, 'orbit:engineer'), 2, c);
+  assert.equal(exitOf(root, `${G} reset --soft HEAD~1`, 'orbit:engineer'), 0);
+});
+
+// ---- review-fix-2 (N1-N7) ----
+test('N1·N5: -m 메시지 안의 구분자·뒤따르는 ref를 놓치지 않는다, -F 파일과 따옴표 친 orbit/<id>는 허용', () => {
+  const quick = gitProject('main', 'quick', { 'VERIFY.md': EVIDENCE });
+  assert.equal(exitOf(quick, `${G} merge -m "x ; orbit/r1" feat`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(quick, `${G} merge -m 'a && b' orbit/r1 feat`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(quick, `${G} merge orbit/r1 -m x feat`, 'orbit:engineer'), 2);
+  assert.equal(exitOf(quick, `${G} merge -m "a ; b" orbit/r1`, 'orbit:engineer'), 0); // 대조
+  assert.equal(exitOf(quick, `${G} merge -F msg.txt orbit/r1`, 'orbit:engineer'), 0);
+  assert.equal(exitOf(quick, `${G} merge "orbit/r1"`), 0);
+});
+
+test('N6·N7: orbit/<id>를 품었지만 그 형태가 아닌 ref는 id로도 ref로도 인정하지 않는다', () => {
+  const quick = gitProject('main', 'quick', { 'VERIFY.md': EVIDENCE });
+  for (const c of ['merge feat-orbit/r1', 'merge origin/orbit/r1', 'pull . feat-orbit/r1', 'pull . origin/orbit/r1']) assert.equal(exitOf(quick, `${G} ${c}`, 'orbit:engineer'), 2, c);
+  assert.equal(exitOf(quick, `${G} pull . orbit/r1`, 'orbit:engineer'), 0); // 대조
+});
+
+test('N2: run 브랜치에서 main을 바꾸는 rebase <upstream> main · fetch . <src>:main은 출고', () => {
+  const std = gitProject('orbit/r1', 'standard');
+  for (const c of ['rebase orbit/r1 main', 'rebase orbit/r1 master', 'fetch . HEAD:main', 'fetch . orbit/r1:main', 'fetch . +HEAD:refs/heads/main']) assert.equal(exitOf(std, `${G} ${c}`, 'orbit:engineer'), 2, c);
+  for (const c of ['rebase main', 'rebase -i main', 'fetch origin']) assert.equal(exitOf(std, `${G} ${c}`, 'orbit:engineer'), 0, c); // 대조
 });
