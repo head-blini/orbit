@@ -59,12 +59,13 @@ fn get_status(state: State<AppState>) -> Status {
         Ok(a) => (Some(a.to_string()), None),
         Err(e) => (None, Some(e.clone())),
     };
-    let (installed, settings_error) = match &state.settings_path {
-        Ok(p) => match hooks::is_installed(p) {
-            Ok(b) => (Some(b), None),
-            Err(e) => (None, Some(e)),
-        },
-        Err(e) => (None, Some(e.clone())),
+    let checked = match (&state.settings_path, &state.cfg) {
+        (Ok(p), Ok(c)) => hooks::is_installed(p, c.port, &c.token),
+        (Err(e), _) | (_, Err(e)) => Err(e.clone()),
+    };
+    let (installed, settings_error) = match checked {
+        Ok(b) => (Some(b), None),
+        Err(e) => (None, Some(e)),
     };
     let projects_error = state.projects_dir.as_ref().err().cloned();
     Status { listen_addr, server_error, installed, settings_error, projects_error }

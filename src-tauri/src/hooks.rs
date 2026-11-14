@@ -153,11 +153,21 @@ pub fn uninstall(path: &Path) -> Result<Option<PathBuf>, String> {
     write_atomic(path, &root)
 }
 
-pub fn is_installed(path: &Path) -> Result<bool, String> {
-    let Some(mut root) = read_root(path)? else {
+/// 모든 이벤트에 지금 앱의 포트·토큰과 정확히 맞는 Orbit 핸들러가 있을 때만 true.
+pub fn is_installed(path: &Path, port: u16, token: &str) -> Result<bool, String> {
+    let Some(root) = read_root(path)? else {
         return Ok(false);
     };
-    strip(&mut root)
+    let url = format!("http://127.0.0.1:{port}/events");
+    Ok(EVENTS.iter().all(|ev| {
+        root["hooks"][ev].as_array().is_some_and(|groups| {
+            groups.iter().filter_map(|g| g["hooks"].as_array()).flatten().any(|h| {
+                is_orbit(h)
+                    && h["url"].as_str() == Some(&url)
+                    && h["headers"][TOKEN_HEADER].as_str() == Some(token)
+            })
+        })
+    }))
 }
 
 #[cfg(test)]
@@ -347,13 +357,44 @@ mod tests {
     fn is_installed_lifecycle() {
         let d = Dir::new();
         let p = d.0.join("settings.json");
-        assert_eq!(is_installed(&p), Ok(false));
+        assert_eq!(is_installed(&p, 4000, "tok"), Ok(false));
         fs::write(&p, FIXTURE).unwrap();
-        assert_eq!(is_installed(&p), Ok(false));
+        assert_eq!(is_installed(&p, 4000, "tok"), Ok(false));
         install(&p, 4000, "tok").unwrap();
-        assert_eq!(is_installed(&p), Ok(true));
+        assert_eq!(is_installed(&p, 4000, "tok"), Ok(true));
         uninstall(&p).unwrap();
-        assert_eq!(is_installed(&p), Ok(false));
+        assert_eq!(is_installed(&p, 4000, "tok"), Ok(false));
+    }
+
+    #[test]
+    fn is_installed_requires_matching_port_and_token() {
+        let d = Dir::new();
+        let p = d.file(FIXTURE);
+        install(&p, 4000, "tok").unwrap();
+        assert_eq!(is_installed(&p, 4001, "tok"), Ok(false));
+        assert_eq!(is_installed(&p, 4000, "other"), Ok(false));
+        assert_eq!(is_installed(&p, 4000, "tok"), Ok(true));
+        // 이벤트 하나가 어긋나도 설치됨이 아니다.
+        let mut v = read(&p);
+        v["hooks"]["Stop"][0]["hooks"][0]["url"] = json!("http://127.0.0.1:1/events");
+        fs::write(&p, v.to_string()).unwrap();
+        assert_eq!(is_installed(&p, 4000, "tok"), Ok(false));
+    }
+
+    #[test]
+    fn install_after_port_change_leaves_one_new_entry() {
+        let d = Dir::new();
+        let p = d.file(FIXTURE);
+        install(&p, 4000, "tok").unwrap();
+        assert_eq!(is_installed(&p, 5000, "tok2"), Ok(false));
+        install(&p, 5000, "tok2").unwrap();
+        assert_eq!(is_installed(&p, 5000, "tok2"), Ok(true));
+        let v = read(&p);
+        for ev in EVENTS {
+            let hs = orbit_handlers(&v, ev);
+            assert_eq!(hs.len(), 1, "{ev}");
+            assert_eq!(hs[0]["url"], "http://127.0.0.1:5000/events");
+        }
     }
 
     #[test]
