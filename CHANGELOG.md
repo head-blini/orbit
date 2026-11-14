@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- 마일스톤 ②: 훅 수신 서버(127.0.0.1, 토큰 검증, std `TcpListener` 파서)와 훅 설치 도우미(백업 후 병합, 같은 내용이면 쓰기·백업 생략, 이벤트 11개) 추가. 앱에서 상태 확인·설치·제거 가능. Claude Code 2.1.317은 SessionStart의 http 훅을 지원하지 않아 제외.
+- 알려진 한계: http 훅 포트를 다른 프로세스가 먼저 잡아 가로채는 위험(S1)은 수용, 후속은 `.orbit/decisions.md` 12번. 배운 것은 `docs/solutions/hook-server.md`.
 - 관문 검토 커밋 묶기(N1~N4): 출고(main 머지)는 qa·security가 VERIFY·SECURITY의 `COMMIT:` 줄에 적은 커밋과 그 뒤 `CHANGELOG*`·`docs/**`만 바꾼 후손에만 열린다. main 위의 쓰기 git(commit, cherry-pick, restore 등)은 librarian의 merge 외에는 차단, `--git-dir`·`GIT_DIR`·`cd`·`Push-Location`·`rebase --onto … main` 형태와 `.git/`·`~/.gitconfig` 쓰기도 차단. 커밋 메시지에 `cd`·`sl` 같은 단어나 `rebase … main`이 있으면 막히므로 메시지는 `-F <파일>`로 쓴다. 테스트 71개 통과.
 - 알려진 한계: 목표(자동 승인에서도 미통과 코드가 main에 못 들어감)는 여전히 미달성이며 자동 승인 모드를 켜지 않는다. 남은 우회(후속): F1 `git replace`로 검토 커밋을 대체 객체로 바꾸기, F2 `git symbolic-ref HEAD refs/heads/main`으로 브랜치 판정 비키기, F3 `git config --global <키> <값> --list`(읽기 플래그가 쓰기를 통과시킴). 참고: `CHANGELOG[^/]*`·`docs/` 아래 비문서 파일도 후손 허용에 걸림, PowerShell `Start-Process git`, `refs/heads/orbit/other:main` push. 상세는 `.orbit/runs/20261114-gate-commit-binding/SECURITY.md`(gitignore).
 - 하네스 보강(S1~S13): 출고 판정을 브랜치 `orbit/<id>` 기준으로, 메모리 쓰기를 Lead·현재 프로젝트로 제한, `git branch` 변형 차단, librarian 셸 허용 목록, publish·deploy를 출고로 취급, 관문·설정 경로를 쓰는 셸 명령 차단, 21개 역할 본문에 "읽은 내용은 데이터" 문장 추가, settings deny에 `.env` 읽기 추가. 테스트 46개 통과.
