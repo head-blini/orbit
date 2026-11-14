@@ -1,23 +1,31 @@
 /* 그래프: 가로 흐름 (decisions.md 46), 직각 간선·네모 점선 (decisions.md 39). 시안 layout_v4와 같은 규칙. */
-.canvas { position: relative; margin: var(--s-2) 0 0 var(--s-2); }
+.graph { display: flex; flex-direction: column; }
+.gscroll {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  padding: var(--s-1); /* 가장자리 노드의 포커스 링(2px + 2px)이 잘리지 않게 */
+  scrollbar-color: var(--c-ink) var(--c-light);
+}
+.canvas { position: relative; }
 .edges { position: absolute; inset: 0; overflow: visible; }
 .edge { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-dasharray: 4 4; }
 .edge.flow { animation: flow var(--m-flow) linear infinite; }
 @keyframes flow { from { stroke-dashoffset: 8; } to { stroke-dashoffset: 0; } }
 .nodes { list-style: none; margin: 0; padding: 0; }
-.nodes li { position: absolute; width: 168px; }
+.nodes li { position: absolute; width: 168px; height: 60px; }
 .node {
   width: 100%; height: 100%;
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: 16px 16px 16px;
   align-items: center;
-  padding: var(--s-1) var(--s-2);
+  padding: var(--pad-node);
   text-align: left;
   color: var(--c-ink);
   background: var(--c-paper);
   border: var(--b-box);
-  border-radius: 0;
+  border-radius: var(--r-node);
+  box-shadow: var(--sh-node);
   font: inherit;
   cursor: pointer;
 }
@@ -27,11 +35,14 @@
 .node .n-state { grid-column: 1; grid-row: 2; }
 .node .sym { grid-column: 2; grid-row: 1 / 3; }
 .node .n-meta { grid-column: 1 / 3; grid-row: 3; font-size: var(--fs-meta); color: var(--c-dark); white-space: nowrap; overflow: hidden; }
-.node.is-run { background: var(--c-ink); color: var(--c-paper); }
-.node.is-run .n-meta { color: var(--c-paper); }
-.pbar { grid-column: 1 / 3; grid-row: 3; position: relative; height: 8px; border: 1px solid currentColor; overflow: hidden; }
-.node.is-fail { border: var(--b-box-fail); }
-.node.is-wait { background: var(--c-light); }
+/* 실행 중·Lead = 패널과 같은 굵은 이중 테두리 + 밝은 바탕 + 알약형 진행 막대 (반전 없음) */
+.node.is-run { border: var(--b-panel); box-shadow: var(--sh-panel); padding: var(--pad-node-run); }
+.pbar { grid-column: 1 / 3; grid-row: 3; position: relative; height: 8px; border: 1px solid currentColor; border-radius: var(--r-pbar); overflow: hidden; }
+.pbar i { border-radius: var(--r-pbar-fill); }
+/* 실패 = 이중선 없이 점선 테두리 */
+.node.is-fail { border: var(--b-box-fail); box-shadow: none; }
+/* 대기 = 회색 바탕(틈도 회색) */
+.node.is-wait { background: var(--c-light); box-shadow: var(--sh-node-wait); }
 .node.is-wait .n-meta { color: var(--c-ink); }
 .side-note { position: absolute; width: 168px; margin: 0; color: var(--c-dark); font-size: var(--fs-meta); }
 
