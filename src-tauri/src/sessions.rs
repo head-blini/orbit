@@ -32,6 +32,8 @@ pub struct Agent {
     pub started_ms: Option<u64>,
     pub duration_ms: Option<u64>,
     pub tokens: Option<u64>,
+    /// 단계 열(1부터). 생성 때 한 번 정해지고 합치기(min) 외에는 바뀌지 않는다.
+    pub col: u32,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -110,7 +112,11 @@ fn node_by_tool(agents: &mut Vec<Agent>, tuid: &str) -> usize {
 }
 
 fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>, state: NodeState, started: Option<u64>) -> usize {
-    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None });
+    // 마지막 열에 이미 끝난 노드가 하나라도 있으면 다음 열. 시각이 아니라 생성 순서로 안다.
+    let last = agents.iter().map(|a| a.col).max().unwrap_or(1);
+    let finished = agents.iter().any(|a| a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
+    let col = if finished { last + 1 } else { last };
+    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col });
     if agents.len() > MAX_AGENTS {
         agents.remove(0);
     }
@@ -186,6 +192,7 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
                         a.started_ms = a.started_ms.into_iter().chain(o.started_ms).min();
                         a.duration_ms = a.duration_ms.or(o.duration_ms);
                         a.tokens = a.tokens.or(o.tokens);
+                        a.col = a.col.min(o.col);
                     }
                 }
                 agents[i].agent_id = Some(id.to_string());
@@ -871,5 +878,174 @@ mod tests {
         }
         assert_eq!(ag(&st).len(), MAX_AGENTS);
         assert_eq!(ag(&st)[0].tool_use_id.as_deref(), Some("c1"));
+    }
+
+    fn pre(st: &mut Store, id: &str) {
+        st.ingest_hook(&ah("PreToolUse", "Agent", id, json!({})), 1);
+    }
+    fn post(st: &mut Store, id: &str) {
+        st.ingest_hook(&ah("PostToolUse", "Agent", id, json!({"tool_response":{"status":"completed"}})), 1);
+    }
+    fn cols(st: &Store) -> Vec<u32> {
+        ag(st).iter().map(|a| a.col).collect()
+    }
+    fn no_ts(mut v: Value) -> Value {
+        v.as_object_mut().unwrap().remove("timestamp");
+        v
+    }
+    const T0: &str = "2000-03-01T00:00:00Z";
+
+    #[test]
+    fn r_col_parallel_then_next() {
+        let mut st = Store::default();
+        for t in ["t1", "t2", "t3"] {
+            pre(&mut st, t);
+        }
+        assert_eq!(cols(&st), [1, 1, 1]);
+        post(&mut st, "t2");
+        pre(&mut st, "t4");
+        pre(&mut st, "t5");
+        assert_eq!(cols(&st), [1, 1, 1, 2, 2]);
+    }
+
+    fn decisions13(st: &mut Store) {
+        for t in ["a", "p"] {
+            pre(st, t);
+            post(st, t);
+        }
+        for t in ["e1", "e2", "e3"] {
+            pre(st, t);
+        }
+        post(st, "e1");
+        pre(st, "r");
+    }
+
+    #[test]
+    fn r_col_decisions_example() {
+        let mut st = Store::default();
+        decisions13(&mut st);
+        assert_eq!(cols(&st), [1, 2, 3, 3, 3, 4]);
+    }
+
+    #[test]
+    fn r_col_is_immutable() {
+        let mut st = Store::default();
+        decisions13(&mut st);
+        let key = |st: &Store| -> Vec<(Option<String>, u32)> { ag(st).iter().map(|a| (a.tool_use_id.clone(), a.col)).collect() };
+        let before = key(&st);
+        post(&mut st, "e2");
+        post(&mut st, "e3");
+        let e = json!({"tool_input":{"subagent_type":"engineer"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "e3", e), 1); // no-op re-Pre
+        st.ingest_hook(&sub("SubagentStart", "z1", json!("engineer")), 1);
+        st.ingest_hook(&sub("SubagentStop", "z1", json!("engineer")), 1);
+        st.ingest_hook(&sub("SubagentStart", "z1", json!("engineer")), 1);
+        let mut p = h("PermissionRequest");
+        p["agent_id"] = json!("z1");
+        st.ingest_hook(&p, 1);
+        st.ingest_log(S, &alog("e1", "Agent", json!({}), T0, false), 1);
+        st.ingest_log(S, &rlog("e1", T0, false), 1);
+        st.ingest_log(S, &alog("n1", "Agent", json!({}), T0, false), 1);
+        st.ingest_hook(&ah("PostToolUseFailure", "Agent", "f1", json!({})), 1);
+        let after = key(&st);
+        assert_eq!(&after[..before.len()], &before[..]);
+        assert!(after[before.len()..].iter().all(|(_, c)| *c >= 4));
+    }
+
+    #[test]
+    fn r_col_unfinished_stays_in_column() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "w1", json!("engineer")), 1);
+        let mut p = h("PermissionRequest");
+        p["agent_id"] = json!("w1");
+        st.ingest_hook(&p, 1);
+        assert_eq!(ag(&st)[0].state, NodeState::Waiting);
+        pre(&mut st, "t2");
+        assert_eq!(cols(&st), [1, 1]);
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("u1", "Agent", json!({}), T0, false), 1);
+        pre(&mut st, "t2");
+        assert_eq!((ag(&st)[0].state, cols(&st)), (NodeState::Unknown, vec![1, 1]));
+    }
+
+    #[test]
+    fn r_col_failure_counts_as_finished() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PostToolUseFailure", "Agent", "t1", json!({})), 1);
+        pre(&mut st, "t2");
+        assert_eq!(cols(&st), [1, 2]);
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("u1", "Agent", json!({}), T0, false), 1);
+        st.ingest_log(S, &rlog("u1", T0, true), 1);
+        st.ingest_log(S, &alog("u2", "Agent", json!({}), T0, false), 1);
+        assert_eq!(cols(&st), [1, 2]);
+    }
+
+    #[test]
+    fn r_col_log_restore() {
+        for strip in [false, true] {
+            let f = |v: Value| if strip { no_ts(v) } else { v };
+            let mut st = Store::default();
+            st.ingest_log(S, &f(alog("u1", "Agent", json!({}), "2000-03-01T00:00:00Z", false)), 1);
+            st.ingest_log(S, &f(rlog("u1", "2000-03-01T00:00:02Z", false)), 1);
+            st.ingest_log(S, &f(alog("u2", "Agent", json!({}), "2000-03-01T00:00:03Z", false)), 1);
+            st.ingest_log(S, &f(alog("u3", "Agent", json!({}), "2000-03-01T00:00:04Z", false)), 1);
+            assert_eq!(cols(&st), [1, 2, 2]);
+        }
+    }
+
+    #[test]
+    fn r_col_mixed_clocks_use_event_order() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 9_000_000_000_000);
+        st.ingest_log(S, &alog("u2", "Agent", json!({}), T0, false), 1);
+        assert_eq!(ag(&st)[0].tool_use_id.as_deref(), Some("t1"));
+        assert_eq!(cols(&st), [1, 1]);
+        post(&mut st, "t1");
+        st.ingest_log(S, &alog("u3", "Agent", json!({}), T0, false), 1);
+        assert_eq!(cols(&st), [1, 1, 2]);
+    }
+
+    #[test]
+    fn r_col_born_finished() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStop", "zz", json!("x")), 1);
+        assert_eq!((ag(&st)[0].state, cols(&st)), (NodeState::Done, vec![1]));
+        pre(&mut st, "t2");
+        assert_eq!(cols(&st), [1, 2]);
+    }
+
+    #[test]
+    fn r_col_merge_takes_min() {
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", "a2", json!("Explore")), 1);
+        pre(&mut st, "t9");
+        post(&mut st, "t9");
+        let inp = json!({"tool_input":{"subagent_type":"Plan"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", inp), 1);
+        assert_eq!(cols(&st), [1, 1, 2]);
+        let p = json!({"tool_response":{"status":"completed","agentId":"a2"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t2", p), 1);
+        assert_eq!((ag(&st).len(), ag(&st)[1].tool_use_id.as_deref(), ag(&st)[1].col), (2, Some("t2"), 1));
+    }
+
+    #[test]
+    fn r_col_eviction_keeps_cols() {
+        let mut st = Store::default();
+        for i in 0..=MAX_AGENTS {
+            pre(&mut st, &format!("c{i}"));
+        }
+        assert_eq!(ag(&st).len(), MAX_AGENTS);
+        assert!(cols(&st).iter().all(|c| *c == 1));
+        post(&mut st, "c5");
+        pre(&mut st, "next");
+        assert_eq!(ag(&st).last().unwrap().col, 2);
+    }
+
+    #[test]
+    fn r_col_json() {
+        let mut st = Store::default();
+        pre(&mut st, "t1");
+        assert_eq!(serde_json::to_value(&ag(&st)[0]).unwrap()["col"], 1);
     }
 }
