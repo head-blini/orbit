@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLine, redact, target, fromSdk, createPermits } from "./core.mjs";
+import { parseLine, redact, target, fromSdk, markInterrupt, createPermits } from "./core.mjs";
 
 const se = (event, extra = {}) => ({ type: "stream_event", event, parent_tool_use_id: null, ...extra });
 const td = (text, extra) => se({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }, extra);
@@ -35,6 +35,35 @@ test("(b) init, result, 중단", () => {
   assert.deepEqual(fromSdk(td("x"), st), []);
   assert.deepEqual(fromSdk({ type: "result", subtype: "success", is_error: false }, st), [{ t: "stopped" }]);
   assert.equal(st.interrupting, false);
+});
+
+test("(b2) 턴 밖의 중단은 플래그를 남기지 않는다", () => {
+  const st = { interrupting: false, turns: 0 };
+  markInterrupt(st); // idle
+  assert.equal(st.interrupting, false);
+  st.turns = 1; // 턴 시작
+  markInterrupt(st);
+  assert.equal(st.interrupting, true);
+  assert.deepEqual(fromSdk({ type: "result", subtype: "success", is_error: false }, st), [{ t: "stopped" }]);
+  assert.equal(st.turns, 0);
+  markInterrupt(st); // 턴 직후
+  assert.equal(st.interrupting, false);
+  assert.deepEqual(fromSdk(td("다음 턴"), st), [{ t: "delta", text: "다음 턴" }]);
+});
+
+test("(b3) result 오류 메시지의 키는 가려진다", () => {
+  const r = fromSdk({ type: "result", subtype: "success", is_error: true, result: "bad key sk-ant-abc123-XYZ here" }, { interrupting: false });
+  assert.equal(r[0].t, "error");
+  assert.ok(!r[0].message.includes("sk-ant-"));
+});
+
+test("(c0) Bash command가 문자열이 아니면 session 규칙이 안 생긴다", async () => {
+  const { out, p } = mk();
+  const r1 = p.canUseTool("Bash", { command: 5 }, { signal: sig() });
+  p.permit(out[0].id, "session");
+  await r1;
+  p.canUseTool("Bash", { command: 5 }, { signal: sig() });
+  assert.equal(out.filter((m) => m.t === "permit").length, 2);
 });
 
 const mk = () => {

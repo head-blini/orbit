@@ -1,6 +1,6 @@
 // 사이드카: stdin JSON 줄 <-> Agent SDK query() <-> stdout JSON 줄. 프로토콜은 PLAN.md "프로토콜" 절.
 import { createInterface } from "node:readline";
-import { createPermits, fromSdk, parseLine, redact } from "./core.mjs";
+import { createPermits, fromSdk, markInterrupt, parseLine, redact } from "./core.mjs";
 
 const out = (obj, done) => process.stdout.write(JSON.stringify(obj) + "\n", done);
 const diag = (s) => process.stderr.write(redact(s) + "\n");
@@ -15,7 +15,7 @@ if (maj < 18 || (maj === 18 && min < 14)) {
 
 function main() {
   const permits = createPermits(out);
-  const st = { interrupting: false };
+  const st = { interrupting: false, turns: 0 };
   const inbox = []; // 아직 SDK가 안 가져간 user 메시지
   let wake = null;
   let closing = false;
@@ -23,6 +23,7 @@ function main() {
 
   const userMsg = (text) => ({ type: "user", message: { role: "user", content: String(text) }, parent_tool_use_id: null });
   const push = (text) => {
+    st.turns++;
     inbox.push(userMsg(text));
     wake?.();
   };
@@ -67,6 +68,7 @@ function main() {
         for (const o of fromSdk(m, st)) out(o);
       }
     } catch (e) {
+      permits.denyAll("오류"); // 열린 카드에 closed를 먼저 보낸다
       if (closing) return;
       out({ t: "error", message: redact(String(e?.message ?? e)) }, () => process.exit(1));
     }
@@ -74,7 +76,7 @@ function main() {
 
   async function interrupt() {
     permits.denyAll("중단됨");
-    st.interrupting = true;
+    markInterrupt(st);
     try {
       await q?.interrupt();
     } catch {}

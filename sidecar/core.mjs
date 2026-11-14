@@ -37,6 +37,7 @@ export function fromSdk(msg, st) {
   }
   if (msg.type === "system" && msg.subtype === "init") return [{ t: "session", id: String(msg.session_id) }];
   if (msg.type === "result") {
+    st.turns = Math.max(0, (st.turns | 0) - 1);
     if (st.interrupting) {
       st.interrupting = false;
       return [{ t: "stopped" }];
@@ -46,6 +47,11 @@ export function fromSdk(msg, st) {
     return [{ t: "error", message: redact(why) }];
   }
   return [];
+}
+
+// 실행 중인 턴(st.turns > 0)이 있을 때만 중단 플래그를 켠다. 아니면 다음 턴이 잘못 중단된다.
+export function markInterrupt(st) {
+  if (st.turns > 0) st.interrupting = true;
 }
 
 const str = (v) => String(v ?? "");
