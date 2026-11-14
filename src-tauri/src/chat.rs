@@ -23,7 +23,7 @@ pub struct Chat {
 impl Chat {
     /// 사이드카가 없으면 띄워 `start`를, 있으면 `send`를 쓴다(있을 때 cwd는 무시).
     pub fn send(&self, app: &tauri::AppHandle, cwd: Option<String>, text: &str) -> Result<(), String> {
-        if self.proc.lock().map_err(|_| "잠금 오류")?.is_some() {
+        if self.proc.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
             return self.write(&json!({"t": "send", "text": text}));
         }
         let app = app.clone();
@@ -33,17 +33,14 @@ impl Chat {
     }
 
     pub fn write(&self, msg: &Value) -> Result<(), String> {
-        let mut g = self.proc.lock().map_err(|_| "잠금 오류")?;
+        let mut g = self.proc.lock().unwrap_or_else(|e| e.into_inner());
         let p = g.as_mut().ok_or("대화가 없습니다")?;
         write_json(&mut p.stdin, msg)
     }
 
     /// close → stdin 닫기 → 3초 대기 → 안 끝나면 트리째 종료. 여러 번 불러도 된다.
     pub fn stop(&self) {
-        let taken = match self.proc.lock() {
-            Ok(mut g) => g.take(),
-            Err(_) => return,
-        };
+        let taken = self.proc.lock().unwrap_or_else(|e| e.into_inner()).take();
         let Some(Proc { mut child, mut stdin, .. }) = taken else { return };
         let _ = write_json(&mut stdin, &json!({"t": "close"}));
         drop(stdin);
@@ -80,7 +77,7 @@ impl Chat {
         if !std::path::Path::new(cwd).is_dir() {
             return Err("폴더가 없습니다".into());
         }
-        let mut g = self.proc.lock().map_err(|_| "잠금 오류")?;
+        let mut g = self.proc.lock().unwrap_or_else(|e| e.into_inner());
         if g.is_some() {
             return Err("이미 대화가 있습니다".into());
         }
@@ -116,10 +113,9 @@ impl Chat {
         std::thread::spawn(move || {
             pump(BufReader::new(stdout), &mut on_line);
             // 지금 대화일 때만 exit을 알린다(새 대화로 끈 프로세스의 exit는 버림)
-            let mine = match slot.lock() {
-                Ok(mut g) if g.as_ref().is_some_and(|p| p.epoch == epoch) => g.take(),
-                _ => None,
-            };
+            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+            let mine = if g.as_ref().is_some_and(|p| p.epoch == epoch) { g.take() } else { None };
+            drop(g);
             if let Some(mut p) = mine {
                 let _ = p.child.wait();
                 on_line(json!({"t": "exit"}));
@@ -235,8 +231,8 @@ mod tests {
     }
 
     #[test]
-    fn pump_never_buffers_more_than_max_line() {
-        // 작은 BufRead 버퍼로 읽어도 상한을 넘는 줄은 한 번도 emit되지 않고 뒤 줄은 산다.
+    fn pump_drops_overlong_line_with_tiny_reader_buffer() {
+        // 누적 버퍼 크기는 관측할 수 없어 단언하지 않는다: 작은 BufRead 버퍼로 읽어도 상한 초과 줄만 버려지고 뒤 줄은 산다.
         let mut b = vec![b'a'; MAX_LINE * 3];
         b.extend_from_slice(b"\n{\"t\":\"ok\"}\n");
         let mut out = Vec::new();
