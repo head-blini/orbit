@@ -2,7 +2,8 @@ export type Source = "hook" | "log" | "both";
 export type SessionState = "working" | "waiting" | "done" | "error";
 export type NodeState = "running" | "waiting" | "done" | "failed" | "unknown";
 export type Agent = { tool_use_id: string | null; agent_id: string | null; kind: string | null; description: string | null;
-  state: NodeState; started_ms: number | null; duration_ms: number | null; tokens: number | null };
+  state: NodeState; started_ms: number | null; duration_ms: number | null; tokens: number | null;
+  col: number };
 export type Session = { id: string; cwd: string | null; started_ms: number | null; last_ms: number; source: Source;
   ver: number; state: SessionState; agents: Agent[]; stalled: boolean };
 
