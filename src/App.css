@@ -97,6 +97,7 @@ body {
 .sess .sym { justify-self: end; }
 .sess .time { grid-column: 2 / 4; color: var(--c-dark); font-size: var(--fs-meta); }
 .sess:hover { background: var(--c-light); }
+.sess:hover .time { color: var(--c-ink); }
 /* 6개 이상이면 선택하지 않은 줄은 한 줄 칩 (decisions.md 44) */
 .sess.chip { grid-template-columns: 12px 1fr auto auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); }
 .sess.chip .cur { grid-row: 1; }

@@ -63,8 +63,12 @@ pub struct Session {
 
 /// 내보내기용 복제본. 멈춤 판정은 여기서만 한다.
 pub fn snapshot(s: &Session, now: u64) -> Session {
-    let mut c = s.clone();
-    c.stalled = s.state == State::Working && now.saturating_sub(s.last_ms) > STALL_MS;
+    stalled(s.clone(), now)
+}
+
+/// 이미 복제한 값을 소비해 멈춤만 채운다.
+pub fn stalled(mut c: Session, now: u64) -> Session {
+    c.stalled = c.state == State::Working && now.saturating_sub(c.last_ms) > STALL_MS;
     c
 }
 
@@ -138,7 +142,7 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
             if let Some(i) = aid.and_then(|id| by_aid(agents, id)) {
                 match (waits, agents[i].state) {
                     (true, NodeState::Running) => agents[i].state = NodeState::Waiting,
-                    (false, NodeState::Waiting) if name.ends_with("ToolUse") || name == "PostToolUseFailure" => agents[i].state = NodeState::Running,
+                    (false, NodeState::Waiting) if matches!(name, "PreToolUse" | "PostToolUse" | "PostToolUseFailure") => agents[i].state = NodeState::Running,
                     _ => {}
                 }
             }
@@ -168,16 +172,21 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
             let Some(r) = v.get("tool_response").and_then(Value::as_object) else { return };
             if let Some(id) = r.get("agentId").and_then(Value::as_str) {
                 if let Some(j) = agents.iter().enumerate().position(|(k, a)| k != i && a.agent_id.as_deref() == Some(id)) {
-                    let o = agents.remove(j);
-                    if j < i {
-                        i -= 1;
+                    if agents[j].tool_use_id.is_some() {
+                        // 자기 호출을 가진 노드는 합치지 않는다. 엇갈린 짝짓기였으니 id만 비운다.
+                        agents[j].agent_id = None;
+                    } else {
+                        let o = agents.remove(j);
+                        if j < i {
+                            i -= 1;
+                        }
+                        let a = &mut agents[i];
+                        a.kind = a.kind.take().or(o.kind);
+                        a.description = a.description.take().or(o.description);
+                        a.started_ms = a.started_ms.into_iter().chain(o.started_ms).min();
+                        a.duration_ms = a.duration_ms.or(o.duration_ms);
+                        a.tokens = a.tokens.or(o.tokens);
                     }
-                    let a = &mut agents[i];
-                    a.kind = a.kind.take().or(o.kind);
-                    a.description = a.description.take().or(o.description);
-                    a.started_ms = a.started_ms.into_iter().chain(o.started_ms).min();
-                    a.duration_ms = a.duration_ms.or(o.duration_ms);
-                    a.tokens = a.tokens.or(o.tokens);
                 }
                 agents[i].agent_id = Some(id.to_string());
             }
@@ -239,7 +248,8 @@ fn log_agent(agents: &mut Vec<Agent>, b: &Value, phase: Phase, id: &str, ts: Opt
         } else if a.state == NodeState::Unknown {
             a.state = NodeState::Done;
         }
-        if a.duration_ms.is_none() {
+        // 실행 중·대기 노드의 시간은 훅(SubagentStop·Post)이 채운다
+        if a.duration_ms.is_none() && !matches!(a.state, NodeState::Running | NodeState::Waiting) {
             a.duration_ms = a.started_ms.zip(ts).map(|(s, e)| e.saturating_sub(s));
         }
     }
@@ -750,6 +760,33 @@ mod tests {
         let a = &ag(&st)[0];
         assert_eq!(ag(&st).len(), 1);
         assert_eq!((a.tool_use_id.as_deref(), a.agent_id.as_deref(), a.started_ms), (Some("t2"), Some("a2"), Some(10)));
+    }
+
+    #[test]
+    fn s2_merge_keeps_node_with_own_tool_use_id() {
+        let mut st = Store::default();
+        let inp = json!({"tool_input":{"subagent_type":"x","description":"d"}});
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", inp.clone()), 10);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", inp), 11);
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("x")), 12);
+        st.ingest_hook(&sub("SubagentStart", "a2", json!("x")), 13);
+        // 엇갈린 짝: t2의 Post가 a1을 알린다. a1을 가진 t1은 아직 실행 중이다.
+        let post = json!({"tool_response":{"status":"completed","agentId":"a1"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t2", post), 30);
+        assert_eq!(ag(&st).len(), 2);
+        let t1 = ag(&st).iter().find(|a| a.tool_use_id.as_deref() == Some("t1")).unwrap();
+        assert_eq!((t1.kind.as_deref(), t1.description.as_deref(), t1.state), (Some("x"), Some("d"), NodeState::Running));
+    }
+
+    #[test]
+    fn t2_log_result_does_not_fix_duration_of_running_node() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t8", json!({})), 1);
+        st.ingest_log(S, &alog("t8", "Agent", json!({}), "2000-03-01T00:00:00Z", false), 1);
+        let post = json!({"tool_response":{"status":"async_launched"}});
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t8", post), 2);
+        st.ingest_log(S, &rlog("t8", "2000-03-01T00:00:01Z", false), 1);
+        assert_eq!((ag(&st)[0].state, ag(&st)[0].duration_ms), (NodeState::Running, None));
     }
 
     #[test]

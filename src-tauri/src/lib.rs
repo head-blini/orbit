@@ -77,7 +77,7 @@ fn get_status(state: State<AppState>) -> Status {
 #[tauri::command(async)]
 fn get_sessions(state: State<AppState>) -> Vec<sessions::Session> {
     let now = sessions::now_ms();
-    lock(&state.store).all().iter().map(|s| sessions::snapshot(s, now)).collect()
+    lock(&state.store).all().into_iter().map(|s| sessions::stalled(s, now)).collect()
 }
 
 #[tauri::command(async)]

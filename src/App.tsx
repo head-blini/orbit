@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
-import { fmtDur, fmtTime, fmtTokens, folderName, nodeKey, shownState, type NodeState, type Session } from "./types";
+import { CHIP_AT, LEAD_LABEL, NODE_LABEL, fmtDur, fmtTime, fmtTokens, folderName, nodeKey, shownState, type Session } from "./types";
 import "./App.css";
 
 type Status = {
@@ -17,10 +17,8 @@ type Status = {
   screens_dir: string;
 };
 
-const CHIP_AT = 6;
 const SOURCE_LABEL = { hook: "훅", log: "로그", both: "훅 + 로그" } as const;
 const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
-const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
 
 function Sym({ state }: { state: keyof typeof STATE_LABEL }) {
   return (
@@ -170,7 +168,7 @@ export default function App() {
             <h3 className="px">노드</h3>
             <dl>
               <dt>종류</dt><dd>{curAgent ? curAgent.kind ?? curAgent.description ?? "—" : "Lead"}</dd>
-              <dt>상태</dt><dd>{curAgent ? NODE_LABEL[curAgent.state] ?? "—" : STATE_LABEL[shownState(cur)]}</dd>
+              <dt>상태</dt><dd>{curAgent ? NODE_LABEL[curAgent.state] ?? "—" : LEAD_LABEL[shownState(cur)]}</dd>
               <dt>시작</dt><dd>{fmtTime(curAgent ? curAgent.started_ms : cur.started_ms, now)}</dd>
               <dt>시간</dt><dd>{curAgent ? fmtDur(curAgent.duration_ms) : "—"}</dd>
               <dt>토큰</dt><dd>{curAgent ? fmtTokens(curAgent.tokens) : "—"}</dd>

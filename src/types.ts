@@ -6,6 +6,10 @@ export type Agent = { tool_use_id: string | null; agent_id: string | null; kind:
 export type Session = { id: string; cwd: string | null; started_ms: number | null; last_ms: number; source: Source;
   ver: number; state: SessionState; agents: Agent[]; stalled: boolean };
 
+export const CHIP_AT = 6;
+export const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
+export const LEAD_LABEL = { working: "실행 중", waiting: "대기", done: "끝남", error: "실패", stalled: "멈춤(추정)" } as const;
+
 export const shownState = (s: Session) => (s.stalled ? "stalled" : s.state); // 판정은 Rust snapshot이 한다
 export const nodeKey = (a: Agent) => a.tool_use_id ?? a.agent_id ?? "";
 

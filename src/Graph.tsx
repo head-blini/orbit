@@ -1,11 +1,8 @@
-import { fmtDur, fmtTokens, nodeKey, shownState, type NodeState, type Session } from "./types";
+import { CHIP_AT, LEAD_LABEL, NODE_LABEL, fmtDur, fmtTokens, nodeKey, shownState, type NodeState, type Session } from "./types";
 import "./Graph.css";
 
-const CHIP_AT = 6;
 const W = 168, H = 60, CHIP_H = 24, GAP = 10, X1 = 248, XM = 208;
 
-const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
-const LEAD_LABEL = { working: "실행 중", waiting: "대기", done: "끝남", error: "실패", stalled: "멈춤(추정)" } as const;
 type Kind = "run" | "wait" | "fail" | "none";
 const SYMBOL: Record<NodeState, string> = { running: "", waiting: "!", done: "", failed: "✕", unknown: "—" };
 
@@ -43,8 +40,8 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
   const render = (b: Box, x: number) => (
     <li key={b.key || `i${b.y}`} style={{ left: x, top: b.y, height: b.h }}>
       <button type="button" aria-current={b.key === selected ? "true" : undefined} onClick={() => onSelect(b.key)}
-        className={`node${b.cls === "none" ? "" : ` is-${b.cls === "run" ? "run" : b.cls === "wait" ? "wait" : "fail"}`}${b.chip ? " chip" : ""}`}>
-        <span className="n-name px">{b.name}</span>
+        className={`node${b.cls === "none" ? "" : ` is-${b.cls}`}${b.chip ? " chip" : ""}`}>
+        <span className="n-name px"><span className="mark" aria-hidden="true">▶ </span>{b.name}</span>
         {b.chip ? <span className="sr">{b.label}</span> : <span className="n-state px">{b.label}</span>}
         {b.sym && <span className={`sym${b.blink ? " blink" : ""}`} aria-hidden="true">{b.sym}</span>}
         {!b.chip && (b.cls === "run" ? <span className="pbar" aria-hidden="true"><i /></span> : b.meta && <span className="n-meta">{b.meta}</span>)}

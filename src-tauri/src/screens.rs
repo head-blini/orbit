@@ -20,6 +20,7 @@ pub fn list(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+// 방어선(도달 경로 없음): list에서는 앞의 is_file()이 링크를 이미 걸러 이 검사가 거르는 입력을 만들 수 없다. 지우지 않는다.
 fn inside(dir_canon: &Path, p: &Path) -> bool {
     p.canonicalize().ok().and_then(|c| c.parent().map(|d| d == dir_canon)).unwrap_or(false)
 }
@@ -96,6 +97,8 @@ mod tests {
         // 권한이 없어 링크를 못 만들면(Windows 일반 사용자) 이 단언은 건너뛴다.
         if r.is_ok() {
             assert!(list(&dir).is_empty());
+        } else {
+            eprintln!("symlink_out_is_excluded: 링크를 만들 수 없어 단언을 건너뜀: {:?}", r);
         }
         let _ = std::fs::remove_dir_all(&root);
     }

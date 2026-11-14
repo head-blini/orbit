@@ -22,8 +22,8 @@
   cursor: pointer;
 }
 .node .n-name { grid-column: 1; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.node .n-name::before { content: "▶ "; visibility: hidden; }
-.node[aria-current="true"] .n-name::before { visibility: visible; }
+.node .mark { visibility: hidden; }
+.node[aria-current="true"] .mark { visibility: visible; }
 .node .n-state { grid-column: 1; grid-row: 2; }
 .node .sym { grid-column: 2; grid-row: 1 / 3; }
 .node .n-meta { grid-column: 1 / 3; grid-row: 3; font-size: var(--fs-meta); color: var(--c-dark); white-space: nowrap; overflow: hidden; }
@@ -37,6 +37,7 @@
 
 /* 6개 이상이면 선택하지 않은 노드는 한 줄 칩 (decisions.md 44) */
 .node.chip { grid-template-columns: 1fr auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); }
+.node.chip.is-fail { border-style: dashed; }
 .node.chip .sym { grid-row: 1; }
 
 @media (prefers-reduced-motion: reduce) {
