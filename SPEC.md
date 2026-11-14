@@ -22,15 +22,15 @@ Orbit은 Claude Code를 **하네스 · 그래프 · 루프 엔지니어링**으�
 ### 데이터 수집
 1. **훅 수신 서버 (Rust, Tauri 백엔드 안)**
    - `127.0.0.1` 에만 바인딩 (외부 노출 금지)
-   - 앱 최초 실행 시 랜덤 토큰 생성 → 요청 헤더로 검증 (로컬의 다른 프로세스가 가짜 이벤트를 넣지 못하게)
+   - 앱 최초 실행 시 랜덤 토큰 생성 + 빈 포트를 골라 저장(이후 재사용) → 요청 헤더로 검증 (로컬의 다른 프로세스가 가짜 이벤트를 넣지 못하게). 토큰·포트는 Tauri `app_data_dir` 아래 파일에 둔다(키체인 아님)
    - `POST /events` 로 Claude Code 훅 페이로드(JSON)를 받아 프론트로 emit
-   - 수신 이벤트: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, Stop, Notification 등
+   - 수신 이벤트 12개: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, Stop, Notification, SubagentStart, PostToolUseFailure, PermissionRequest, SessionEnd, StopFailure
      (정확한 이벤트 이름과 페이로드 필드는 **반드시 최신 Claude Code 훅 문서로 확인**)
 2. **훅 설치 도우미**
-   - Orbit 화면의 버튼으로 `~/.claude/settings.json`(전역) 또는 프로젝트 `.claude/settings.json`에 훅 항목을 추가
+   - Orbit 화면의 버튼으로 전역 `~/.claude/settings.json`에만 훅 항목을 추가 (프로젝트별 설치 없음). 토큰이 평문으로 저장된다는 안내를 화면에 한 줄 표시
    - 기존 설정은 백업 후 병합 (덮어쓰기 금지), 제거 버튼도 제공
-   - Windows에서 동작하는 명령으로 작성 (예: 훅 stdin을 그대로 로컬 서버로 POST)
-   - 훅은 Orbit이 꺼져 있어도 Claude Code를 막거나 느리게 만들면 안 됨 → 짧은 타임아웃, 실패 시 조용히 종료
+   - http 훅(`type:"http"`, `http://127.0.0.1:<port>/events`)으로 작성, 모든 항목에 `timeout` 2초 명시
+   - 훅은 Orbit이 꺼져 있어도 Claude Code를 막거나 느리게 만들면 안 됨 → 2초 타임아웃, 실패 시 조용히 종료
 3. **세션 로그 감시**
    - `~/.claude/projects/` 아래 세션 JSONL 파일을 감시(notify 등)해서 새 줄을 파싱
    - 훅 이벤트와 세션 ID 기준으로 합치고 중복 제거
@@ -109,7 +109,7 @@ Orbit은 Claude Code를 **하네스 · 그래프 · 루프 엔지니어링**으�
 
 - 이벤트는 훅 · 로그 · SDK 세 경로에서 같은 것이 들어올 수 있다. `(세션 ID, 중복 키)`에 유일 제약을 걸어 중복을 막는다(중복 키: `tool_use_id` + 종류, 없으면 로그 줄의 uuid).
 - 스키마가 바뀔 수 있는 원본 페이로드는 JSON 열에 그대로 두고, 화면에 필요한 값만 열로 뽑는다. 모르는 필드 때문에 저장이 실패하면 안 된다.
-- 토큰 · API 키 · 인증 정보는 DB에 저장하지 않는다(OS 키체인). 페이로드에는 프롬프트 · 코드 · 비밀값이 섞일 수 있으므로 DB 파일은 사용자 프로필 권한으로만 두고 로그에 내용을 찍지 않는다.
+- 토큰 · API 키 · 인증 정보는 DB에 저장하지 않는다(API 키는 ⑥에서 OS 키체인, 훅 토큰·포트는 `app_data_dir` 파일). 페이로드에는 프롬프트 · 코드 · 비밀값이 섞일 수 있으므로 DB 파일은 사용자 프로필 권한으로만 두고 로그에 내용을 찍지 않는다.
 
 ### 마이그레이션
 - 순번이 붙은 SQL 파일(`src-tauri/migrations/0001_init.sql`, `0002_…`)을 바이너리에 포함한다.
