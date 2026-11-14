@@ -32,6 +32,12 @@
   --b-box: 2px solid var(--c-ink);
   --b-box-fail: 2px dashed var(--c-ink);
   --b-chip: 1px solid var(--c-ink);
+  /* 그래프 노드 E (run DECISIONS 11) */
+  --r-node: 6px;
+  --sh-node: inset 0 0 0 2px var(--c-paper), inset 0 0 0 3px var(--c-ink);
+  --sh-node-wait: inset 0 0 0 2px var(--c-light), inset 0 0 0 3px var(--c-ink);
+  --r-pbar: 4px; --r-pbar-fill: 2px;
+  --pad-node: var(--s-1) 10px; --pad-node-run: 3px 9px; /* 테두리 2→3px일 때 안쪽 칸 48px 유지 */
   --r-bezel: 6px 6px 24px 6px;
   /* motion */
   --m-blink: 1s; --m-flow: 0.8s; --m-bar: 1.2s;
@@ -121,8 +127,19 @@ body {
 }
 @keyframes bar { from { left: -35%; } to { left: 100%; } }
 
-/* 그래프: 가로 흐름 (decisions.md 46), 직각 간선·네모 점선 (decisions.md 39) */
-.canvas { position: relative; width: 416px; height: 340px; margin: var(--s-2) 0 0 var(--s-2); }
+/* 그래프: 가로 흐름 (decisions.md 46), 직각 간선·네모 점선 (decisions.md 39)
+   개정(run DECISIONS 11~13): 노드 = E "작은 RPG 대화창", 배치 = 단계 열(열 간격 48, 세로 간격 12, 버스 = 앞 열 오른쪽 +24).
+   넘치면 .gscroll 안에서 가로·세로 스크롤. 정적 시안이라 "실행 중/대기 열이 보이게 옮긴" 상태를 rtl로 흉내 낸다(앱은 scrollIntoView). */
+.graph { display: flex; flex-direction: column; }
+.gscroll {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  padding: var(--s-1); /* 가장자리 노드의 포커스 링(2px + 2px)이 잘리지 않게 */
+  scrollbar-color: var(--c-ink) var(--c-light);
+}
+.gscroll.end { direction: rtl; }
+.gscroll.end > .canvas { direction: ltr; }
+.canvas { position: relative; }
 .edges { position: absolute; inset: 0; overflow: visible; }
 .edge { fill: none; stroke: var(--c-ink); stroke-width: 2; stroke-dasharray: 4 4; }
 .edge.flow { animation: flow var(--m-flow) linear infinite; }
@@ -135,12 +152,13 @@ body {
   grid-template-columns: 1fr auto;
   grid-template-rows: 16px 16px 16px;
   align-items: center;
-  padding: var(--s-1) var(--s-2);
+  padding: var(--pad-node);
   text-align: left;
   color: var(--c-ink);
   background: var(--c-paper);
   border: var(--b-box);
-  border-radius: 0;
+  border-radius: var(--r-node);
+  box-shadow: var(--sh-node);
   font: inherit;
   cursor: pointer;
 }
@@ -150,16 +168,15 @@ body {
 .node .n-state { grid-column: 1; grid-row: 2; }
 .node .sym { grid-column: 2; grid-row: 1 / 3; }
 .node .n-meta { grid-column: 1 / 3; grid-row: 3; font-size: var(--fs-meta); color: var(--c-dark); white-space: nowrap; overflow: hidden; }
-/* 실행 중 = 반전 + 진행 막대 */
-.node.is-run { background: var(--c-ink); color: var(--c-paper); }
-.node.is-run .n-meta { color: var(--c-paper); }
-.pbar { grid-column: 1 / 3; grid-row: 3; position: relative; height: 8px; border: 1px solid currentColor; overflow: hidden; }
-/* 실패 = 점선 테두리 + ✕ */
-.node.is-fail { border: var(--b-box-fail); }
-/* 대기 = 회색 바탕 + 깜빡이는 ! */
-.node.is-wait { background: var(--c-light); }
+/* 실행 중·Lead = 패널과 같은 굵은 이중 테두리 + 밝은 바탕 + 알약형 진행 막대 (반전 없음) */
+.node.is-run { border: var(--b-panel); box-shadow: var(--sh-panel); padding: var(--pad-node-run); }
+.pbar { grid-column: 1 / 3; grid-row: 3; position: relative; height: 8px; border: 1px solid currentColor; border-radius: var(--r-pbar); overflow: hidden; }
+.pbar i { border-radius: var(--r-pbar-fill); }
+/* 실패 = 이중선 없이 점선 테두리 + ✕ */
+.node.is-fail { border: var(--b-box-fail); box-shadow: none; }
+/* 대기 = 회색 바탕(틈도 회색) + 깜빡이는 ! */
+.node.is-wait { background: var(--c-light); box-shadow: var(--sh-node-wait); }
 .node.is-wait .n-meta { color: var(--c-ink); }
-.side-note { position: absolute; left: 0; top: 214px; width: 168px; color: var(--c-dark); font-size: var(--fs-meta); }
 
 /* 상세·하네스 */
 .detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; }
@@ -264,49 +281,56 @@ dd { margin: 0; overflow-wrap: anywhere; }
   <!-- 가운데 위: 에이전트 그래프. 왼쪽 Lead → 오른쪽 서브에이전트(같은 단계는 세로로 쌓음) -->
   <section class="panel graph" aria-labelledby="h-graph">
     <h2 id="h-graph" class="px">에이전트 그래프</h2>
-    <div class="canvas">
-      <svg class="edges" width="416" height="340" viewBox="0 0 416 340" shape-rendering="crispEdges" aria-hidden="true">
-        <path class="edge" d="M168 170 H208 V30 H248"/>
-        <path class="edge flow" d="M168 170 H208 V100 H248"/>
-        <path class="edge" d="M168 170 H248"/>
-        <path class="edge" d="M168 170 H208 V240 H248"/>
-        <path class="edge" d="M168 170 H208 V310 H248"/>
+    <!-- 열 x = 열번호 × (168 + 48). 세로는 가장 높은 열(engineer×3 = 3×60 + 2×12 = 204)의 가운데 102에 맞춘다.
+         열 규칙 "다음 열로": reviewer는 engineer 하나가 끝난 뒤 시작했으므로 다음 열. 스크롤은 실행 중·대기 노드가 있는 가장 오른쪽 열의 끝. -->
+    <div class="gscroll end">
+    <div class="canvas" style="width:1032px;height:204px">
+      <svg class="edges" width="1032" height="204" viewBox="0 0 1032 204" shape-rendering="crispEdges" aria-hidden="true">
+        <path class="edge" d="M168 102 H216"/>
+        <path class="edge" d="M384 102 H432"/>
+        <path class="edge" d="M600 102 H624 M624 30 V174 M624 30 H648 M624 102 H648"/>
+        <path class="edge flow" d="M624 174 H648"/>
+        <path class="edge" d="M816 30 H840 M816 102 H840 M816 174 H840 M840 30 V174 M840 102 H864"/>
       </svg>
       <ol class="nodes" aria-label="에이전트">
-        <li style="left:0;top:140px"><button type="button" class="node is-run">
+        <li style="left:0;top:72px"><button type="button" class="node is-run">
           <span class="n-name px">Lead</span>
           <span class="n-state px">실행 중</span>
           <span class="pbar" aria-hidden="true"><i></i></span>
         </button></li>
-        <li style="left:248px;top:0"><button type="button" class="node">
+        <li style="left:216px;top:72px"><button type="button" class="node">
           <span class="n-name px">architect</span>
           <span class="n-state px">끝남</span>
           <span class="n-meta">2분 10초 · 41k 토큰</span>
         </button></li>
-        <li style="left:248px;top:70px"><button type="button" class="node is-run" aria-current="true">
+        <li style="left:432px;top:72px"><button type="button" class="node">
+          <span class="n-name px">plan-checker</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">40초 · 12k 토큰</span>
+        </button></li>
+        <li style="left:648px;top:0"><button type="button" class="node">
+          <span class="n-name px">engineer</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">5분 2초 · 88k 토큰</span>
+        </button></li>
+        <li style="left:648px;top:72px"><button type="button" class="node">
+          <span class="n-name px">engineer</span>
+          <span class="n-state px">끝남</span>
+          <span class="n-meta">4분 31초 · 70k 토큰</span>
+        </button></li>
+        <li style="left:648px;top:144px"><button type="button" class="node is-run" aria-current="true">
           <span class="n-name px">engineer</span>
           <span class="n-state px">실행 중</span>
           <span class="pbar" aria-hidden="true"><i></i></span>
         </button></li>
-        <li style="left:248px;top:140px"><button type="button" class="node is-fail">
-          <span class="n-name px">qa</span>
-          <span class="n-state px">실패</span>
-          <span class="sym" aria-hidden="true">✕</span>
-          <span class="n-meta">48초 · —</span>
-        </button></li>
-        <li style="left:248px;top:210px"><button type="button" class="node is-wait">
+        <li style="left:864px;top:72px"><button type="button" class="node is-wait">
           <span class="n-name px">reviewer</span>
           <span class="n-state px">대기</span>
           <span class="sym blink" aria-hidden="true">!</span>
           <span class="n-meta">권한 요청</span>
         </button></li>
-        <li style="left:248px;top:280px"><button type="button" class="node">
-          <span class="n-name px">librarian</span>
-          <span class="n-state px">알 수 없음</span>
-          <span class="sym" aria-hidden="true">—</span>
-          <span class="n-meta">— · —</span>
-        </button></li>
       </ol>
+    </div>
     </div>
   </section>
 
