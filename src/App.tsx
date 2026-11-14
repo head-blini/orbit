@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
+import Chat from "./Chat";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
@@ -183,10 +184,9 @@ export default function App() {
           <span className="tb-srv px" role="status" title={serverText}>{serverText}</span>
           <span className="sep px" aria-hidden="true">·</span>
           <span className="px">{hookText}</span>
-          {status?.installed === true
-            ? <button type="button" className="btn" aria-label="훅 제거" disabled={busy} onClick={() => run("uninstall_hooks")}>제거</button>
-            : <button type="button" className="btn" aria-label="훅 설치" disabled={busy || status?.installed !== false} onClick={() => run("install_hooks")}>설치</button>}
-          <button type="button" className="btn" aria-label="액정 폴더 열기" onClick={openScreens}>액정 폴더</button>
+          {status?.installed !== true &&
+            <button type="button" className="btn" aria-label="훅 설치" disabled={busy || status?.installed !== false} onClick={() => run("install_hooks")}>설치</button>}
+          <button type="button" className="btn" aria-label="게임보이 화면 폴더 열기" onClick={openScreens}>게임보이 화면</button>
         </div>
       </header>
 
@@ -226,16 +226,7 @@ export default function App() {
         {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
-      <section className="panel chat" aria-labelledby="h-chat">
-        <h2 id="h-chat" className="px">채팅</h2>
-        <div className="chat-body"><p className="empty">대화 기능은 ⑥에서 연결됩니다.</p></div>
-        <div className="input-row">
-          <span className="px" aria-hidden="true">▶</span>
-          <input type="text" disabled aria-label="Claude Code에게 보낼 말 (⑥에서 연결)" placeholder="Claude Code에게 무엇을 시킬까?" />
-          <span className="px" aria-hidden="true">▼</span>
-          <span className="tag px">⑥에서 연결</span>
-        </div>
-      </section>
+      <Chat session={cur} />
 
       <div className="console"><Screen /></div>
     </div>

@@ -145,23 +145,8 @@ body {
 .btn:hover { background: var(--c-ink); color: var(--c-paper); }
 .btn:disabled { border-style: dashed; color: var(--c-dark); cursor: default; background: var(--c-paper); }
 
-/* 채팅: 틀과 빈 상태 (run DECISIONS 1) */
-.chat { display: flex; flex-direction: column; }
-.chat-body { flex: 1; display: grid; place-items: center; min-height: 0; }
-.input-row {
-  display: flex; align-items: center; gap: var(--s-2);
-  margin-top: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  border: 2px dashed var(--c-dark);
-  background: var(--c-paper);
-}
-.input-row input {
-  flex: 1; min-width: 0;
-  border: 0; background: transparent;
-  font: var(--fs-body) var(--f-body); color: var(--c-dark);
-}
-.input-row input::placeholder { color: var(--c-dark); }
-.tag { padding: 0 var(--s-1); border: var(--b-chip); color: var(--c-ink); white-space: nowrap; }
+/* 채팅 규칙은 Chat.css. .tag는 Chat.tsx 질문 머리말이 쓴다 */
+.tag{ padding: 0 var(--s-1); border: var(--b-chip); color: var(--c-ink); white-space: nowrap; }
 
 /* 게임기 화면: 패널이 아니라 베젤 자체가 독립 상자 (decisions.md 52, 67) */
 .console {
