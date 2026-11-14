@@ -69,6 +69,7 @@ body {
   border-radius: var(--r-panel);
   box-shadow: var(--sh-panel);
   padding: var(--s-3) var(--s-4);
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -76,7 +77,7 @@ body {
 .panel > h2 { margin: 0 0 var(--s-2); font-weight: normal; }
 .empty { color: var(--c-dark); margin: 0; }
 
-/* 상단 바: ORBIT | 결과(남는 폭, 넘치면 말줄임) | 서버 상태 · 훅 상태 [설치|제거] [액정 폴더] — 한 줄 고정 (run 20261114-roadmap-panel) */
+/* 상단 바: ORBIT | 결과(남는 폭, 넘치면 말줄임) | 서버 상태 · 훅 상태 [설치] [게임보이 화면] — 한 줄 고정 (run 20261114-roadmap-panel) */
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) var(--s-4); white-space: nowrap; }
 .topbar h1 { margin: 0; font-family: var(--f-pixel); font-size: var(--fs-brand); font-weight: normal; letter-spacing: 2px; }
 .tb-result { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--c-dark); font-size: var(--fs-meta); }
@@ -145,23 +146,8 @@ body {
 .btn:hover { background: var(--c-ink); color: var(--c-paper); }
 .btn:disabled { border-style: dashed; color: var(--c-dark); cursor: default; background: var(--c-paper); }
 
-/* 채팅: 틀과 빈 상태 (run DECISIONS 1) */
-.chat { display: flex; flex-direction: column; }
-.chat-body { flex: 1; display: grid; place-items: center; min-height: 0; }
-.input-row {
-  display: flex; align-items: center; gap: var(--s-2);
-  margin-top: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  border: 2px dashed var(--c-dark);
-  background: var(--c-paper);
-}
-.input-row input {
-  flex: 1; min-width: 0;
-  border: 0; background: transparent;
-  font: var(--fs-body) var(--f-body); color: var(--c-dark);
-}
-.input-row input::placeholder { color: var(--c-dark); }
-.tag { padding: 0 var(--s-1); border: var(--b-chip); color: var(--c-ink); white-space: nowrap; }
+/* 채팅 규칙은 Chat.css. .tag는 Chat.tsx 질문 머리말이 쓴다 */
+.tag{ padding: 0 var(--s-1); border: var(--b-chip); color: var(--c-ink); white-space: nowrap; }
 
 /* 게임기 화면: 패널이 아니라 베젤 자체가 독립 상자 (decisions.md 52, 67) */
 .console {
