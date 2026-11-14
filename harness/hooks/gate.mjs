@@ -5,6 +5,7 @@
 // 끄기(하네스 자체를 고칠 때만): ORBIT_GATE=off 로 Claude Code를 실행. settings의 env·disableAllHooks로도 꺼지므로 셸에서 그 문자열을 쓰면 모든 역할에서 막는다(S13).
 // 보장 범위: Claude Code가 이 훅을 실행해 exit 2를 받을 때만 막는다. node가 없거나 시간 초과,
 // 2가 아닌 종료 코드면 Claude Code가 도구를 허용하므로 이 스크립트로는 막을 수 없다.
+// 출고는 VERIFY(full은 SECURITY도)의 COMMIT 줄과 출고 대상 커밋을 대조하고, main/master 위에서는 읽기 git·브랜치 이동·관문을 통과한 merge만 허용한다.
 // 셸은 문자열 검사라서 완전히 가둘 수 없다: 테스트·스캐너를 돌리는 역할(FREE_SHELL)은 출고 검사와 관문·설정 파일 쓰기 문자열 검사(S13)만 받고, librarian은 허용 목록(LIBRARIAN_SHELL)만 쓴다.
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -21,6 +22,7 @@ export const SHIP = {
   standard: ['plan', 'review', 'verify'],
   full: ['plan', 'review', 'verify', 'security'],
 };
+const BINDS = ['verify', 'security']; // 출고 때 COMMIT 줄로 묶는 관문(REVIEW는 묶지 않음)
 const TRACKS = Object.keys(SHIP); // 낮은 트랙부터 높은 트랙 순(하향 판정이 이 순서에 의존)
 
 const roleOf = (p) => (p.agent_type?.startsWith('orbit:') ? p.agent_type.slice(6) : null); // 훅의 agent_type은 범위 이름(S1-Q1)
@@ -107,6 +109,54 @@ export function shipFailures(root = ROOT, ids) {
   return SHIP[run.track].map((g) => gateFailure(run.dir, g)).filter(Boolean);
 }
 
+const gitOut = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+// ref는 git과 같은 해석(태그가 브랜치보다 먼저)으로 푼다. refs/heads/를 붙이면 같은 이름의 태그로 우회된다. 실패하면 null.
+const rev = (dir, ref) => {
+  try {
+    return gitOut(dir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim() || null;
+  } catch {
+    return null;
+  }
+};
+// 산출물의 마지막 COMMIT 줄(VERDICT와 같은 규칙). { why } 또는 { sha }.
+function commitOf(runDir, gate) {
+  let text;
+  try {
+    text = readFileSync(join(runDir, GATES[gate]), 'utf8');
+  } catch {
+    return { why: `${GATES[gate]} 없음` };
+  }
+  const lines = [...text.matchAll(/^COMMIT:[ \t]*(\S*)[ \t]*$/gm)];
+  if (!lines.length) return { why: `${GATES[gate]}에 COMMIT 줄 없음` };
+  const sha = lines.at(-1)[1];
+  return /^[0-9a-f]{40}$/.test(sha) ? { sha } : { why: `${GATES[gate]}의 COMMIT이 40자리 hex가 아님` };
+}
+const NEXT = ' → qa(full은 security도)가 출고할 커밋에서 다시 검증하고 COMMIT 줄을 고친다';
+// 묶은 COMMIT과 출고 대상(target)을 대조한다. 같거나, 그 뒤 후손이 CHANGELOG*·docs/**만 바꿨으면 통과. 실패 사유(문자열) 또는 null.
+function commitFailure(run, target, dir) {
+  const bound = SHIP[run.track].filter((g) => BINDS.includes(g)).map((g) => [g, commitOf(run.dir, g)]);
+  const bad = bound.find(([, r]) => r.why);
+  if (bad) return bad[1].why;
+  const shas = [...new Set(bound.map(([, r]) => r.sha))];
+  if (shas.length > 1) return `${bound.map(([g, r]) => `${GATES[g]}(${r.sha.slice(0, 7)})`).join('와 ')}의 COMMIT이 다름`;
+  if (!target) return '출고 대상 커밋을 알 수 없음';
+  const [b] = shas;
+  if (target === b) return null;
+  const head = `검토한 커밋과 다름 — 검토 ${b.slice(0, 7)}, 대상 ${target.slice(0, 7)}`;
+  try {
+    gitOut(dir, ['merge-base', '--is-ancestor', b, target]);
+  } catch {
+    return `${head} (대상이 검토 커밋의 후손이 아님)`;
+  }
+  try {
+    // --no-renames: 이름 바꾸기가 양쪽 경로로 보여야 src → docs 우회가 잡힌다. -z: 비ASCII 경로가 따옴표로 바뀌지 않게.
+    const out = gitOut(dir, ['diff', '--no-renames', '--name-only', '-z', b, target]).split('\0').filter((f) => f && !/^(CHANGELOG[^/]*|docs\/.+)$/i.test(f));
+    return out.length ? `${head}: 그 뒤 커밋이 CHANGELOG*·docs/** 밖을 바꿈 (${out.slice(0, 5).join(', ')})` : null;
+  } catch {
+    return `${head}: 변경 파일을 알 수 없음`;
+  }
+}
+
 // 셸 허용 모양: 줄바꿈·'('·리다이렉션·파이프·명령 치환·명령 연결 금지(H3).
 // Lead는 관문 확인, 읽기 전용 git, run 브랜치 조율만. gate CLI는 이 파일의 실제 경로만 허용한다(아무 gate.mjs나 허용하면 .orbit/에 쓴 스크립트를 실행할 수 있다).
 const SELF = fileURLToPath(import.meta.url).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/(\\\\|\/)+/g, '[\\\\/]');
@@ -122,27 +172,36 @@ const shellOk = (cmd, res) => res.some((re) => re.test(cmd)) && !(/^\s*git\b/.te
 
 const branchOf = (cwd) => {
   try {
-    return execFileSync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    return 'main'; // 모르면 보호 브랜치로 취급
-  }
+    return gitOut(cwd, ['symbolic-ref', '--short', 'HEAD']).trim();
+  } catch {}
+  try {
+    // HEAD가 떼어졌어도 run 브랜치에서 멈춘 rebase면 그 브랜치로 본다
+    const gd = gitOut(cwd, ['rev-parse', '--absolute-git-dir']).trim();
+    for (const d of ['rebase-merge', 'rebase-apply']) {
+      try {
+        const m = /^refs\/heads\/(orbit\/[\w./-]+)$/.exec(readFileSync(join(gd, d, 'head-name'), 'utf8').trim());
+        if (m) return m[1];
+      } catch {}
+    }
+  } catch {}
+  return 'main'; // 모르면 보호 브랜치로 취급
 };
 
 // 출고 = 모든 push, 브랜치 강제 이동·이름 변경·복사, update-ref, gh pr merge, 별칭 정의, GIT_CONFIG_*, 그리고 main/master로 들어가는 merge·pull·rebase·reset --hard. run 브랜치(orbit/<run-id>) 안에서는 자유.
-// 한 명령 안에서 브랜치나 디렉터리를 바꾸면 지금 브랜치를 믿을 수 없으므로 보호 브랜치로 본다. 문자열 검사라 우회 가능(gate 스킬 참조).
+// 한 명령 안에서 브랜치나 위치(cd·pushd·chdir·sl·Set/Push-Location·-C·--git-dir·--work-tree·GIT_DIR·GIT_WORK_TREE)를 바꾸면 지금 브랜치를 믿을 수 없으므로 보호 브랜치로 본다. 문자열 검사라 우회 가능(gate 스킬 참조).
 const GIT = String.raw`\bgit(\.exe)?["']?\s+`; // 따옴표 형태도 잡는다
 const gitSub = (name) => new RegExp(`${GIT}(-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*${name}\\b`); // 옵션 뒤의 하위 명령만
 const FORCE_MOVE = new RegExp(
   `${GIT}(-\\S+\\s+)*(branch\\b[^;&|\\n]*\\s(-[a-zA-Z]*[fMmCc]|--force|--move|--copy)(?![\\w-])|switch\\b[^;&|\\n]*\\s(-C|--force-create)(?![\\w-])|checkout\\b[^;&|\\n]*\\s-B\\b)`,
 );
-const MOVES = /\b(switch|checkout|cd|pushd|Set-Location)\b|\s-C\s/;
+// 위치 변경. 원문 전체에 적용한다(메시지 속 단어도 막힌다: 메시지는 -F <파일>). i: PowerShell은 대소문자를 가리지 않는다. -C(대문자만)는 -c(설정)와 구분한다.
+const locates = (c) => /\b(cd|pushd|chdir|sl|Set-Location|Push-Location)\b|--git-dir|--work-tree|\bGIT_(DIR|WORK_TREE)\b/i.test(c) || /\s-C\s/.test(c);
+const moves = (c) => /\b(switch|checkout)\b/.test(c) || locates(c);
 const PUBLISH = /\b(npm|pnpm|yarn)\s+(-\S+\s+)*publish\b|\bcargo\s+publish\b|\bgh\s+release\s+create\b|\b(vercel|netlify|firebase|wrangler|fly|flyctl)\b[^;&|\n]*\bdeploy\b|\bvercel\b[^;&|\n]*\s--prod\b/;
 const GH_MERGE = /\bgh(\.exe)?\s+pr\s+merge\b/;
 const SHIP_FORMS = ['merge', 'pull', 'rebase']; // main으로 들어가면 출고(reset --hard는 따로)
 const REF_FORMS = [...SHIP_FORMS, 'reset', 'update-ref']; // 명령 안의 ref가 대상을 정하는 형태: 현재 브랜치 대체 금지
 const refForm = (cmd) => REF_FORMS.some((n) => gitSub(n).test(cmd)) || FORCE_MOVE.test(cmd) || GH_MERGE.test(cmd);
-// run 브랜치에서 멈춘 rebase를 잇거나 끝내는 형태(HEAD가 떼어져 main으로 오인되는 것을 막는다). 위치가 바뀌는 명령 안에서는 적용하지 않는다.
-const REBASE_RESUME = /\bgit(\.exe)?["']?\s+rebase\s+--(continue|abort|skip|quit)(?![\w-])(?=\s*($|[;&|\n]))/g;
 // merge 인자에 orbit/<id>가 아닌 ref가 있으면 true(옵션과 -m 메시지는 제외). 연결된 merge도 각각 본다(Q5).
 const MERGE_ARGS = new RegExp(`${GIT}(?:-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*merge\\b([^;&|\\n]*)`, 'g');
 // 메시지(-m)·메시지 파일(-F)은 구분자를 품을 수 있어 먼저 걷어내고, 따옴표 친 ref는 따옴표를 벗겨 본다.
@@ -152,20 +211,46 @@ const foreignMerge = (cmd) =>
 function isShip(cmd, cwd) {
   if (gitSub('push').test(cmd) || gitSub('update-ref').test(cmd) || FORCE_MOVE.test(cmd) || GH_MERGE.test(cmd)) return true;
   if (/\bgit(\.exe)?\b[^\n]*\balias\./.test(cmd) || /\bGIT_CONFIG_(COUNT|KEY_|VALUE_|PARAMETERS)/.test(cmd)) return true; // 별칭·환경변수 설정으로 push를 감추는 우회
-  // run 브랜치에서 main을 바꾸는 형태: rebase <upstream> main(main으로 전환해 얹는다), fetch . <src>:main
-  if (/\brebase\b[^;&|\n]*\s[^-\s]\S*\s+(main|master)(?![\w./-])/.test(cmd) || (gitSub('fetch').test(cmd) && /:\+?(refs\/heads\/)?(main|master)(?![\w./-])/.test(cmd))) return true;
-  const moves = MOVES.test(cmd);
-  const c = moves ? cmd : cmd.replace(REBASE_RESUME, '');
-  if (!SHIP_FORMS.some((n) => gitSub(n).test(c)) && !(gitSub('reset').test(c) && /\s--hard\b/.test(c))) return false;
-  return moves || /^(main|master)$/.test(branchOf(cwd));
+  // run 브랜치에서 main을 바꾸는 형태: rebase가 main을 옮긴다(rebasesMain), fetch . <src>:main
+  if (/\brebase\b[^;&|\n]*\s[^-\s]\S*\s+(main|master)(?![\w./-])/.test(cmd) || rebasesMain(cmd) || (gitSub('fetch').test(cmd) && /:\+?(refs\/heads\/)?(main|master)(?![\w./-])/.test(cmd))) return true;
+  if (!SHIP_FORMS.some((n) => gitSub(n).test(cmd)) && !(gitSub('reset').test(cmd) && /\s--hard\b/.test(cmd))) return false;
+  return moves(cmd) || /^(main|master)$/.test(branchOf(cwd));
+}
+
+// rebase가 옮기는 브랜치(--root면 첫 위치 인자, 아니면 둘째)가 main/master인가. git이 든 따옴표 문자열(bash -c "…", $(…))은 따옴표만 벗겨 안의 git을 보고,
+// 그 밖의 따옴표 문자열은 구분자·공백을 _로 바꿔 한 토큰으로 본다.
+const REBASE_ARGS = new RegExp(`${GIT}(?:-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*rebase\\b([^;&|\\n]*)`, 'g');
+const rebasesMain = (cmd) =>
+  [...cmd.replace(/"[^"]*"|'[^']*'/g, (s) => (/\bgit/.test(s) ? s.slice(1, -1) : s.slice(1, -1).replace(/[\s;&|]/g, '_'))).matchAll(REBASE_ARGS)].some((m) => {
+    const pos = [];
+    let root = false;
+    const toks = m.at(-1).split(/\s+/).filter(Boolean).map((t) => t.replace(/[)`]+$/, '')); // $(…)·백틱의 닫는 기호
+    for (let i = 0; i < toks.length; i++) {
+      if (/^(--onto|-s|--strategy|-X|--strategy-option|-x|--exec)$/.test(toks[i])) i++; // 값을 받는 옵션
+      else if (toks[i].startsWith('-')) root ||= toks[i] === '--root';
+      else pos.push(toks[i]);
+    }
+    return /^(refs\/heads\/)?(main|master)$/.test(pos[root ? 0 : 1] ?? '');
+  });
+
+// git이 실행될 위치. 맨 앞의 프로젝트 안 문자 그대로의 `git -C <경로>`·`cd <경로> &&|;`만 인정하고, 그 밖의 위치 변경이 있거나 경로가 프로젝트 밖이면 null(모름).
+const AT = /^\s*(?:git -C ([\w.\\/:-]+)(?=\s)|cd ([\w.\\/:-]+)\s*(?:&&|;))/;
+function whereOf(cmd, cwd, root) {
+  const m = AT.exec(cmd);
+  if (locates(m ? cmd.slice(m[0].length) : cmd)) return null;
+  if (!m) return cwd;
+  const dir = resolve(cwd, m[1] ?? m[2]);
+  return inside(canon(resolve(root)).path, canon(dir).path) ? dir : null;
 }
 
 // 명령이 가리키는 run-id 목록. 명령 안의 orbit/<id>를 모두 모은다. 없으면 ref 없는 형태(push, publish·deploy)에 한해 현재 브랜치로 대체하되,
 // 한 명령 안에서 브랜치·위치가 바뀌면 대체하지 않는다. 그래도 없으면 null.
+const ORBIT_ID = /(?<![\w./-])orbit\/([\w.-]+)/g; // id 판정: 옛 정규식 그대로(상위 집합)
+const ORBIT_REF = /(?<![\w./-])orbit\/([\w.-]+)(?=$|[\s"':;&|)])/g; // COMMIT 대조 대상용: orbit/<id>/x·orbit/<id>~1 같은 뒤꼬리 ref는 run 브랜치가 아니다
 function shipRunId(cmd, cwd, fallback = false) {
-  const ids = [...cmd.matchAll(/(?<![\w./-])orbit\/([\w.-]+)/g)].map((m) => m[1]);
+  const ids = [...cmd.matchAll(ORBIT_ID)].map((m) => m[1]);
   if (ids.length) return ids;
-  if (!fallback || MOVES.test(cmd)) return null;
+  if (!fallback || moves(cmd)) return null;
   const m = /^orbit\/([\w.-]+)/.exec(branchOf(cwd));
   return m ? [m[1]] : null;
 }
@@ -208,6 +293,11 @@ function stateFailure(next, file) {
   return null;
 }
 
+const GIT_INV = new RegExp(`${GIT}(?:-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*([^;&|\\n]*)`, 'g');
+const CONFIG_READ = /\s(--get[\w-]*|--list|-l)(?=\s|=|$)/;
+// main/master 위에서 허용하는 git. merge는 앞의 출고 판정(관문·COMMIT 대조)을 통과한 것만 여기 온다.
+const MAIN_READ = /^((status|log|diff|show|rev-parse|ls-files|blame|merge)\b|worktree list\b|branch(\s+--show-current)?\s*$|fetch\b(?!.*:\+?(refs\/heads\/)?(main|master)(?![\w./-]))|switch(\s+-c)?\s+[^\s-]\S*\s*$)/; // checkout은 브랜치 이동과 경로 체크아웃(작업 트리 변경 버림)을 구분할 수 없어 main에서는 막는다
+
 // 막아야 하면 사유(문자열), 아니면 null.
 export function decide(p, root = ROOT) {
   const tool = p.tool_name;
@@ -229,10 +319,13 @@ export function decide(p, root = ROOT) {
       /(^|[\\/])hooks[\\/](hooks\.json|gate\.mjs|gate\.test\.mjs)$/i.test(file) ||
       /(^|[\\/])\.claude[\\/](hooks[\\/]|settings(\.local)?\.json$)/i.test(file) ||
       /(^|[\\/])\.claude\.json$/i.test(file) ||
-      /(^|[\\/])\.git[\\/](hooks[\\/]|config$)/i.test(file) ||
+      /(^|[\\/])\.git([\\/]|$)/i.test(file) || // 어느 깊이의 .git/ 아래, worktree의 .git 파일
+      /(^|[\\/])\.gitconfig$/i.test(file) ||
+      /[\\/]\.config[\\/]git([\\/]|$)/i.test(file) ||
+      (process.env.XDG_CONFIG_HOME && inside(canon(join(resolve(process.env.XDG_CONFIG_HOME), 'git')).path, file)) ||
       inside(canon(HERE).path, file)
     )
-      return '관문 훅·플러그인 매니페스트·settings.json·.claude.json·.git/hooks·.git/config는 에이전트가 수정할 수 없음 (사람이 Claude 밖에서 고친다)';
+      return '관문 훅·플러그인 매니페스트·settings.json·.claude.json·.git/ 전체·사용자 git 설정(.gitconfig, ~/.config/git)은 에이전트가 수정할 수 없음 (사람이 Claude 밖에서 고친다)';
     const mem = join(canon(homedir()).path, '.claude', 'projects');
     if (inside(mem, file) && /^[^\\/]+[\\/]memory[\\/]/i.test(relative(mem, file))) {
       // Claude Code 자동 메모리: Lead가 현재 프로젝트 폴더에 쓸 때만. 슬러그가 안 맞으면(비ASCII, 200자 초과, worktree 등) 닫힌다.
@@ -276,7 +369,18 @@ export function decide(p, root = ROOT) {
     const publish = PUBLISH.test(cmd);
     const ship = isShip(cmd, cwd);
     if (publish || ship) {
-      const fails = shipFailures(root, shipRunId(cmd, cwd, (publish || gitSub('push').test(cmd)) && !refForm(cmd)));
+      const ids = shipRunId(cmd, cwd, (publish || gitSub('push').test(cmd)) && !refForm(cmd));
+      const fails = shipFailures(root, ids);
+      // 관문을 통과했으면 출고 대상 커밋(명령 안의 orbit/<id>, 없으면 HEAD)이 VERIFY·SECURITY의 COMMIT과 맞아야 한다
+      if (!fails.length) {
+        const dir = whereOf(cmd, cwd, root) ?? cwd;
+        const clean = [...cmd.matchAll(ORBIT_REF)].length;
+        if (clean !== [...cmd.matchAll(ORBIT_ID)].length) fails.push('orbit/<id> 뒤에 ~·/ 등이 붙은 ref는 run 브랜치가 아님');
+        else {
+          const why = commitFailure(currentRun(root), rev(dir, clean ? `orbit/${ids[0]}` : 'HEAD'), dir);
+          if (why) fails.push(why + NEXT);
+        }
+      }
       if (ship && foreignMerge(cmd)) fails.push('merge에 orbit/<id>가 아닌 ref가 섞임');
       if (publish && !approved(currentRun(root), 'deploy')) fails.push('deploy 승인 없음');
       if (fails.length) return `머지/푸시/배포 차단 — 관문 미통과: ${fails.join('; ')}`;
@@ -285,6 +389,15 @@ export function decide(p, root = ROOT) {
       return `Lead는 관문 확인(node ${fileURLToPath(import.meta.url)} check …)과 git status/log/diff/show/branch(목록·--show-current만)/switch/merge만 직접 실행. 나머지는 서브에이전트에게 맡길 것`;
     if (!isLead && !FREE_SHELL.includes(role) && !shellOk(cmd, role === 'librarian' ? [LIBRARIAN_SHELL] : [READ_SHELL, ...(role === 'plan-checker' ? PLAN_CHECKER_SHELL : [])]))
       return `${p.agent_type ?? '이 에이전트'}의 셸은 ${role === 'librarian' ? '관문 확인과 git add/commit/switch/merge/status/log/diff만 허용(LIBRARIAN_SHELL)' : `git status/log/diff/show만 허용(READ_SHELL${role === 'plan-checker' ? ', grep, claude plugin validate' : ''})`}. 리다이렉션·파이프·다른 명령은 차단`;
+    // N4-S·N2-b: 명령 안의 git 호출마다 하위명령 + 인자를 모은다. git이 없는 명령(빌드·테스트)에서는 git을 실행하지 않는다.
+    const subs = [...cmd.matchAll(GIT_INV)].map((m) => m.at(-1).trim());
+    if (subs.some((s) => /^config\b/.test(s) && !CONFIG_READ.test(s.replace(/"[^"]*"|'[^']*'/g, ''))))
+      return 'git config 쓰기는 모든 역할에서 차단 (사용자·저장소 git 설정 보호)';
+    if (subs.length) {
+      const at = subs.length > 1 && subs.some((s) => /^(switch|checkout)\b/.test(s)) ? null : whereOf(cmd, cwd, root); // 한 명령 안에서 브랜치가 바뀌면 모름
+      const bad = at === null || /^(main|master)$/.test(branchOf(at)) ? subs.find((s) => !MAIN_READ.test(s)) : undefined;
+      if (bad) return `main/master 위에서는 git 읽기·다른 브랜치로 가기·관문을 통과한 merge만 허용 (N2-b): ${bad.split(/\s/)[0]}`;
+    }
     // S13: 모든 역할 공통. 문자열 검사라 우회 가능(gate 스킬 참조).
     if (/disableAllHooks|ORBIT_GATE/i.test(cmd)) return '관문을 끄는 설정(disableAllHooks·ORBIT_GATE)은 셸에서 쓸 수 없음';
     if (/gate\.mjs|hooks\.json|\.claude-plugin|\.claude[\\/]+settings|settings\.local\.json/i.test(cmd) && !shellOk(cmd, [INSPECT_SHELL]))
@@ -308,6 +421,12 @@ function cli(args) {
   for (const g of gates) {
     const why = gateFailure(run.dir, g);
     console.log(why ? `FAIL ${g}: ${why}` : `PASS ${g}`);
+    if (why) code = 1;
+  }
+  if (what === 'ship') {
+    const t = rev(ROOT, `orbit/${run.id}`);
+    const why = commitFailure(run, t, ROOT);
+    console.log(why ? `FAIL commit: ${why}${NEXT}` : `PASS commit ${t.slice(0, 7)}`);
     if (why) code = 1;
   }
   console.log(`run=${run.id} track=${run.track}`);
