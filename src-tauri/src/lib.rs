@@ -1,6 +1,8 @@
 mod config;
 mod hooks;
 mod server;
+mod sessions;
+mod watch;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
