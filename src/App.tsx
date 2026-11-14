@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
@@ -9,14 +9,29 @@ type Status = {
   settings_path: string;
   installed: boolean | null;
   settings_error: string | null;
+  projects_dir: string;
+  projects_error: string | null;
 };
 
-type HookEvent = { id: number; at: string; name: string; session: string; tool: string };
+type ToolEvent = {
+  tool_use_id: string | null;
+  phase: "call" | "result";
+  tool: string;
+  at_ms: number;
+  source: "hook" | "log" | "both";
+};
 
-const MAX_EVENTS = 200;
+type Session = {
+  id: string;
+  cwd: string | null;
+  started_ms: number | null;
+  last_ms: number;
+  source: "hook" | "log" | "both";
+  ver: number;
+  events: ToolEvent[];
+};
 
-// 페이로드는 신뢰할 수 없는 입력: 문자열일 때만 쓰고 텍스트로만 렌더한다.
-const str = (v: unknown) => (typeof v === "string" ? v : "");
+const SOURCE_LABEL = { hook: "훅", log: "로그", both: "둘 다" } as const;
 
 function Panel({ area, title, hint, children }: { area: string; title: string; hint: string; children?: ReactNode }) {
   return (
@@ -32,8 +47,8 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
-  const [events, setEvents] = useState<HookEvent[]>([]);
-  const nextId = useRef(0);
+  const [sessions, setSessions] = useState<Record<string, Session>>({});
+  const [selected, setSelected] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     invoke<Status>("get_status")
@@ -46,17 +61,15 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    listen<unknown>("hook-event", (e) => {
-      const p = (e.payload ?? {}) as Record<string, unknown>;
-      const ev: HookEvent = {
-        id: nextId.current++,
-        at: new Date().toLocaleTimeString(),
-        name: str(p.hook_event_name),
-        session: str(p.session_id).slice(0, 8),
-        tool: str(p.tool_name),
-      };
-      setEvents((prev) => [ev, ...prev].slice(0, MAX_EVENTS));
-    }).then((fn) => (cancelled ? fn() : (unlisten = fn)));
+    // 들고 있는 것보다 ver가 작은 스냅숏은 버린다.
+    const merge = (list: Session[]) =>
+      setSessions((prev) => {
+        const next = { ...prev };
+        for (const x of list) if (!(next[x.id] && x.ver < next[x.id].ver)) next[x.id] = x;
+        return next;
+      });
+    listen<Session[]>("session-update", (e) => merge(e.payload ?? [])).then((fn) => (cancelled ? fn() : (unlisten = fn)));
+    invoke<Session[]>("get_sessions").then(merge).catch(() => {});
     return () => { cancelled = true; unlisten?.(); };
   }, []);
 
@@ -85,13 +98,39 @@ export default function App() {
     : status.settings_error ? `확인 실패: ${status.settings_error}`
     : status.installed ? "설치됨" : "설치 안 됨";
 
+  const list = Object.values(sessions).sort((a, b) => b.last_ms - a.last_ms);
+  const events = selected && sessions[selected] ? [...sessions[selected].events].sort((a, b) => a.at_ms - b.at_ms) : null;
+
   return (
     <div className="shell">
       <header className="topbar">
         <h1>Orbit</h1>
         <span className="status" role="status">{serverText}</span>
       </header>
-      <Panel area="sessions" title="세션" hint="아직 세션이 없습니다" />
+      <Panel area="sessions" title="세션" hint="">
+        <p>
+          {status?.projects_dir
+            ? <>로그 폴더: <code>{status.projects_dir}</code></>
+            : status ? `로그 폴더를 정하지 못했습니다: ${status.projects_error ?? "알 수 없음"}` : "…"}
+        </p>
+        {list.length > 0 ? (
+          <ul className="sessions">
+            {list.map((x) => (
+              <li key={x.id}>
+                <button type="button" aria-pressed={x.id === selected} onClick={() => setSelected(x.id)}>
+                  {[
+                    x.id.slice(0, 8),
+                    x.cwd ?? "—",
+                    x.started_ms == null ? "—" : new Date(x.started_ms).toLocaleString(),
+                    new Date(x.last_ms).toLocaleString(),
+                    SOURCE_LABEL[x.source] ?? "",
+                  ].join(" · ")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="empty">아직 세션이 없습니다</p>}
+      </Panel>
       <Panel area="graph" title="에이전트 그래프" hint="세션을 선택하면 그래프가 표시됩니다" />
       <Panel area="detail" title="상세 · 하네스" hint="">
         <p>대상 경로: <code>{status?.settings_path ?? "…"}</code></p>
@@ -104,11 +143,14 @@ export default function App() {
         <p className="empty">토큰이 settings 파일에 평문으로 저장됩니다.</p>
         <p className="empty">이벤트가 오지 않으면 settings의 allowedHttpHookUrls·disableAllHooks를 확인하세요.</p>
       </Panel>
-      <Panel area="timeline" title="타임라인" hint="도구 호출이 시간순으로 표시됩니다">
-        {events.length > 0 ? (
+      <Panel area="timeline" title="타임라인" hint="세션을 고르면 도구 호출이 시간순으로 표시됩니다">
+        {events && events.length === 0 ? <p className="empty">기록 없음</p> : events ? (
           <ul className="events">
-            {events.map((e) => (
-              <li key={e.id}>{[e.at, e.name, e.session, e.tool].filter(Boolean).join(" · ")}</li>
+            {events.map((e, i) => (
+              <li key={i}>
+                {[new Date(e.at_ms).toLocaleTimeString(), e.tool, e.phase === "call" ? "호출" : "결과", SOURCE_LABEL[e.source] ?? ""]
+                  .filter(Boolean).join(" · ")}
+              </li>
             ))}
           </ul>
         ) : undefined}
