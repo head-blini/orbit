@@ -8,7 +8,7 @@ mod sessions;
 mod watch;
 
 use std::net::SocketAddr;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
@@ -20,6 +20,7 @@ struct AppState {
     store: Arc<Mutex<sessions::Store>>,
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
+    chat: chat::Chat,
 }
 
 #[derive(serde::Serialize)]
@@ -110,6 +111,35 @@ fn uninstall_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     Ok(backup.map(|p| p.display().to_string()))
 }
 
+#[tauri::command(async)]
+fn chat_send(app: tauri::AppHandle, state: State<AppState>, session: String, text: String) -> Result<(), String> {
+    let cwd = lock(&state.store).get(&session).and_then(|s| s.cwd.clone());
+    state.chat.send(&app, cwd, &text)
+}
+
+#[tauri::command(async)]
+fn chat_permit(state: State<AppState>, id: String, decision: String) -> Result<(), String> {
+    if !matches!(decision.as_str(), "allow" | "deny" | "session") {
+        return Err("알 수 없는 선택".into());
+    }
+    state.chat.write(&serde_json::json!({"t": "permit", "id": id, "decision": decision}))
+}
+
+#[tauri::command(async)]
+fn chat_answer(state: State<AppState>, id: String, answers: HashMap<String, String>) -> Result<(), String> {
+    state.chat.write(&serde_json::json!({"t": "answer", "id": id, "answers": answers}))
+}
+
+#[tauri::command(async)]
+fn chat_interrupt(state: State<AppState>) -> Result<(), String> {
+    state.chat.write(&serde_json::json!({"t": "interrupt"}))
+}
+
+#[tauri::command(async)]
+fn chat_reset(state: State<AppState>) {
+    state.chat.stop();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -177,7 +207,7 @@ pub fn run() {
                 });
             }
             let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, chat: chat::Chat::default() });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -187,10 +217,20 @@ pub fn run() {
             list_screens,
             open_screens_dir,
             install_hooks,
-            uninstall_hooks
+            uninstall_hooks,
+            chat_send,
+            chat_permit,
+            chat_answer,
+            chat_interrupt,
+            chat_reset
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, ev| {
+            if let tauri::RunEvent::Exit = ev {
+                app.state::<AppState>().chat.stop();
+            }
+        });
 }
 
 #[cfg(test)]
