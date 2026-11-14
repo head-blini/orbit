@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
-import { fmtTime, folderName, nodeKey, shownState, type NodeState, type Session } from "./types";
+import { fmtDur, fmtTime, fmtTokens, folderName, nodeKey, shownState, type NodeState, type Session } from "./types";
 import "./App.css";
 
 type Status = {
@@ -21,10 +21,6 @@ const CHIP_AT = 6;
 const SOURCE_LABEL = { hook: "훅", log: "로그", both: "훅 + 로그" } as const;
 const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
 const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
-
-const fmtDur = (ms: number | null) =>
-  ms == null ? "—" : ms >= 60000 ? `${Math.floor(ms / 60000)}분 ${Math.floor((ms % 60000) / 1000)}초` : `${Math.floor(ms / 1000)}초`;
-const fmtTokens = (n: number | null) => (n == null ? "—" : n >= 1000 ? `${Math.round(n / 1000)}k 토큰` : `${n} 토큰`);
 
 function Sym({ state }: { state: keyof typeof STATE_LABEL }) {
   return (

@@ -19,6 +19,10 @@ export const fmtTime = (ms: number | null, now: number): string => {
   return d.toDateString() === new Date(now).toDateString() ? hm : `${p2(d.getMonth() + 1)}/${p2(d.getDate())} ${hm}`;
 };
 
+export const fmtDur = (ms: number | null) =>
+  ms == null ? "—" : ms >= 60000 ? `${Math.floor(ms / 60000)}분 ${Math.floor((ms % 60000) / 1000)}초` : `${Math.floor(ms / 1000)}초`;
+export const fmtTokens = (n: number | null) => (n == null ? "—" : n >= 1000 ? `${Math.round(n / 1000)}k 토큰` : `${n} 토큰`);
+
 // cwd 마지막 조각(/, \ 기준), 없으면 id 앞 8자
 export const folderName = (s: Session): string =>
   s.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? s.id.slice(0, 8);
