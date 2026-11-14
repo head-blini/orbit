@@ -1,7 +1,7 @@
 //! 세션 로그 디렉터리 감시.
 
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -25,7 +25,8 @@ impl Watcher {
 
     pub fn poll(&mut self, mut on_line: impl FnMut(&str, Value)) {
         let found = list_logs(&self.root);
-        self.files.retain(|p, _| found.iter().any(|(q, _)| q == p));
+        let live: HashSet<&PathBuf> = found.iter().map(|(p, _)| p).collect();
+        self.files.retain(|p, _| live.contains(p));
         for (path, sid) in found {
             let tail = self.files.entry(path.clone()).or_insert(Tail { offset: 0, skipping: false });
             match read_new(&path, tail, &sid, &mut on_line) {
@@ -88,7 +89,10 @@ fn read_new(
         file.seek(SeekFrom::Start(tail.offset))?;
         buf.clear();
         (&mut file).take(MAX_LINE as u64 + 1).read_to_end(&mut buf)?;
-        if buf.is_empty() || !consume(&buf, tail, sid, on_line) {
+        let start = tail.offset;
+        consume(&buf, tail, sid, on_line);
+        // 전진이 없으면(빈 읽기·미완결 꼬리) 끝, 전진했으면 남은 부분을 같은 회차에 계속 읽는다.
+        if tail.offset == start {
             return Ok(());
         }
     }
@@ -286,5 +290,43 @@ mod tests {
         let mut w = Watcher::new(t.0.clone());
         assert_eq!(collect(&mut w).len(), 1);
         assert_eq!(collect(&mut w).len(), 0);
+    }
+
+    fn json_line(n: usize) -> Vec<u8> {
+        let mut b = b"{\"a\":\"".to_vec();
+        b.extend(vec![b'x'; n]);
+        b.extend_from_slice(b"\"}
+");
+        b
+    }
+
+    #[test]
+    fn k_big_file_one_poll() {
+        let t = Tmp::new();
+        let mut b = Vec::new();
+        for _ in 0..3 {
+            b.extend(json_line(10 * 1024 * 1024));
+        }
+        append(&log(&t), &b);
+        let mut w = Watcher::new(t.0.clone());
+        assert_eq!(collect(&mut w).len(), 3);
+    }
+
+    #[test]
+    fn l_oversize_valid_json_and_numeric_tail() {
+        let t = Tmp::new();
+        let mut b = json_line(MAX_LINE);
+        b.extend(vec![b'1'; MAX_LINE + 5]);
+        b.push(b'\n');
+        b.extend(vec![b'1'; MAX_LINE / 2]);
+        append(&log(&t), &b);
+        let mut w = Watcher::new(t.0.clone());
+        assert_eq!(collect(&mut w).len(), 0);
+        append(&log(&t), &vec![b'1'; MAX_LINE / 2 + 10]);
+        assert_eq!(collect(&mut w).len(), 0);
+        append(&log(&t), b"
+{\"ok\":true}
+");
+        assert_eq!(collect(&mut w).len(), 1);
     }
 }

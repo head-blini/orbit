@@ -90,7 +90,7 @@ impl Store {
         };
         if let Some(id) = v.get("tool_use_id").and_then(Value::as_str) {
             let ev = Event {
-                key: format!("{}:{id}", if phase == "call" { "call" } else { "result" }),
+                key: format!("{phase}:{id}"),
                 tool_use_id: Some(id.to_string()),
                 phase,
                 tool: v.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string(),
@@ -124,7 +124,10 @@ impl Store {
             let tool = if phase == "call" {
                 b.get("name").and_then(Value::as_str).map(str::to_string)
             } else {
-                id.and_then(|id| self.sessions.get(session)?.events.iter().find(|e| e.key == format!("call:{id}")))
+                id.and_then(|id| {
+                    let call = format!("call:{id}");
+                    self.sessions.get(session)?.events.iter().rfind(|e| e.key == call)
+                })
                     .map(|e| e.tool.clone())
             };
             let ev = Event {

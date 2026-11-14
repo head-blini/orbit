@@ -13,7 +13,7 @@ type Status = {
   projects_error: string | null;
 };
 
-type Event = {
+type ToolEvent = {
   tool_use_id: string | null;
   phase: "call" | "result";
   tool: string;
@@ -28,7 +28,7 @@ type Session = {
   last_ms: number;
   source: "hook" | "log" | "both";
   ver: number;
-  events: Event[];
+  events: ToolEvent[];
 };
 
 const SOURCE_LABEL = { hook: "훅", log: "로그", both: "둘 다" } as const;
@@ -144,7 +144,7 @@ export default function App() {
         <p className="empty">이벤트가 오지 않으면 settings의 allowedHttpHookUrls·disableAllHooks를 확인하세요.</p>
       </Panel>
       <Panel area="timeline" title="타임라인" hint="세션을 고르면 도구 호출이 시간순으로 표시됩니다">
-        {events ? (
+        {events && events.length === 0 ? <p className="empty">기록 없음</p> : events ? (
           <ul className="events">
             {events.map((e, i) => (
               <li key={i}>
