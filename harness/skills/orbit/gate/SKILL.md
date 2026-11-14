@@ -42,7 +42,7 @@ FAIL이 나오면 다음 단계로 가지 않는다. 산출물의 VERDICT 줄을
 - **보호 경로**: 어느 위치에 있든 `.claude-plugin/`, `hooks/` 아래의 `hooks.json`·`gate.mjs`·`gate.test.mjs`, 실행 중인 gate.mjs가 있는 폴더, `.claude/` 아래 `hooks/` 폴더, `.claude/` 아래 `settings*.json`, `.claude.json`, `.git/hooks/`·`.git/config`는 모든 에이전트가 쓸 수 없다.
 - **설정 경로**: CLAUDE.md, CLAUDE.local.md, `.claude/` 폴더 전체, `.mcp.json`은 현재 run이 full 트랙이고 STATE.json의 `approvals`에 `config` 승인이 있을 때만 쓸 수 있다. 그 뒤에도 아래 역할 범위가 적용된다.
 - **쓰기 범위**: Lead는 `.orbit/`만. engineer·debugger·devops는 그 밖 전부(`.orbit/` 안에서는 소유자가 정해진 파일 제외). librarian은 `*.md`, `docs/**`, `CHANGELOG*`. designer는 `design/**`. 나머지 역할과 모르는 에이전트는 `.orbit/`만. `.orbit/wt/`는 engineer·debugger·devops만 쓴다. 자동 메모리(`~/.claude/projects/<슬러그>/memory/`)는 Lead만, 현재 프로젝트 폴더의 것만 쓴다(슬러그가 안 맞으면 닫힌다).
-- **셸 공통**: 모든 역할에서 `disableAllHooks`·`ORBIT_GATE`를 담은 명령(대소문자 무시)과, 관문·설정 파일(`gate.mjs`, `hooks.json`, `.claude-plugin`, `.claude/settings*`, `settings.local.json`)을 언급하는 명령은 읽기·테스트 실행 형태만 허용한다: `git status/log/diff/show`, `node --test <경로>`(옵션 없이), 관문 확인 명령, `grep`·`cat`·`Get-Content`·`Select-String`. 리다이렉션·파이프·연결이 있으면 차단된다.
+- **셸 공통**: 모든 역할에서 `disableAllHooks`·`ORBIT_GATE`를 담은 명령(대소문자 무시)은 읽기 형태여도 항상 차단된다(`git log --grep=orbit_gate` 포함). 관문·설정 파일(`gate.mjs`, `hooks.json`, `.claude-plugin`, `.claude/settings*`, `settings.local.json`)을 언급하는 명령은 읽기·테스트 실행 형태만 허용한다: `git status/log/diff/show`, `node --test <경로>`(옵션 없이), 관문 확인 명령, `grep`·`cat`·`Get-Content`·`Select-String`. 리다이렉션·파이프·연결이 있으면 차단된다.
 - **셸**: Lead는 관문 확인 명령과 `git status/log/diff/show/branch(목록·--show-current만)/worktree list/switch/merge`만. librarian은 관문 확인 명령과 `git add/commit/switch/merge/status/log/diff`만. push는 Lead·librarian 모두 허용 목록에 없어 막힌다. 사용자가 push를 원하면 사용자가 직접 실행한다. 읽기 전용 리뷰어와 모르는 에이전트는 `git status/log/diff/show`만(plan-checker는 추가로 `grep`, `claude plugin validate <경로>`). 리다이렉션·파이프로 쓰는 형태는 차단된다.
 
 **강제되지 않는 것(경계는 권한 확인 창과 샌드박스다)**
@@ -50,7 +50,7 @@ FAIL이 나오면 다음 단계로 가지 않는다. 산출물의 VERDICT 줄을
 - qa, security, reviewer-correctness, reviewer-tests, data의 셸. 테스트·스캐너·로컬 DB 실행이 일이고, 테스트 실행은 임의 코드 실행이라 문자열 검사로 가둘 수 없다.
 - 셸을 통해 산출물을 위조하는 경로 일부(위 셸 규칙이 닫지 못하는 형태).
 - engineer·debugger·devops·qa 등 자유 셸 역할의 관문·설정 파일 쓰기 차단은 문자열 검사라 우회 가능하다. 관문은 작업 트리의 gate.mjs라 브랜치 전환으로 바뀐다. settings는 세션 중 다시 읽혀 `env`(ORBIT_GATE)·`disableAllHooks` 변경이 즉시 적용될 수 있다. 프로젝트 `.claude/agents`는 `orbit:` 이름을 흉내 낼 수 없고, `--agents`·동명 플러그인은 사용자 행위가 필요한 경로라 수용한다.
-- 출고 감지의 알려진 잔여 경로: run 브랜치에서 관문을 통과한 run이 `git push origin <sha>:main`으로 다른 커밋을 미는 형태, `git pull`·`rebase`에 `orbit/r1`과 비-orbit ref를 함께 주는 형태는 통과할 수 있다(머지는 위에서 막는다).
+- 출고 감지의 알려진 잔여 경로: run 브랜치에서 관문을 통과한 run이 `git push origin <sha>:main`으로 다른 커밋을 미는 형태, `git pull`·`rebase`에 `orbit/r1`과 비-orbit ref를 함께 주는 형태는 통과할 수 있다(머지는 위에서 막는다). 반대로 닫힌 쪽의 과차단도 있다: `merge --message "…"`·`--message=…`·`-s`·`-X` 같은 값 있는 옵션, `rebase --continue`에 `-c`·`2>&1`을 붙인 형태는 막힐 수 있다(`-m`·`-F`와 따옴표 친 `"orbit/<id>"`는 허용). 출고로 보지 않는 rebase 옵션은 `--continue|--abort|--skip|--quit` 넷뿐이다. 이 목록을 넓히면 main에서 `git rebase --root` 같은 이력 재작성이 열리는데, 그 변경을 잡는 테스트는 없다(목록을 고칠 때 주의).
 - 플러그인 agents·skills 본문 변경. 경로 모양으로 구별되지 않으므로 full 트랙의 reviewer-rules·security가 본다.
 - 예산: loop 반복 한도는 Lead가 `budget.loops`와 STATE.json `loops`로 지키는 지시 수준이다. 실행·일별 비용 상한은 오르빗 엔진 몫이다.
 - 훅 자체가 실행되지 않는 경우(node 없음, 타임아웃 등)는 Claude Code 동작이라 플러그인이 바꿀 수 없다.
