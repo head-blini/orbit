@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- 마일스톤 ③: 세션 로그 감시. `~/.claude/projects`(`CLAUDE_CONFIG_DIR` 존중)의 JSONL을 1초 폴링으로 읽어 세션 목록과 도구 호출·결과 타임라인을 만들고, ②의 훅 이벤트와 합쳐 같은 호출은 한 줄(출처 로그/훅/둘 다)로 보인다. 메모리에만 저장하며 세션당 이벤트 500개, 줄 16 MiB 상한, 서브에이전트 로그 제외. 새 의존성 없음. 프론트로는 `hook-event` 대신 고른 필드만 담은 `session-update`가 간다.
+- 알려진 한계: 실제 `~/.claude/projects`와 훅 `tool_use_id`·로그 `tool_use.id` 일치는 사용자 확인 대기. 후속은 `.orbit/decisions.md` 13번과 보안 권고 A1~A8. 상세는 `docs/solutions/session-log-watch.md`.
 - 마일스톤 ②: 훅 수신 서버(127.0.0.1, 토큰 검증, std `TcpListener` 파서)와 훅 설치 도우미(백업 후 병합, 같은 내용이면 쓰기·백업 생략, 이벤트 11개) 추가. 앱에서 상태 확인·설치·제거 가능. Claude Code 2.1.317은 SessionStart의 http 훅을 지원하지 않아 제외.
 - 알려진 한계: http 훅 포트를 다른 프로세스가 먼저 잡아 가로채는 위험(S1)은 수용, 후속은 `.orbit/decisions.md` 12번. 배운 것은 `docs/solutions/hook-server.md`.
 - 관문 검토 커밋 묶기(N1~N4): 출고(main 머지)는 qa·security가 VERIFY·SECURITY의 `COMMIT:` 줄에 적은 커밋과 그 뒤 `CHANGELOG*`·`docs/**`만 바꾼 후손에만 열린다. main 위의 쓰기 git(commit, cherry-pick, restore 등)은 librarian의 merge 외에는 차단, `--git-dir`·`GIT_DIR`·`cd`·`Push-Location`·`rebase --onto … main` 형태와 `.git/`·`~/.gitconfig` 쓰기도 차단. 커밋 메시지에 `cd`·`sl` 같은 단어나 `rebase … main`이 있으면 막히므로 메시지는 `-F <파일>`로 쓴다. 테스트 71개 통과.
