@@ -4,8 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const EVENTS: [&str; 12] = [
-    "SessionStart",
+pub const EVENTS: [&str; 11] = [
     "UserPromptSubmit",
     "PreToolUse",
     "PostToolUse",
@@ -298,6 +297,21 @@ mod tests {
         assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 2);
         uninstall(&p).unwrap();
         assert_eq!(read(&p), expected);
+    }
+
+    // 옛 버전(SessionStart 포함)이 심은 항목도 이벤트 이름이 아니라 헤더로 식별돼 재설치·제거 때 지워진다.
+    #[test]
+    fn legacy_session_start_entry_is_removed() {
+        assert!(!EVENTS.contains(&"SessionStart"));
+        let legacy = r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"http","url":"http://127.0.0.1:1/events","headers":{"X-Orbit-Token":"old"}}]}]}}"#;
+        let d = Dir::new();
+        let p = d.file(legacy);
+        install(&p, 4000, "tok").unwrap();
+        assert!(read(&p)["hooks"].get("SessionStart").is_none());
+        let p2 = d.0.join("b.json");
+        fs::write(&p2, legacy).unwrap();
+        uninstall(&p2).unwrap();
+        assert_eq!(read(&p2), serde_json::json!({}));
     }
 
     #[test]

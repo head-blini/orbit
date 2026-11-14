@@ -24,7 +24,7 @@ Orbit은 Claude Code를 **하네스 · 그래프 · 루프 엔지니어링**으�
    - `127.0.0.1` 에만 바인딩 (외부 노출 금지)
    - 앱 최초 실행 시 랜덤 토큰 생성 + 빈 포트를 골라 저장(이후 재사용) → 요청 헤더로 검증 (로컬의 다른 프로세스가 가짜 이벤트를 넣지 못하게). 토큰·포트는 Tauri `app_data_dir` 아래 파일에 둔다(키체인 아님)
    - `POST /events` 로 Claude Code 훅 페이로드(JSON)를 받아 프론트로 emit
-   - 수신 이벤트 12개: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, Stop, Notification, SubagentStart, PostToolUseFailure, PermissionRequest, SessionEnd, StopFailure
+   - 수신 이벤트 11개: UserPromptSubmit, PreToolUse, PostToolUse, SubagentStop, Stop, Notification, SubagentStart, PostToolUseFailure, PermissionRequest, SessionEnd, StopFailure (SessionStart는 http 훅 미지원(Claude Code 2.1.317 실측)이라 제외, 세션 시작 정보는 ③ 세션 로그에서)
      (정확한 이벤트 이름과 페이로드 필드는 **반드시 최신 Claude Code 훅 문서로 확인**)
 2. **훅 설치 도우미**
    - Orbit 화면의 버튼으로 전역 `~/.claude/settings.json`에만 훅 항목을 추가 (프로젝트별 설치 없음). 토큰이 평문으로 저장된다는 안내를 화면에 한 줄 표시
