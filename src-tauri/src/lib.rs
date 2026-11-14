@@ -1,3 +1,4 @@
+mod chat;
 mod config;
 mod hooks;
 mod roadmap;

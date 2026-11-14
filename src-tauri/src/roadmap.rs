@@ -123,11 +123,8 @@ pub fn read(dir: &Path) -> Roadmap {
     parse(&buf)
 }
 
-/// cwd는 신뢰할 수 없는 문자열이다. 어떤 파일 시스템 호출보다 먼저 모양을 검사한다.
-pub fn for_cwd(cwd: Option<&str>) -> Roadmap {
-    let Some(cwd) = cwd.filter(|c| !c.is_empty()) else {
-        return Roadmap::Missing;
-    };
+/// 로컬 절대 경로 모양인가. 파일 시스템을 건드리지 않는다.
+pub fn local_abs(cwd: &str) -> bool {
     let p = Path::new(cwd);
     // Windows: 드라이브 문자 절대 경로만. UNC·장치·verbatim 경로는 SMB 접속(해시 유출)을 부른다.
     #[cfg(windows)]
@@ -137,10 +134,18 @@ pub fn for_cwd(cwd: Option<&str>) -> Roadmap {
     ) && p.is_absolute();
     #[cfg(not(windows))]
     let ok = p.is_absolute();
-    if !ok {
+    ok
+}
+
+/// cwd는 신뢰할 수 없는 문자열이다. 어떤 파일 시스템 호출보다 먼저 모양을 검사한다.
+pub fn for_cwd(cwd: Option<&str>) -> Roadmap {
+    let Some(cwd) = cwd.filter(|c| !c.is_empty()) else {
+        return Roadmap::Missing;
+    };
+    if !local_abs(cwd) {
         return err("로컬 절대 경로가 아닙니다");
     }
-    read(p)
+    read(Path::new(cwd))
 }
 
 #[cfg(test)]
@@ -334,6 +339,22 @@ mod tests {
         std::fs::write(dir.join(FILE), "## g\n- [ ] x\n").unwrap();
         assert_eq!(found(for_cwd(dir.to_str())).0.len(), 2);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn local_abs_shapes() {
+        assert!(!local_abs(""));
+        assert!(!local_abs("rel\\dir"));
+        assert!(!local_abs("rel/dir"));
+        #[cfg(windows)]
+        {
+            for bad in [r"\\server\share\p", r"\\?\C:\x", r"\\.\C:\x", r"\\?\UNC\s\x", "C:rel", r"\rooted"] {
+                assert!(!local_abs(bad), "{bad}");
+            }
+            assert!(local_abs(r"C:\Users\a\proj"));
+        }
+        #[cfg(not(windows))]
+        assert!(local_abs("/home/a/proj"));
     }
 
     #[test]
