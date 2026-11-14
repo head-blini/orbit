@@ -1,23 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
-import { CHIP_AT, LEAD_LABEL, NODE_LABEL, fmtDur, fmtTime, fmtTokens, folderName, nodeKey, shownState, type Session } from "./types";
+import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
 type Status = {
   listen_addr: string | null;
   server_error: string | null;
-  settings_path: string;
   installed: boolean | null;
   settings_error: string | null;
-  projects_dir: string;
   projects_error: string | null;
-  screens_dir: string;
 };
 
-const SOURCE_LABEL = { hook: "훅", log: "로그", both: "훅 + 로그" } as const;
+const HINT = "프로젝트 폴더 맨 위에 두면 여기 보입니다 — ## 묶음, - [ ] 할 일, - [x] 끝난 일";
 const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
 
 function Sym({ state }: { state: keyof typeof STATE_LABEL }) {
@@ -32,6 +29,54 @@ function Sym({ state }: { state: keyof typeof STATE_LABEL }) {
   );
 }
 
+function RoadmapView({ rm }: { rm: Roadmap | null }) {
+  if (!rm) return <p className="empty">불러오는 중…</p>;
+  if (rm.kind === "missing") return <><p className="empty">ROADMAP.md가 없습니다</p><p className="note">{HINT}</p></>;
+  if (rm.kind === "toobig")
+    return <><p className="empty">✕ ROADMAP.md가 너무 커서 읽지 않았습니다</p><p className="note">한도: {Math.round(rm.max_bytes / 1024)} KiB · {rm.max_entries}개</p></>;
+  if (rm.kind === "error") return <><p className="empty">✕ 로드맵을 읽지 못했습니다</p><p className="note">{rm.reason}</p></>;
+  const items = rm.lines.filter((l) => l.mark !== "heading");
+  const done = items.filter((l) => l.mark === "done").length;
+  // 줄을 차례로 묶는다: 제목은 h3, 이어지는 항목은 ul
+  const out: ReactNode[] = [];
+  let group: RoadmapLine[] = [];
+  const flush = (k: number) => {
+    if (group.length) out.push(
+      <ul className="rm" key={`u${k}`}>
+        {group.map((l, i) => (
+          <li key={i}>
+            <span className="mk" aria-hidden="true">{l.mark === "done" ? "✓" : "·"}</span>
+            <span><span className="sr">{l.mark === "done" ? "완료: " : "미완료: "}</span>{l.text}</span>
+          </li>
+        ))}
+      </ul>,
+    );
+    group = [];
+  };
+  rm.lines.forEach((l, i) => {
+    if (l.mark === "heading") { flush(i); out.push(<h3 className="px" key={`h${i}`}>{l.text}</h3>); }
+    else group.push(l);
+  });
+  flush(rm.lines.length);
+  return (
+    <>
+      {items.length === 0 ? <><p className="empty">ROADMAP.md에 체크 항목이 없습니다</p><p className="note">{HINT}</p></> : (
+        <>
+          <div className="rm-sum">
+            <span className="px" aria-hidden="true">{done} / {items.length}</span>
+            <div className="rm-bar" role="progressbar" aria-label="로드맵 진행" aria-valuemin={0} aria-valuemax={items.length}
+              aria-valuenow={done} aria-valuetext={`${items.length}개 중 ${done}개 완료`}>
+              <i style={{ width: `${(done / items.length) * 100}%` }} />
+            </div>
+          </div>
+          {out}
+        </>
+      )}
+      {rm.skipped && <p className="note">읽지 못한 줄을 건너뛰었습니다</p>}
+    </>
+  );
+}
+
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -43,6 +88,7 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [node, setNode] = useState<string | null>(null);
+  const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
 
   const refresh = useCallback(() => {
     invoke<Status>("get_status")
@@ -77,6 +123,24 @@ export default function App() {
     return () => { cancelled = true; unlisten?.(); clearInterval(timer); };
   }, []);
 
+  // 세션을 새로 고르면 비우고(불러오는 중…), 30초 타이머(now)마다 이전 내용을 둔 채 다시 읽는다. 세션 미선택이면 부르지 않는다.
+  useEffect(() => setRoadmap(null), [selected]);
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    invoke<Roadmap>("get_roadmap", { id: selected })
+      .then((r) => { if (!cancelled) setRoadmap(r); })
+      .catch((e) => { if (!cancelled) setRoadmap({ kind: "error", reason: String(e) }); });
+    return () => { cancelled = true; };
+  }, [selected, now]);
+
+  // 성공 문구는 10초 뒤 같은 문구일 때만 비운다. "✕"와 "처리 중…"은 남긴다.
+  useEffect(() => {
+    if (!result || result.startsWith("✕") || result === "처리 중…") return;
+    const t = setTimeout(() => setResult((r) => (r === result ? "" : r)), 10000);
+    return () => clearTimeout(t);
+  }, [result]);
+
   const run = (cmd: "install_hooks" | "uninstall_hooks") => {
     setBusy(true);
     setResult("처리 중…");
@@ -102,25 +166,33 @@ export default function App() {
     : status.listen_addr ? `${status.listen_addr}에서 듣는 중`
     : `✕ 훅 서버 시작 실패: ${status.server_error ?? "알 수 없음"}`;
 
-  const installText = !status ? "확인 중…"
-    : status.settings_error ? `✕ 확인 실패: ${status.settings_error}`
-    : status.installed ? "설치됨" : "설치 안 됨";
+  const hookText = !status ? "훅 확인 중…"
+    : status.settings_error ? "훅 ✕ 확인 실패"
+    : status.installed ? "훅 설치됨" : "훅 설치 안 됨";
+  const shownResult = result || (status?.settings_error ? `✕ 확인 실패: ${status.settings_error}` : "");
 
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
   const cur = selected ? sessions.get(selected) ?? null : null;
-  const curAgent = cur && node && node !== "lead" ? cur.agents.find((a) => nodeKey(a) === node) ?? null : null;
-  const showNode = cur && node && (node === "lead" || curAgent);
 
   return (
     <div className="shell">
       <header className="panel topbar">
         <h1>ORBIT</h1>
-        <span className="px" role="status">{serverText}</span>
+        <span className="tb-result" role="status" title={shownResult}>{shownResult}</span>
+        <div className="tb-right">
+          <span className="tb-srv px" role="status">{serverText}</span>
+          <span className="sep px" aria-hidden="true">·</span>
+          <span className="px">{hookText}</span>
+          {status?.installed === true
+            ? <button type="button" className="btn" aria-label="훅 제거" disabled={busy} onClick={() => run("uninstall_hooks")}>제거</button>
+            : <button type="button" className="btn" aria-label="훅 설치" disabled={busy || status?.installed !== false} onClick={() => run("install_hooks")}>설치</button>}
+          <button type="button" className="btn" aria-label="액정 폴더 열기" onClick={openScreens}>액정 폴더</button>
+        </div>
       </header>
 
       <section className="panel sessions" aria-labelledby="h-sessions">
         <h2 id="h-sessions" className="px">세션</h2>
-        {sessionsError || status?.projects_error ? <p className="empty">✕ 로그 폴더를 읽지 못했습니다 — 설정 참고</p>
+        {sessionsError || status?.projects_error ? <><p className="empty">✕ 로그 폴더를 읽지 못했습니다</p>{status?.projects_error && <p className="note">{status.projects_error}</p>}</>
           : !loaded ? <p className="empty">불러오는 중…</p>
           : list.length === 0 ? <p className="empty">아직 세션이 없습니다</p>
           : (
@@ -149,52 +221,9 @@ export default function App() {
         <Graph session={cur} selected={node} onSelect={setNode} />
       </section>
 
-      <section className="panel detail" aria-labelledby="h-detail">
-        <h2 id="h-detail" className="px">상세 · 하네스</h2>
-
-        <h3 className="px">세션</h3>
-        {cur ? (
-          <dl>
-            <dt>폴더</dt><dd>{folderName(cur)}</dd>
-            <dt>상태</dt><dd>{STATE_LABEL[shownState(cur)]}</dd>
-            <dt>id</dt><dd className="path">{cur.id}</dd>
-            <dt>출처</dt><dd>{SOURCE_LABEL[cur.source] ?? "—"}</dd>
-            <dt>마지막</dt><dd>{fmtTime(cur.last_ms, now)}</dd>
-          </dl>
-        ) : <p className="empty">세션을 고르면 정보가 보입니다</p>}
-
-        {cur && showNode && (
-          <>
-            <h3 className="px">노드</h3>
-            <dl>
-              <dt>종류</dt><dd>{curAgent ? curAgent.kind ?? curAgent.description ?? "—" : "Lead"}</dd>
-              <dt>상태</dt><dd>{curAgent ? NODE_LABEL[curAgent.state] ?? "—" : LEAD_LABEL[shownState(cur)]}</dd>
-              <dt>시작</dt><dd>{fmtTime(curAgent ? curAgent.started_ms : cur.started_ms, now)}</dd>
-              <dt>시간</dt><dd>{curAgent ? fmtDur(curAgent.duration_ms) : "—"}</dd>
-              <dt>토큰</dt><dd>{curAgent ? fmtTokens(curAgent.tokens) : "—"}</dd>
-            </dl>
-          </>
-        )}
-
-        <h3 className="px">설정</h3>
-        <dl>
-          <dt>훅</dt><dd className="px">{installText}</dd>
-        </dl>
-        <div className="actions">
-          <button type="button" className="btn" disabled={busy} onClick={() => run("install_hooks")}>설치</button>
-          <button type="button" className="btn" disabled={busy} onClick={() => run("uninstall_hooks")}>제거</button>
-        </div>
-        <p className="note" role="status">{result}</p>
-        <p className="note">토큰이 settings 파일에 평문으로 저장됩니다.</p>
-        <p className="note">이벤트가 오지 않으면 settings의 allowedHttpHookUrls·disableAllHooks를 확인하세요.</p>
-        <dl style={{ marginTop: 8 }}>
-          <dt>대상</dt><dd className="path">{status?.settings_path ?? "…"}</dd>
-          <dt>로그</dt><dd className="path">{status ? status.projects_dir || status.projects_error || "—" : "…"}</dd>
-          <dt>액정</dt><dd className="path">{status ? status.screens_dir || "—" : "…"}</dd>
-        </dl>
-        <div className="actions">
-          <button type="button" className="btn" onClick={openScreens}>폴더 열기</button>
-        </div>
+      <section className="panel detail" aria-labelledby="h-roadmap">
+        <h2 id="h-roadmap" className="px">로드맵</h2>
+        {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
       <section className="panel chat" aria-labelledby="h-chat">

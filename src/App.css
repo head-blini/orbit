@@ -76,9 +76,13 @@ body {
 .panel > h2 { margin: 0 0 var(--s-2); font-weight: normal; }
 .empty { color: var(--c-dark); margin: 0; }
 
-/* 상단 바 */
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: var(--s-2) var(--s-4); }
+/* 상단 바: ORBIT | 결과(남는 폭, 넘치면 말줄임) | 서버 상태 · 훅 상태 [설치|제거] [액정 폴더] — 한 줄 고정 (run 20261114-roadmap-panel) */
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) var(--s-4); white-space: nowrap; }
 .topbar h1 { margin: 0; font-family: var(--f-pixel); font-size: var(--fs-brand); font-weight: normal; letter-spacing: 2px; }
+.tb-result { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--c-dark); font-size: var(--fs-meta); }
+.tb-right { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.tb-right .sep { color: var(--c-dark); }
+.tb-srv { max-width: 240px; overflow: hidden; text-overflow: ellipsis; } /* 긴 서버 오류는 여기서 말줄임, 버튼은 밀리지 않음 */
 
 /* 세션 목록 */
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
@@ -121,15 +125,16 @@ body {
 }
 @keyframes bar { from { left: -35%; } to { left: 100%; } }
 
-/* 상세·하네스 */
-.detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; }
+/* 로드맵 (오른쪽 위, 칸은 .detail 그대로). 묶음 제목 = 기존 h3(픽셀 + 1px 밑줄), 항목 본문 = 일반 글꼴 */
+.detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; overflow-wrap: anywhere; }
 .detail h3:first-of-type { margin-top: 0; }
-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s-2); }
-dt { color: var(--c-dark); }
-dd { margin: 0; overflow-wrap: anywhere; }
-.path { font-family: var(--f-mono); font-size: var(--fs-meta); overflow-wrap: anywhere; }
-.note { color: var(--c-dark); font-size: var(--fs-meta); margin: var(--s-1) 0 0; }
-.actions { display: flex; gap: var(--s-2); margin: var(--s-1) 0; }
+.rm-sum { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
+.rm-bar { flex: 1; position: relative; height: 8px; border: var(--b-chip); border-radius: var(--r-pbar); overflow: hidden; }
+.rm-bar i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--c-ink); border-radius: var(--r-pbar-fill); } /* 폭 = 완료 비율, 움직이지 않음 */
+.rm { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rm li { display: grid; grid-template-columns: 16px 1fr; overflow-wrap: anywhere; } /* 둘째 줄부터 글자 칸에 맞춰 들여쓰기 */
+.rm .mk { font-family: var(--f-pixel); font-size: var(--fs-pixel); }
+.note { color: var(--c-dark); font-size: var(--fs-meta); margin: var(--s-1) 0 0; overflow-wrap: anywhere; }
 .btn {
   min-height: 24px;
   padding: 2px var(--s-3);
