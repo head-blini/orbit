@@ -51,6 +51,7 @@ FAIL이 나오면 다음 단계로 가지 않는다. 산출물의 VERDICT 줄을
 - 셸을 통해 산출물을 위조하는 경로 일부(위 셸 규칙이 닫지 못하는 형태).
 - engineer·debugger·devops·qa 등 자유 셸 역할의 관문·설정 파일 쓰기 차단은 문자열 검사라 우회 가능하다. 관문은 작업 트리의 gate.mjs라 브랜치 전환으로 바뀐다. settings는 세션 중 다시 읽혀 `env`(ORBIT_GATE)·`disableAllHooks` 변경이 즉시 적용될 수 있다. 프로젝트 `.claude/agents`는 `orbit:` 이름을 흉내 낼 수 없고, `--agents`·동명 플러그인은 사용자 행위가 필요한 경로라 수용한다.
 - 출고 감지의 알려진 잔여 경로: run 브랜치에서 관문을 통과한 run이 `git push origin <sha>:main`으로 다른 커밋을 미는 형태, `git pull`·`rebase`에 `orbit/r1`과 비-orbit ref를 함께 주는 형태는 통과할 수 있다(머지는 위에서 막는다). 반대로 닫힌 쪽의 과차단도 있다: `merge --message "…"`·`--message=…`·`-s`·`-X` 같은 값 있는 옵션, `rebase --continue`에 `-c`·`2>&1`을 붙인 형태는 막힐 수 있다(`-m`·`-F`와 따옴표 친 `"orbit/<id>"`는 허용). 출고로 보지 않는 rebase 옵션은 `--continue|--abort|--skip|--quit` 넷뿐이다. 이 목록을 넓히면 main에서 `git rebase --root` 같은 이력 재작성이 열리는데, 그 변경을 잡는 테스트는 없다(목록을 고칠 때 주의).
+- 출고 감지의 문자열 우회 형태(알려졌고 수용): 붙여 쓴 `-m"…"`·`--message="…"` 값 속 구분자, 따옴표 친 `"main"`·`:"main"` 대상, `feat+orbit/r1`처럼 `+ @ , = !`가 앞에 붙은 ref의 pull은 통과할 수 있다. 닫힌 쪽 과차단: run 브랜치의 `git pull --rebase origin main`과 메시지에 "rebase … main"이 든 커밋은 막힌다. 대신 `git fetch origin` 뒤 `git rebase origin/main`, 커밋 메시지는 `-F` 파일로 쓴다. 근본 해법은 git 쪽 강제(reference-transaction 훅)이며 이번 run에서는 미룸.
 - 플러그인 agents·skills 본문 변경. 경로 모양으로 구별되지 않으므로 full 트랙의 reviewer-rules·security가 본다.
 - 예산: loop 반복 한도는 Lead가 `budget.loops`와 STATE.json `loops`로 지키는 지시 수준이다. 실행·일별 비용 상한은 오르빗 엔진 몫이다.
 - 훅 자체가 실행되지 않는 경우(node 없음, 타임아웃 등)는 Claude Code 동작이라 플러그인이 바꿀 수 없다.
