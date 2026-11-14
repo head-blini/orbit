@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import Graph from "./Graph";
+import Screen from "./Screen";
+import { fmtTime, folderName, nodeKey, shownState, type NodeState, type Session } from "./types";
 import "./App.css";
 
 type Status = {
@@ -11,34 +14,27 @@ type Status = {
   settings_error: string | null;
   projects_dir: string;
   projects_error: string | null;
+  screens_dir: string;
 };
 
-type ToolEvent = {
-  tool_use_id: string | null;
-  phase: "call" | "result";
-  tool: string;
-  at_ms: number;
-  source: "hook" | "log" | "both";
-};
+const CHIP_AT = 6;
+const SOURCE_LABEL = { hook: "훅", log: "로그", both: "훅 + 로그" } as const;
+const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
+const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
 
-type Session = {
-  id: string;
-  cwd: string | null;
-  started_ms: number | null;
-  last_ms: number;
-  source: "hook" | "log" | "both";
-  ver: number;
-  events: ToolEvent[];
-};
+const fmtDur = (ms: number | null) =>
+  ms == null ? "—" : ms >= 60000 ? `${Math.floor(ms / 60000)}분 ${Math.floor((ms % 60000) / 1000)}초` : `${Math.floor(ms / 1000)}초`;
+const fmtTokens = (n: number | null) => (n == null ? "—" : n >= 1000 ? `${Math.round(n / 1000)}k 토큰` : `${n} 토큰`);
 
-const SOURCE_LABEL = { hook: "훅", log: "로그", both: "둘 다" } as const;
-
-function Panel({ area, title, hint, children }: { area: string; title: string; hint: string; children?: ReactNode }) {
+function Sym({ state }: { state: keyof typeof STATE_LABEL }) {
   return (
-    <section className="panel" style={{ gridArea: area }} aria-label={title}>
-      <h2>{title}</h2>
-      {children ?? <p className="empty">{hint}</p>}
-    </section>
+    <span className="sym">
+      {state === "working" ? <span className="bar-mini" aria-hidden="true"><i /></span>
+        : state === "waiting" ? <span className="blink" aria-hidden="true">!</span>
+        : state === "error" ? <span aria-hidden="true">✕</span>
+        : state === "stalled" ? <span aria-hidden="true">?</span> : null}
+      <span className="sr">{STATE_LABEL[state]}</span>
+    </span>
   );
 }
 
@@ -47,8 +43,12 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sessions, setSessions] = useState<Record<string, Session>>({});
+  const [sessions, setSessions] = useState<Map<string, Session>>(new Map());
+  const [loaded, setLoaded] = useState(false);
+  const [sessionsError, setSessionsError] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
+  const [node, setNode] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     invoke<Status>("get_status")
@@ -61,16 +61,26 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    // 들고 있는 것보다 ver가 작은 스냅숏은 버린다.
+    // 들고 있는 것보다 ver가 작은 스냅숏은 버린다. 같은 ver는 교체한다(멈춤 판정만 바뀐 스냅숏).
     const merge = (list: Session[]) =>
       setSessions((prev) => {
-        const next = { ...prev };
-        for (const x of list) if (!(next[x.id] && x.ver < next[x.id].ver)) next[x.id] = x;
+        const next = new Map(prev);
+        for (const x of list) { const old = next.get(x.id); if (!old || x.ver >= old.ver) next.set(x.id, x); }
         return next;
       });
-    listen<Session[]>("session-update", (e) => merge(e.payload ?? [])).then((fn) => (cancelled ? fn() : (unlisten = fn)));
-    invoke<Session[]>("get_sessions").then(merge).catch(() => {});
-    return () => { cancelled = true; unlisten?.(); };
+    const load = (first: boolean) =>
+      invoke<Session[]>("get_sessions")
+        .then((l) => { merge(l); setSessionsError(false); })
+        .catch(() => { if (first) setSessionsError(true); })
+        .finally(() => setLoaded(true));
+    // listen이 끝난 뒤에 get_sessions를 부른다(그 사이 온 이벤트를 놓치지 않게).
+    listen<Session[]>("session-update", (e) => merge(e.payload ?? []))
+      .then((fn) => (cancelled ? fn() : (unlisten = fn)))
+      .catch(() => {})
+      .then(() => load(true));
+    // 하나의 타이머: 시각 갱신 + 조용한 세션의 멈춤 판정 갱신
+    const timer = setInterval(() => { setNow(Date.now()); load(false); }, 30000);
+    return () => { cancelled = true; unlisten?.(); clearInterval(timer); };
   }, []);
 
   const run = (cmd: "install_hooks" | "uninstall_hooks") => {
@@ -84,77 +94,127 @@ export default function App() {
             : cmd === "install_hooks" ? "성공 (백업 없음: 새 파일이거나 변경 없음)" : "제거할 항목 없음",
         ),
       )
-      .catch((e) => setResult(`오류: ${String(e)}`))
+      .catch((e) => setResult(`✕ 오류: ${String(e)}`))
       .finally(() => { setBusy(false); refresh(); });
   };
 
+  const openScreens = () => {
+    invoke("open_screens_dir").catch((e) => setResult(`✕ 오류: ${String(e)}`));
+  };
+
   const serverText = statusError
-    ? `상태를 읽지 못했습니다: ${statusError}`
+    ? `✕ 상태를 읽지 못했습니다: ${statusError}`
     : !status ? "확인 중…"
     : status.listen_addr ? `${status.listen_addr}에서 듣는 중`
-    : `훅 서버 시작 실패: ${status.server_error ?? "알 수 없음"}`;
+    : `✕ 훅 서버 시작 실패: ${status.server_error ?? "알 수 없음"}`;
 
-  const installText = !status ? ""
-    : status.settings_error ? `확인 실패: ${status.settings_error}`
+  const installText = !status ? "확인 중…"
+    : status.settings_error ? `✕ 확인 실패: ${status.settings_error}`
     : status.installed ? "설치됨" : "설치 안 됨";
 
-  const list = Object.values(sessions).sort((a, b) => b.last_ms - a.last_ms);
-  const events = selected && sessions[selected] ? [...sessions[selected].events].sort((a, b) => a.at_ms - b.at_ms) : null;
+  const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
+  const cur = selected ? sessions.get(selected) ?? null : null;
+  const curAgent = cur && node && node !== "lead" ? cur.agents.find((a) => nodeKey(a) === node) ?? null : null;
+  const showNode = cur && node && (node === "lead" || curAgent);
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <h1>Orbit</h1>
-        <span className="status" role="status">{serverText}</span>
+      <header className="panel topbar">
+        <h1>ORBIT</h1>
+        <span className="px" role="status">{serverText}</span>
       </header>
-      <Panel area="sessions" title="세션" hint="">
-        <p>
-          {status?.projects_dir
-            ? <>로그 폴더: <code>{status.projects_dir}</code></>
-            : status ? `로그 폴더를 정하지 못했습니다: ${status.projects_error ?? "알 수 없음"}` : "…"}
-        </p>
-        {list.length > 0 ? (
-          <ul className="sessions">
-            {list.map((x) => (
-              <li key={x.id}>
-                <button type="button" aria-pressed={x.id === selected} onClick={() => setSelected(x.id)}>
-                  {[
-                    x.id.slice(0, 8),
-                    x.cwd ?? "—",
-                    x.started_ms == null ? "—" : new Date(x.started_ms).toLocaleString(),
-                    new Date(x.last_ms).toLocaleString(),
-                    SOURCE_LABEL[x.source] ?? "",
-                  ].join(" · ")}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="empty">아직 세션이 없습니다</p>}
-      </Panel>
-      <Panel area="graph" title="에이전트 그래프" hint="세션을 선택하면 그래프가 표시됩니다" />
-      <Panel area="detail" title="상세 · 하네스" hint="">
-        <p>대상 경로: <code>{status?.settings_path ?? "…"}</code></p>
-        <p>훅 상태: {installText}</p>
+
+      <section className="panel sessions" aria-labelledby="h-sessions">
+        <h2 id="h-sessions" className="px">세션</h2>
+        {sessionsError || status?.projects_error ? <p className="empty">✕ 로그 폴더를 읽지 못했습니다 — 설정 참고</p>
+          : !loaded ? <p className="empty">불러오는 중…</p>
+          : list.length === 0 ? <p className="empty">아직 세션이 없습니다</p>
+          : (
+            <ul className="list">
+              {list.map((x) => {
+                const st = shownState(x);
+                return (
+                  <li key={x.id}>
+                    <button type="button" className={list.length >= CHIP_AT && x.id !== selected ? "sess chip" : "sess"}
+                      aria-current={x.id === selected ? "true" : undefined}
+                      onClick={() => { setSelected(x.id); setNode(null); }}>
+                      <span className="cur px" aria-hidden="true">▶</span>
+                      <span className="name px">{folderName(x)}</span>
+                      <Sym state={st} />
+                      <span className="time">{fmtTime(x.last_ms, now)}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+      </section>
+
+      <section className="panel graph" aria-labelledby="h-graph">
+        <h2 id="h-graph" className="px">에이전트 그래프</h2>
+        <Graph session={cur} selected={node} onSelect={setNode} />
+      </section>
+
+      <section className="panel detail" aria-labelledby="h-detail">
+        <h2 id="h-detail" className="px">상세 · 하네스</h2>
+
+        <h3 className="px">세션</h3>
+        {cur ? (
+          <dl>
+            <dt>폴더</dt><dd>{folderName(cur)}</dd>
+            <dt>상태</dt><dd>{STATE_LABEL[shownState(cur)]}</dd>
+            <dt>id</dt><dd className="path">{cur.id}</dd>
+            <dt>출처</dt><dd>{SOURCE_LABEL[cur.source] ?? "—"}</dd>
+            <dt>마지막</dt><dd>{fmtTime(cur.last_ms, now)}</dd>
+          </dl>
+        ) : <p className="empty">세션을 고르면 정보가 보입니다</p>}
+
+        {cur && showNode && (
+          <>
+            <h3 className="px">노드</h3>
+            <dl>
+              <dt>종류</dt><dd>{curAgent ? curAgent.kind ?? curAgent.description ?? "—" : "Lead"}</dd>
+              <dt>상태</dt><dd>{curAgent ? NODE_LABEL[curAgent.state] ?? "—" : STATE_LABEL[shownState(cur)]}</dd>
+              <dt>시작</dt><dd>{fmtTime(curAgent ? curAgent.started_ms : cur.started_ms, now)}</dd>
+              <dt>시간</dt><dd>{curAgent ? fmtDur(curAgent.duration_ms) : "—"}</dd>
+              <dt>토큰</dt><dd>{curAgent ? fmtTokens(curAgent.tokens) : "—"}</dd>
+            </dl>
+          </>
+        )}
+
+        <h3 className="px">설정</h3>
+        <dl>
+          <dt>훅</dt><dd className="px">{installText}</dd>
+        </dl>
         <div className="actions">
-          <button type="button" disabled={busy} onClick={() => run("install_hooks")}>설치</button>
-          <button type="button" disabled={busy} onClick={() => run("uninstall_hooks")}>제거</button>
+          <button type="button" className="btn" disabled={busy} onClick={() => run("install_hooks")}>설치</button>
+          <button type="button" className="btn" disabled={busy} onClick={() => run("uninstall_hooks")}>제거</button>
         </div>
-        <p role="status" aria-live="polite">{result}</p>
-        <p className="empty">토큰이 settings 파일에 평문으로 저장됩니다.</p>
-        <p className="empty">이벤트가 오지 않으면 settings의 allowedHttpHookUrls·disableAllHooks를 확인하세요.</p>
-      </Panel>
-      <Panel area="timeline" title="타임라인" hint="세션을 고르면 도구 호출이 시간순으로 표시됩니다">
-        {events && events.length === 0 ? <p className="empty">기록 없음</p> : events ? (
-          <ul className="events">
-            {events.map((e, i) => (
-              <li key={i}>
-                {[new Date(e.at_ms).toLocaleTimeString(), e.tool, e.phase === "call" ? "호출" : "결과", SOURCE_LABEL[e.source] ?? ""]
-                  .filter(Boolean).join(" · ")}
-              </li>
-            ))}
-          </ul>
-        ) : undefined}
-      </Panel>
+        <p className="note" role="status">{result}</p>
+        <p className="note">토큰이 settings 파일에 평문으로 저장됩니다.</p>
+        <p className="note">이벤트가 오지 않으면 settings의 allowedHttpHookUrls·disableAllHooks를 확인하세요.</p>
+        <dl style={{ marginTop: 8 }}>
+          <dt>대상</dt><dd className="path">{status?.settings_path ?? "…"}</dd>
+          <dt>로그</dt><dd className="path">{status ? status.projects_dir || status.projects_error || "—" : "…"}</dd>
+          <dt>액정</dt><dd className="path">{status ? status.screens_dir || "—" : "…"}</dd>
+        </dl>
+        <div className="actions">
+          <button type="button" className="btn" onClick={openScreens}>폴더 열기</button>
+        </div>
+      </section>
+
+      <section className="panel chat" aria-labelledby="h-chat">
+        <h2 id="h-chat" className="px">채팅</h2>
+        <div className="chat-body"><p className="empty">대화 기능은 ⑥에서 연결됩니다.</p></div>
+        <div className="input-row">
+          <span className="px" aria-hidden="true">▶</span>
+          <input type="text" disabled aria-label="Claude Code에게 보낼 말 (⑥에서 연결)" placeholder="Claude Code에게 무엇을 시킬까?" />
+          <span className="px" aria-hidden="true">▼</span>
+          <span className="tag px">⑥에서 연결</span>
+        </div>
+      </section>
+
+      <div className="console"><Screen /></div>
     </div>
   );
 }
