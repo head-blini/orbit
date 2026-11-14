@@ -109,4 +109,4 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 
 ## 8. 끝내기
 
-`check ship`이 전부 PASS면 librarian을 불러 main 머지·문서·배운 것 기록을 맡긴다(quick 트랙은 librarian 없이 사용자에게 머지 여부를 묻는다). 배포가 포함되면 `deploy` 승인 뒤에만 진행한다. 사용자에게는 결과, 증거 위치(VERIFY.md), 남은 위험을 세 줄 안으로 보고한다. push는 사용자가 요청했을 때만.
+`check ship`은 VERIFY(full은 SECURITY도)의 COMMIT과 run 브랜치 해시를 대조한다. librarian의 기록 커밋은 `CHANGELOG*`·`docs/**`만 바꾼다. 키트 run은 사람의 적용 커밋 뒤에 qa·security가 COMMIT을 적는다. `check ship`이 전부 PASS면 librarian을 불러 main 머지·문서·배운 것 기록을 맡긴다(quick 트랙은 librarian 없이 사용자에게 머지 여부를 묻는다). 배포가 포함되면 `deploy` 승인 뒤에만 진행한다. 사용자에게는 결과, 증거 위치(VERIFY.md), 남은 위험을 세 줄 안으로 보고한다. push는 사용자가 요청했을 때만.
