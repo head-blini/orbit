@@ -180,7 +180,7 @@ export default function App() {
         <h1>ORBIT</h1>
         <span className="tb-result" role="status" title={shownResult}>{shownResult}</span>
         <div className="tb-right">
-          <span className="tb-srv px" role="status">{serverText}</span>
+          <span className="tb-srv px" role="status" title={serverText}>{serverText}</span>
           <span className="sep px" aria-hidden="true">·</span>
           <span className="px">{hookText}</span>
           {status?.installed === true

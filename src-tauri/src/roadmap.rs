@@ -91,6 +91,7 @@ pub fn read(dir: &Path) -> Roadmap {
     if !meta.is_file() {
         return err("일반 파일이 아닙니다");
     }
+    // 심볼릭 링크·정션으로 폴더 밖을 가리키는 경우를 막는다
     let inside = match (file.canonicalize(), dir.canonicalize()) {
         (Ok(f), Ok(d)) => f.parent() == Some(d.as_path()),
         _ => false,
@@ -102,6 +103,7 @@ pub fn read(dir: &Path) -> Roadmap {
         Ok(f) => f,
         Err(e) => return err(&e.kind().to_string()),
     };
+    // 위 검사와 open 사이에 파일이 바뀌었을 수 있어 열린 핸들로 다시 확인한다
     match f.metadata() {
         Ok(m) if m.is_file() => {
             if m.len() > MAX_BYTES {
@@ -238,6 +240,11 @@ mod tests {
         let (lines, skipped) = found(parse(src.as_bytes()));
         assert_eq!(lines, vec![l(Mark::Todo, "a"), l(Mark::Todo, "b")]);
         assert!(skipped);
+        let edge = format!("- [ ] a\n- [ ] {}\n", "x".repeat(MAX_LINE - 6));
+        assert_eq!(edge.lines().nth(1).unwrap().len(), MAX_LINE);
+        let (lines, skipped) = found(parse(edge.as_bytes()));
+        assert_eq!(lines.len(), 2);
+        assert!(!skipped);
     }
 
     #[test]
