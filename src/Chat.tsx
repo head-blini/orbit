@@ -131,8 +131,8 @@ export default function Chat({ session }: { session: Session | null }) {
           gen.current++;
           setOpen(false);
           setItems((p) => p.map((i) => ((i.k === "permit" || i.k === "ask") && i.result === null
-            ? { ...i, result: i.k === "permit" ? "→ 거부됨 (사이드카 종료)" : "→ 답하지 않음 (사이드카 종료)" } : i)));
-          if (runRef.current) finish("err", "사이드카가 끝났습니다", "✕ 오류: 사이드카가 끝났습니다");
+            ? { ...i, result: i.k === "permit" ? "→ 거부됨 (연결 끊김)" : "→ 답하지 않음 (연결 끊김)" } : i)));
+          if (runRef.current) finish("err", "Claude와 연결이 끊겼습니다", "✕ 오류: Claude와 연결이 끊겼습니다");
           break;
       }
     })
@@ -255,7 +255,7 @@ export default function Chat({ session }: { session: Session | null }) {
                   : <p className="chat-end" key={n}>{i.text}</p>;
               }
             })}
-            <div ref={endRef} />
+            <div ref={endRef} style={{ marginTop: -8 }} />{/* 끝 gap 상쇄 */}
           </div>
         </div>
       )}
