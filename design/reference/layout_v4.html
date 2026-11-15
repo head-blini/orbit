@@ -5,7 +5,8 @@
   스크립트 없음, 외부 요청 없음. 데이터는 모두 예시다. 값은 design/tokens.json과 같다.
   @font-face 없이 "Galmuri11", monospace 대체만 둔다(file://에서는 브라우저가 글꼴 파일을 막는다. 앱은 src/assets/fonts 사용).
   run 20261114-roadmap-panel: 오른쪽 위 = 로드맵 패널, 상단 바 오른쪽 = 훅 상태·버튼, 노드 이름 = 접두사 없는 표기.
-  run 20261114-chat-sidecar: 아래 채팅 = 대화 중 권한 카드 대기 상태. 다른 상태 9가지는 첫 화면 아래 "채팅 상태별 변형"(656×220, 960×640 창의 채팅 칸 크기).
+  run 20261115-terminal: 아래(왼쪽+가운데) 칸 = 앱 내장 터미널(채팅 대체). 첫 화면은 claude 실행 중 상태.
+  다른 상태는 첫 화면 아래 "터미널 상태별 변형"(656×220, 960×640 창의 아래 칸 크기). 터미널 화면은 xterm을 흉내 낸 pre다.
 -->
 <html lang="ko">
 <head>
@@ -72,7 +73,7 @@ body {
 .sessions { grid-column: 1;     grid-row: 2; }
 .graph    { grid-column: 2;     grid-row: 2; }
 .detail   { grid-column: 3;     grid-row: 2; }
-.chat     { grid-column: 1 / 3; grid-row: 3; }
+.terminal { grid-column: 1 / 3; grid-row: 3; }
 .console  { grid-column: 3;     grid-row: 3; }
 
 /* 패널: RPG 대화창 이중 테두리 (decisions.md 36) */
@@ -204,113 +205,36 @@ body {
 .btn:hover { background: var(--c-ink); color: var(--c-paper); }
 .btn:disabled { border-style: dashed; color: var(--c-dark); cursor: default; background: var(--c-paper); }
 
-/* 채팅 (run 20261114-chat-sidecar DESIGN.md). 제목 줄 / 대화 기록(스크롤) / 입력 줄 */
-.chat { display: flex; flex-direction: column; }
-.chat-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-bottom: var(--s-2); }
-.chat-head h2 { margin: 0; font-weight: normal; }
-.chat-body { flex: 1; display: grid; place-items: center; min-height: 0; } /* 빈 상태 */
-/* 기록: column-reverse 바깥 + 정순 안쪽 = 처음부터 맨 아래에 붙어 있고, 위로 올려 읽는 중이면 그 자리를 지킨다 */
-.chat-log {
-  flex: 1; min-height: 0;
-  display: flex; flex-direction: column-reverse;
-  overflow: auto;
-  padding: var(--s-1); /* 포커스 링이 잘리지 않게 */
-  scrollbar-color: var(--c-ink) var(--c-light);
-}
-.chat-items { display: flex; flex-direction: column; gap: var(--s-2); }
-/* 첫 줄: ─ 새 대화 · 폴더: orbit ─ */
-.chat-sep { display: flex; align-items: center; gap: var(--s-2); color: var(--c-dark); white-space: nowrap; }
-.chat-sep::before, .chat-sep::after { content: ""; flex: 1; border-top: 1px dashed var(--c-dark); }
-.chat-sep b { font-weight: normal; overflow: hidden; text-overflow: ellipsis; }
-/* 메시지: 말한 이 칸(56px, 픽셀) + 글 칸(일반 글꼴, 글자 그대로) */
-.msg { display: grid; grid-template-columns: 56px minmax(0, 1fr); column-gap: var(--s-2); align-items: start; }
-.msg .who { font-family: var(--f-pixel); font-size: var(--fs-pixel); line-height: 19.5px; }
-.msg .txt, .chat-end, .card p { margin-block: 0; }
-.msg .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg.me .txt { justify-self: start; padding: 0 var(--s-2); border: var(--b-chip); } /* 내 말 = 얇은 테두리 상자 */
-.caret { display: inline-block; width: 7px; height: 13px; margin-left: 2px; vertical-align: -2px; background: var(--c-ink); }
-/* 끝 줄 · 카드는 글 칸에 맞춰 들여쓴다 */
-.chat-end, .card { margin-left: 64px; }
-.chat-end { font-family: var(--f-pixel); font-size: var(--fs-pixel); color: var(--c-dark); }
-.chat-end.err { color: var(--c-ink); font-family: var(--f-body); font-size: var(--fs-body); overflow-wrap: anywhere; }
-.chat-end.err .px { margin-right: var(--s-1); }
-/* 카드(권한·질문) = 그래프 노드와 같은 작은 RPG 대화창 */
-.card {
-  max-width: 640px;
-  display: grid; gap: var(--s-1);
-  padding: var(--s-2) var(--s-3);
-  border: var(--b-box); border-radius: var(--r-node); box-shadow: var(--sh-node);
-}
-.card .q { margin: 0; }
-.card .cmd {
-  margin: 0; padding: 0 var(--s-2);
-  border-left: 2px solid var(--c-ink);
-  font: var(--fs-body)/1.5 var(--f-mono);
-  white-space: pre-wrap; overflow-wrap: anywhere;
-  max-height: 117px; overflow: auto; /* 6줄 넘으면 카드 안 스크롤 */
-}
-.card .done { font-family: var(--f-pixel); font-size: var(--fs-pixel); color: var(--c-dark); }
-/* 권한 메뉴: ▶ 커서는 하나 — 포커스/hover한 항목, 아무것도 없으면 첫 항목(허용) */
-.menu { display: flex; flex-wrap: wrap; gap: 0 var(--s-4); }
-.opt {
-  display: inline-flex; align-items: center; gap: var(--s-1);
-  min-height: 24px; padding: 2px var(--s-2) 2px 0;
-  font-family: var(--f-pixel); font-size: var(--fs-pixel);
-  color: var(--c-ink); background: transparent; border: 0; border-radius: 0; cursor: pointer;
-}
-.opt .cur { width: 12px; visibility: hidden; }
-.menu:not(:hover):not(:focus-within) .opt:first-child .cur,
-.opt:hover .cur, .opt:focus-visible .cur { visibility: visible; }
-.opt:hover { background: var(--c-light); }
-/* 질문 선택지: 세로 목록, ▶ label + 설명 */
-.choices { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.choice {
-  width: 100%; display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: var(--s-1);
-  min-height: 24px; padding: 2px var(--s-1);
-  text-align: left; color: var(--c-ink); background: transparent; border: 0; border-radius: 0; cursor: pointer; font: inherit;
-}
-.choice:hover { background: var(--c-light); }
-.choice .mk, .choice .lb { font-family: var(--f-pixel); font-size: var(--fs-pixel); line-height: 20px; }
-.choice .ds { grid-column: 2; color: var(--c-dark); font-size: var(--fs-meta); overflow-wrap: anywhere; }
-.choice:hover .ds { color: var(--c-ink); } /* light 바탕 위 dark는 대비 부족 */
-/* 하나 고르기: ▶ 커서는 하나(권한 메뉴와 같음) — 포커스/hover한 선택지, 없으면 첫 선택지. 나머지는 24px 빈칸 */
-.choices.one .mk { visibility: hidden; }
-.choices.one:not(:hover):not(:focus-within) li:first-child .mk,
-.choices.one .choice:hover .mk, .choices.one .choice:focus-visible .mk { visibility: visible; }
-.card .send { justify-self: end; }
-/* 입력 줄: 꺼짐(점선 dark) / 켜짐(실선 ink) / 실행 중(점선 dark + 문구 + 중단) */
-.input-row {
-  display: flex; align-items: center; gap: var(--s-2);
-  margin-top: var(--s-2);
-  min-height: 44px;
-  padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3);
-  border: 2px dashed var(--c-dark);
-  background: var(--c-paper);
-}
-.input-row.on { border: var(--b-box); }
-.input-row textarea {
-  flex: 1; min-width: 0; resize: none;
-  max-height: 58px; /* 3줄까지 늘고 넘치면 안에서 스크롤 */
-  margin: 0; padding: 0; border: 0; background: transparent;
-  font: var(--fs-body)/1.5 var(--f-body); color: var(--c-dark);
-}
-.input-row.on textarea { color: var(--c-ink); }
-.input-row textarea:focus-visible { outline: 0; } /* 줄 전체에 링 */
-.input-row:focus-within { outline: 2px solid var(--c-ink); outline-offset: 2px; }
-.input-row textarea::placeholder { color: var(--c-dark); opacity: 1; }
-.input-row .say { flex: 1; min-width: 0; color: var(--c-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.input-row .tri { color: var(--c-dark); }
-.input-row.on .tri { color: var(--c-ink); }
-.tag { padding: 0 var(--s-1); border: var(--b-chip); color: var(--c-ink); white-space: nowrap; }
+/* 종료를 누른 뒤: disabled 대신 aria-disabled(포커스를 잃지 않게). 기존 채팅 "중단"과 같은 규칙 */
+.btn[aria-disabled="true"], .btn[aria-disabled="true"]:hover { border-style: dashed; color: var(--c-dark); cursor: default; background: var(--c-paper); }
 
-/* 상태별 변형 모음 (시안 전용, 앱에는 없음): 960×640일 때 채팅 칸 크기 656×220 */
+/* 터미널 (run 20261115-terminal DESIGN.md). 머리 줄(제목 · 상태 · 버튼 4개) / 오류 줄(있을 때만) / 화면 */
+.terminal { display: flex; flex-direction: column; }
+.term-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); white-space: nowrap; }
+.term-head h2 { margin: 0; font-weight: normal; }
+.term-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-dark); } /* 남는 폭, 넘치면 말줄임 */
+.term-btns { display: flex; gap: var(--s-2); }
+.term-err { margin: 0 0 var(--s-2); overflow-wrap: anywhere; } /* 글자 = ink, 일반 글꼴. 머리말만 픽셀 */
+.term-err .px { margin-right: var(--s-1); }
+.term-body { flex: 1; min-height: 0; display: grid; place-content: center; gap: var(--s-1); text-align: center; } /* 시작 전 빈 칸 */
+.term-body .note { margin: 0; }
+/* 화면 칸: 안쪽 4px 여백 안에 xterm. 포커스 링은 칸 안쪽(-2px)에 그려 패널 overflow에 잘리지 않는다 */
+.term { flex: 1; min-height: 0; padding: var(--s-1); }
+.term:focus-within { outline: 2px solid var(--c-ink); outline-offset: -2px; }
+/* 시안 전용: xterm 화면 흉내. 앱은 xterm이 그린다(tokens.json terminal: 13px mono, lineHeight 1, 테마 4명암) */
+.term-screen { height: 100%; margin: 0; overflow: hidden; font: var(--fs-body)/16px var(--f-mono); white-space: pre; color: var(--c-ink); background: var(--c-paper); }
+.term-screen:focus-visible { outline: 0; } /* 링은 .term이 그린다 */
+.term-screen .d { color: var(--c-dark); }   /* ANSI 2~6 · 8 · 10~14 → dark */
+.term-screen .k { background: var(--c-ink); color: var(--c-paper); } /* 커서(블록) */
+
+/* 상태별 변형 모음 (시안 전용, 앱에는 없음): 960×640일 때 아래 칸 크기 656×220 */
 /* 변형 모음은 첫 화면 아래. 문서 스크롤 막대를 숨겨 첫 화면 배치 폭이 줄지 않게 한다(휠로 내려 본다) */
 html { scrollbar-width: none; }
 .variants { padding: var(--s-4) var(--gap-panel); display: grid; grid-template-columns: repeat(auto-fill, 656px); gap: var(--s-4) var(--gap-panel); }
 .variants > h2 { grid-column: 1 / -1; margin: 0; font-weight: normal; }
 .variants figure { margin: 0; }
 .variants figcaption { margin-bottom: var(--s-1); }
-.variants .chat { width: 656px; height: 220px; }
+.variants .terminal { width: 656px; height: 220px; }
 
 /* 게임기 화면: 패널이 아니라 베젤 자체가 독립 상자 (decisions.md 52, 67) */
 .console {
@@ -460,36 +384,38 @@ html { scrollbar-width: none; }
     </ul>
   </section>
 
-  <!-- 아래(왼쪽+가운데): 채팅. 대표 상태 = 대화 중 권한 카드 대기(성공 기준 5 → 8). 다른 상태는 맨 아래 "상태별 변형" -->
-  <section class="panel chat" aria-labelledby="h-chat">
-    <div class="chat-head">
-      <h2 id="h-chat" class="px">채팅</h2>
-      <button type="button" class="btn" disabled>새 대화</button>
-    </div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="chat-sep px"><b>새 대화 · 폴더: proj</b></div>
-      <div class="msg me"><span class="who">나</span><p class="txt">README.md 첫 줄을 그대로 보여 줘</p></div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt"># proj
-
-끝.</p></div>
-      <p class="chat-end">완료 · 추정 비용 $0.0123</p>
-      <div class="msg me"><span class="who">나</span><p class="txt">`echo hi &gt; a.txt`를 Bash로 실행해 줘</p></div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt">a.txt 파일에 hi를 쓰겠습니다.</p></div>
-      <div class="card" role="group" aria-labelledby="pq1">
-        <p class="q px" id="pq1">Bash 실행을 허용할까요?</p>
-        <pre class="cmd" tabindex="0" aria-label="명령">echo hi &gt; a.txt</pre>
-        <div class="menu">
-          <button type="button" class="opt"><span class="cur" aria-hidden="true">▶</span>허용</button>
-          <button type="button" class="opt"><span class="cur" aria-hidden="true">▶</span>거부</button>
-          <button type="button" class="opt"><span class="cur" aria-hidden="true">▶</span>이 세션 동안 (이 명령만)</button>
-        </div>
+  <!-- 아래(왼쪽+가운데): 터미널. 대표 상태 = claude 실행 중(한글 입력 중). 다른 상태는 맨 아래 "상태별 변형" -->
+  <section class="panel terminal" aria-labelledby="h-term">
+    <div class="term-head">
+      <h2 id="h-term" class="px" tabindex="-1">터미널</h2>
+      <span class="term-state px">proj · 실행 중</span>
+      <div class="term-btns">
+        <button type="button" class="btn" disabled>폴더 열기</button>
+        <button type="button" class="btn" disabled aria-label="새로 시작: proj 폴더">새로 시작</button>
+        <button type="button" class="btn" disabled aria-label="이어 가기: proj 세션">이어 가기</button>
+        <button type="button" class="btn">종료</button>
       </div>
-    </div></div>
-    <div class="input-row">
-      <span class="say px">고를 때까지 기다리고 있다…</span>
-      <button type="button" class="btn">중단</button>
     </div>
-    <p class="sr" role="status">권한 요청: Bash. 채팅에서 허용, 거부, 이 세션 동안 중 고르세요.</p>
+    <div class="term">
+<pre class="term-screen" tabindex="0" aria-label="claude 터미널. F6: 버튼으로 나가기"><span class="d">╭──────────────────────────────────────────────╮</span>
+<span class="d">│</span> ✻ Welcome to Claude Code!                    <span class="d">│</span>
+<span class="d">│</span>                                              <span class="d">│</span>
+<span class="d">│</span>   <span class="d">cwd: C:\Users\you\proj</span>                     <span class="d">│</span>
+<span class="d">╰──────────────────────────────────────────────╯</span>
+
+<span class="d">&gt;</span> README.md 첫 줄을 그대로 보여 줘
+
+● Read(README.md)
+  <span class="d">⎿  Read 3 lines</span>
+
+● # proj
+
+<span class="d">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+&gt; 안녕하세요 반갑습니다.<span class="k"> </span>
+<span class="d">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+  <span class="d">? for shortcuts</span></pre>
+    </div>
+    <p class="sr" role="status">proj 폴더에서 claude 실행 중</p>
   </section>
 
   <!-- 오른쪽 아래: 게임기 화면 틀. 빈 액정 -->
@@ -499,182 +425,121 @@ html { scrollbar-width: none; }
 
 </div>
 
-<!-- 채팅 상태별 변형 (시안 전용). 크기 = 960×640 창의 채팅 칸 656×220. 데이터는 BRIEF 성공 기준의 프롬프트로 실제 앱에서 재현 가능 -->
-<main class="variants" id="chat-states" aria-label="채팅 상태별 변형">
-  <h2 class="px">채팅 상태별 변형 (656×220)</h2>
+<!-- 터미널 상태별 변형 (시안 전용). 크기 = 960×640 창의 아래 칸 656×220. 문구는 run 20261115-terminal DESIGN.md 2절과 같다 -->
+<main class="variants" id="term-states" aria-label="터미널 상태별 변형">
+  <h2 class="px">터미널 상태별 변형 (656×220)</h2>
 
-  <figure><figcaption class="px">1. 세션 미선택</figcaption>
-  <section class="panel chat" aria-label="채팅 1">
-    <div class="chat-head"><h2 class="px">채팅</h2></div>
-    <div class="chat-body"><p class="empty">세션을 고르면 그 폴더에서 대화를 시작합니다</p></div>
-    <div class="input-row">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" disabled aria-label="Claude Code에게 보낼 말" placeholder="Claude Code에게 무엇을 시킬까?"></textarea>
-      <span class="tri px" aria-hidden="true">▼</span>
-      <button type="button" class="btn" disabled>보내기</button>
-    </div>
-  </section></figure>
-
-  <figure><figcaption class="px">2. 세션 선택 · 대화 없음</figcaption>
-  <section class="panel chat" aria-label="채팅 2">
-    <div class="chat-head"><h2 class="px">채팅</h2></div>
-    <div class="chat-body"><p class="empty">보내면 proj 폴더에서 새 대화를 시작합니다</p></div>
-    <div class="input-row on">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" aria-label="Claude Code에게 보낼 말" placeholder="Claude Code에게 무엇을 시킬까?"></textarea>
-      <span class="tri px blink" aria-hidden="true">▼</span>
-      <button type="button" class="btn" disabled>보내기</button>
-    </div>
-  </section></figure>
-
-  <figure><figcaption class="px">3. 스트리밍 중</figcaption>
-  <section class="panel chat" aria-label="채팅 3">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn" disabled>새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="chat-sep px"><b>새 대화 · 폴더: proj</b></div>
-      <div class="msg me"><span class="who">나</span><p class="txt">README.md 첫 줄을 그대로 보여 줘</p></div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt"># pr<span class="caret blink" aria-hidden="true"></span></p></div>
-    </div></div>
-    <div class="input-row">
-      <span class="say px">Claude가 일하고 있다…</span>
-      <button type="button" class="btn">중단</button>
-    </div>
-  </section></figure>
-
-  <figure><figcaption class="px">4. 답한 권한 카드 + 완료</figcaption>
-  <section class="panel chat" aria-label="채팅 4">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn">새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="chat-sep px"><b>새 대화 · 폴더: proj</b></div>
-      <div class="msg me"><span class="who">나</span><p class="txt">`echo hi &gt; a.txt`를 Bash로 실행해 줘</p></div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt">a.txt 파일에 hi를 쓰겠습니다.</p></div>
-      <div class="card" role="group" aria-labelledby="pq4">
-        <p class="q px" id="pq4">Bash 실행을 허용할까요?</p>
-        <pre class="cmd" tabindex="0" aria-label="명령">echo hi &gt; a.txt</pre>
-        <p class="done">→ 거부함</p>
+  <figure><figcaption class="px">1. 시작 전 · 세션 미선택</figcaption>
+  <section class="panel terminal" aria-label="터미널 1">
+    <div class="term-head">
+      <h2 class="px">터미널</h2><span class="term-state px"></span>
+      <div class="term-btns">
+        <button type="button" class="btn">폴더 열기</button>
+        <button type="button" class="btn" disabled>새로 시작</button>
+        <button type="button" class="btn" disabled>이어 가기</button>
+        <button type="button" class="btn" disabled>종료</button>
       </div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt">명령 실행이 거부되어 a.txt를 만들지 않았습니다.
-
-끝.</p></div>
-      <p class="chat-end">완료 · 추정 비용 $0.0214</p>
-    </div></div>
-    <div class="input-row on">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" aria-label="Claude Code에게 보낼 말" placeholder="Claude Code에게 무엇을 시킬까?"></textarea>
-      <span class="tri px blink" aria-hidden="true">▼</span>
-      <button type="button" class="btn" disabled>보내기</button>
+    </div>
+    <div class="term-body">
+      <p class="empty">폴더를 열거나, 세션을 고른 뒤 새로 시작·이어 가기를 누르세요</p>
+      <p class="note">터미널 안에서 F6을 누르면 버튼으로 나옵니다</p>
     </div>
   </section></figure>
 
-  <figure><figcaption class="px">5. Edit 권한 카드 (도구 단위 범위)</figcaption>
-  <section class="panel chat" aria-label="채팅 5">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn" disabled>새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="msg me"><span class="who">나</span><p class="txt">README.md 맨 끝에 "끝." 한 줄을 더해 줘</p></div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt">README.md 끝에 한 줄을 더하겠습니다.</p></div>
-      <div class="card" role="group" aria-labelledby="pq5">
-        <p class="q px" id="pq5">Edit 실행을 허용할까요?</p>
-        <pre class="cmd" tabindex="0" aria-label="파일">C:\Users\you\AppData\Local\Temp\proj\README.md</pre>
-        <div class="menu">
-          <button type="button" class="opt"><span class="cur" aria-hidden="true">▶</span>허용</button>
-          <button type="button" class="opt"><span class="cur" aria-hidden="true">▶</span>거부</button>
-          <button type="button" class="opt"><span class="cur" aria-hidden="true">▶</span>이 세션 동안 (Edit 전부)</button>
-        </div>
+  <figure><figcaption class="px">2. 시작 전 · 세션 선택</figcaption>
+  <section class="panel terminal" aria-label="터미널 2">
+    <div class="term-head">
+      <h2 class="px">터미널</h2><span class="term-state px">proj</span>
+      <div class="term-btns">
+        <button type="button" class="btn">폴더 열기</button>
+        <button type="button" class="btn" aria-label="새로 시작: proj 폴더">새로 시작</button>
+        <button type="button" class="btn" aria-label="이어 가기: proj 세션">이어 가기</button>
+        <button type="button" class="btn" disabled>종료</button>
       </div>
-    </div></div>
-    <div class="input-row">
-      <span class="say px">고를 때까지 기다리고 있다…</span>
-      <button type="button" class="btn">중단</button>
+    </div>
+    <div class="term-body">
+      <p class="empty">proj — 새로 시작하거나 지난 대화를 이어 갑니다</p>
+      <p class="note">터미널 안에서 F6을 누르면 버튼으로 나옵니다</p>
     </div>
   </section></figure>
 
-  <figure><figcaption class="px">6. 질문 카드 (하나 고르기 + 직접 답)</figcaption>
-  <section class="panel chat" aria-label="채팅 6">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn" disabled>새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="msg me"><span class="who">나</span><p class="txt">AskUserQuestion으로 사과/배 중 하나를 고르게 물어봐</p></div>
-      <div class="card" role="group" aria-labelledby="qq6">
-        <span class="tag px" style="justify-self:start">과일</span>
-        <p class="q" id="qq6">어떤 과일을 고를까요?</p>
-        <ul class="choices one">
-          <li><button type="button" class="choice"><span class="mk" aria-hidden="true">▶</span><span class="lb">사과</span><span class="ds">새콤하고 아삭함</span></button></li>
-          <li><button type="button" class="choice"><span class="mk" aria-hidden="true">▶</span><span class="lb">배</span><span class="ds">달고 물이 많음</span></button></li>
-        </ul>
+  <figure><figcaption class="px">3. 종료하는 중 (종료 누른 뒤)</figcaption>
+  <section class="panel terminal" aria-label="터미널 3">
+    <div class="term-head">
+      <h2 class="px">터미널</h2><span class="term-state px">proj · 종료하는 중…</span>
+      <div class="term-btns">
+        <button type="button" class="btn" disabled>폴더 열기</button>
+        <button type="button" class="btn" disabled>새로 시작</button>
+        <button type="button" class="btn" disabled>이어 가기</button>
+        <button type="button" class="btn" aria-disabled="true">종료</button>
       </div>
-    </div></div>
-    <div class="input-row on">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" aria-label="선택지에 없는 답" placeholder="다른 답은 여기에 쓰고 Enter"></textarea>
-      <button type="button" class="btn" disabled>보내기</button>
-      <button type="button" class="btn">중단</button>
+    </div>
+    <div class="term">
+<pre class="term-screen" tabindex="0" aria-label="claude 터미널. F6: 버튼으로 나가기">● # proj
+
+<span class="d">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+&gt; <span class="k"> </span>
+<span class="d">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+  <span class="d">? for shortcuts</span></pre>
     </div>
   </section></figure>
 
-  <figure><figcaption class="px">7. 질문 카드 (여러 개 고르기)</figcaption>
-  <section class="panel chat" aria-label="채팅 7">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn" disabled>새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="msg me"><span class="who">나</span><p class="txt">AskUserQuestion으로 사과/배/귤 중 여러 개를 고르게 물어봐</p></div>
-      <div class="card" role="group" aria-labelledby="qq7">
-        <span class="tag px" style="justify-self:start">과일</span>
-        <p class="q" id="qq7">어떤 과일을 담을까요? (여러 개)</p>
-        <ul class="choices">
-          <li><button type="button" class="choice" aria-pressed="true"><span class="mk" aria-hidden="true">[✓]</span><span class="lb">사과</span><span class="ds">새콤하고 아삭함</span></button></li>
-          <li><button type="button" class="choice" aria-pressed="false"><span class="mk" aria-hidden="true">[ ]</span><span class="lb">배</span><span class="ds">달고 물이 많음</span></button></li>
-          <li><button type="button" class="choice" aria-pressed="true"><span class="mk" aria-hidden="true">[✓]</span><span class="lb">귤</span><span class="ds">껍질을 손으로 깜</span></button></li>
-        </ul>
-        <button type="button" class="btn send">보내기</button>
+  <figure><figcaption class="px">4. 종료됨 (/exit 또는 종료)</figcaption>
+  <section class="panel terminal" aria-label="터미널 4">
+    <div class="term-head">
+      <h2 class="px">터미널</h2><span class="term-state px">proj · 종료됨</span>
+      <div class="term-btns">
+        <button type="button" class="btn">폴더 열기</button>
+        <button type="button" class="btn" aria-label="새로 시작: proj 폴더">새로 시작</button>
+        <button type="button" class="btn" aria-label="이어 가기: proj 세션">이어 가기</button>
+        <button type="button" class="btn" disabled>종료</button>
       </div>
-    </div></div>
-    <div class="input-row on">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" aria-label="선택지에 없는 답" placeholder="다른 답은 여기에 쓰고 Enter"></textarea>
-      <button type="button" class="btn" disabled>보내기</button>
-      <button type="button" class="btn">중단</button>
+    </div>
+    <div class="term">
+<pre class="term-screen" tabindex="0" aria-label="claude 터미널. F6: 버튼으로 나가기">● # proj
+
+&gt; /exit
+  <span class="d">⎿  (no content)</span>
+
+<span class="d">── 종료됨 ──</span>
+</pre>
     </div>
   </section></figure>
 
-  <figure><figcaption class="px">8. 긴 응답 스크롤 + 중단됨</figcaption>
-  <section class="panel chat" aria-label="채팅 8">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn">새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="chat-sep px"><b>새 대화 · 폴더: proj</b></div>
-      <div class="msg me"><span class="who">나</span><p class="txt">1부터 300까지 한 줄씩 천천히 세어 줘</p></div>
-      <div class="msg ai"><span class="who">Claude</span><p class="txt">1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12</p></div>
-      <p class="chat-end">중단됨</p>
-    </div></div>
-    <div class="input-row on">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" aria-label="Claude Code에게 보낼 말" placeholder="Claude Code에게 무엇을 시킬까?"></textarea>
-      <span class="tri px blink" aria-hidden="true">▼</span>
-      <button type="button" class="btn" disabled>보내기</button>
+  <figure><figcaption class="px">5. 오류: claude를 찾을 수 없음 (화면 없음)</figcaption>
+  <section class="panel terminal" aria-label="터미널 5">
+    <div class="term-head">
+      <h2 class="px">터미널</h2><span class="term-state px">proj</span>
+      <div class="term-btns">
+        <button type="button" class="btn">폴더 열기</button>
+        <button type="button" class="btn" aria-label="새로 시작: proj 폴더">새로 시작</button>
+        <button type="button" class="btn" aria-label="이어 가기: proj 세션">이어 가기</button>
+        <button type="button" class="btn" disabled>종료</button>
+      </div>
+    </div>
+    <p class="term-err"><span class="px">✕ 오류:</span>claude를 찾을 수 없습니다 — PATH에 claude가 있는지 확인하세요</p>
+    <div class="term-body">
+      <p class="empty">proj — 새로 시작하거나 지난 대화를 이어 갑니다</p>
     </div>
   </section></figure>
 
-  <figure><figcaption class="px">9. 오류 줄 (node 없음)</figcaption>
-  <section class="panel chat" aria-label="채팅 9">
-    <div class="chat-head"><h2 class="px">채팅</h2><button type="button" class="btn">새 대화</button></div>
-    <div class="chat-log" role="log" aria-label="대화" tabindex="0"><div class="chat-items">
-      <div class="chat-sep px"><b>새 대화 · 폴더: proj</b></div>
-      <div class="msg me"><span class="who">나</span><p class="txt">README.md 첫 줄을 그대로 보여 줘</p></div>
-      <p class="chat-end err"><span class="px">✕ 오류:</span>Node.js 18.14 이상이 필요합니다 — node를 찾지 못했습니다</p>
-    </div></div>
-    <div class="input-row on">
-      <span class="tri px" aria-hidden="true">▶</span>
-      <textarea rows="1" aria-label="Claude Code에게 보낼 말" placeholder="Claude Code에게 무엇을 시킬까?"></textarea>
-      <span class="tri px blink" aria-hidden="true">▼</span>
-      <button type="button" class="btn" disabled>보내기</button>
+  <figure><figcaption class="px">6. 오류: 폴더 검증 실패 (이전 화면 남김)</figcaption>
+  <section class="panel terminal" aria-label="터미널 6">
+    <div class="term-head">
+      <h2 class="px">터미널</h2><span class="term-state px">old-proj</span>
+      <div class="term-btns">
+        <button type="button" class="btn">폴더 열기</button>
+        <button type="button" class="btn" aria-label="새로 시작: old-proj 폴더">새로 시작</button>
+        <button type="button" class="btn" aria-label="이어 가기: old-proj 세션">이어 가기</button>
+        <button type="button" class="btn" disabled>종료</button>
+      </div>
+    </div>
+    <p class="term-err"><span class="px">✕ 오류:</span>폴더를 열 수 없습니다 — 폴더가 없습니다: C:\Users\you\old-proj</p>
+    <div class="term">
+<pre class="term-screen" tabindex="0" aria-label="claude 터미널. F6: 버튼으로 나가기">● # proj
+
+<span class="d">── 종료됨 ──</span>
+</pre>
     </div>
   </section></figure>
 </main>
