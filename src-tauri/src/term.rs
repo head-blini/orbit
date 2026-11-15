@@ -98,6 +98,52 @@ pub fn take_utf8(buf: &mut Vec<u8>) -> String {
     out
 }
 
+/// claude cwd로 쓸 수 있는 경로인지 검사한다(비어 있지 않음, 로컬 절대 경로, 폴더).
+pub fn check_cwd(cwd: &str) -> Result<(), String> {
+    if cwd.is_empty() {
+        return Err("세션 폴더를 알 수 없습니다".into());
+    }
+    if !crate::roadmap::local_abs(cwd) {
+        return Err("로컬 절대 경로가 아닙니다".into());
+    }
+    if !std::path::Path::new(cwd).is_dir() {
+        return Err("폴더가 없습니다".into());
+    }
+    Ok(())
+}
+
+/// `\\?\X:\...` 드라이브 경로만 `X:\...`로 벗긴다. `\\?\UNC\...`는 그대로 둔다.
+pub fn strip_verbatim_disk(s: &str) -> &str {
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') && rest.as_bytes()[0].is_ascii_alphabetic() => rest,
+        _ => s,
+    }
+}
+
+/// 세션 id 형식: 36자, 8-4-4-4-12, 하이픈 자리 외 ASCII 16진수.
+pub fn valid_id(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(i, b)| if matches!(i, 8 | 13 | 18 | 23) { b == b'-' } else { b.is_ascii_hexdigit() })
+}
+
+/// claude 인자: 새로 시작은 없음, 이어 가기는 `--resume <id>`(id는 호출자가 검증).
+pub fn args(resume: Option<&str>) -> Vec<&str> {
+    match resume {
+        Some(id) => vec!["--resume", id],
+        None => Vec::new(),
+    }
+}
+
+/// 세션 id → 그 세션이 실행됐던 폴더(검증 통과한 것만).
+pub fn session_cwd(store: &crate::sessions::Store, id: &str) -> Result<String, String> {
+    if !valid_id(id) {
+        return Err("세션 id 형식이 아닙니다".into());
+    }
+    let cwd = store.get(id).ok_or("세션을 찾을 수 없습니다")?.cwd.clone().unwrap_or_default();
+    check_cwd(&cwd)?;
+    Ok(cwd)
+}
+
 #[cfg(windows)]
 fn kill_tree(pid: u32) {
     use std::os::windows::process::CommandExt;
@@ -130,7 +176,7 @@ impl Term {
         args: &[&str],
         mut on_out: impl FnMut(TermOut) + Send + 'static,
     ) -> Result<(), String> {
-        crate::chat::check_cwd(cwd)?;
+        check_cwd(cwd)?;
         let exe = exe.ok_or(NOT_FOUND)?;
         let mut g = lk(&self.0);
         if g.proc.is_some() {
@@ -301,6 +347,80 @@ mod tests {
         assert_eq!(t.size(), (80, 24));
         assert!(t.resize(100, 30).is_ok());
         assert_eq!(t.size(), (100, 30));
+    }
+
+    const ID: &str = "11111111-2222-3333-4444-555555555555";
+
+    #[test]
+    fn valid_id_accepts_uuid_shape_only() {
+        assert!(valid_id(ID));
+        assert!(valid_id("ABCDEF12-abcd-ABCD-0123-456789abcdef"));
+        for bad in [
+            "11111111-2222-3333-4444-55555555555",
+            "11111111-2222-3333-4444-5555555555555",
+            "g1111111-2222-3333-4444-555555555555",
+            "1111111-12222-3333-4444-555555555555",
+            " 11111111-2222-3333-4444-555555555555",
+            "11111111-2222-3333-4444-555555555555 ",
+            "--resume",
+            "-1111111-2222-3333-4444-555555555555",
+            "../x",
+            "/tmp/a.jsonl",
+            "a.jsonl",
+            "",
+        ] {
+            assert!(!valid_id(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn args_none_empty_some_resume() {
+        assert!(args(None).is_empty());
+        assert_eq!(args(Some(ID)), vec!["--resume", ID]);
+    }
+
+    #[test]
+    fn session_cwd_validates_id_store_and_dir() {
+        let mut st = crate::sessions::Store::default();
+        assert_eq!(session_cwd(&st, ID).unwrap_err(), "세션을 찾을 수 없습니다");
+        assert_eq!(session_cwd(&st, "--resume").unwrap_err(), "세션 id 형식이 아닙니다");
+        let d = tmp("sess");
+        let line = |cwd: &str| serde_json::json!({"uuid": "u1", "cwd": cwd});
+        st.ingest_log(ID, &line(d.to_str().unwrap()), 1);
+        assert_eq!(session_cwd(&st, ID).unwrap(), d.to_str().unwrap());
+        let id2 = "22222222-2222-3333-4444-555555555555";
+        st.ingest_log(id2, &line("/orbit-no-such-dir-xyz"), 1);
+        assert_eq!(session_cwd(&st, id2).unwrap_err(), "폴더가 없습니다");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn check_cwd_rejects_bad_and_accepts_dir() {
+        assert!(check_cwd("").is_err());
+        assert!(check_cwd("rel/dir").is_err());
+        #[cfg(windows)]
+        {
+            assert!(check_cwd(r"C:\orbit-no-such-dir-xyz").is_err());
+            assert_eq!(check_cwd(r"\\server\share\p").unwrap_err(), "로컬 절대 경로가 아닙니다");
+            assert!(check_cwd(r"\\?\C:\Windows").is_err());
+            assert_eq!(check_cwd(r"\\?\UNC\server\share\p").unwrap_err(), "로컬 절대 경로가 아닙니다");
+        }
+        #[cfg(not(windows))]
+        assert!(check_cwd("/orbit-no-such-dir-xyz").is_err());
+        let f = std::env::temp_dir().join(format!("orbit-chat-file-{}", std::process::id()));
+        std::fs::write(&f, b"x").unwrap();
+        let r = check_cwd(f.to_str().unwrap());
+        let _ = std::fs::remove_file(&f);
+        assert!(r.is_err());
+        assert!(check_cwd(std::env::temp_dir().to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn strip_verbatim_disk_only_strips_drive_paths() {
+        assert_eq!(strip_verbatim_disk(r"\\?\C:\x"), r"C:\x");
+        assert_eq!(strip_verbatim_disk(r"\\?\UNC\server\share\p"), r"\\?\UNC\server\share\p");
+        assert_eq!(strip_verbatim_disk(r"C:\x"), r"C:\x");
+        assert_eq!(strip_verbatim_disk(r"\\?\"), r"\\?\");
     }
 
     #[cfg(unix)]
