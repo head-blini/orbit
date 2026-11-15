@@ -566,3 +566,14 @@ test("josa", () => {
   assert.equal(m.josa("abc", "과", "와"), "abc와");
   assert.equal(m.josa("검증😀", "과", "와"), "검증😀와"); // 이모지 끝 글자(U+D7A3 초과)는 받침 없음 쪽
 });
+
+test("S4: checkSchemaValue survives stringify exception (bigint, cycle)", () => {
+  const cyc = {};
+  cyc.self = cyc;
+  for (const schema of [{ a: 1n }, cyc]) {
+    const g = { version: 1, nodes: [{ id: "node-1", name: "a", task: "", model: "inherit", retries: 0, schema }], edges: [] };
+    let r;
+    assert.doesNotThrow(() => (r = m.parseGraph(g)));
+    assert.deepEqual(r, { ok: false, error: "설계 그래프를 읽을 수 없습니다: 스키마가 16KB를 넘습니다" });
+  }
+});

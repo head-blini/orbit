@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import "./DesignProps.css";
-import type { DesignGraph, DesignLoop } from "./types";
+import GraphSave from "./GraphSave";
+import type { Msg } from "./DesignView";
+import { loopDrafts } from "./graphFile";
+import type { DesignGraph, DesignLoop, Opened } from "./types";
 import { LOOP_LIMITS, checkBudget, checkMaxIterations, defaultLoop, hasPassed, loopSummary, setLoop } from "./designGraph";
 
-type Props = { graph: DesignGraph; onChange: (g: DesignGraph) => void };
+type Props = {
+  graph: DesignGraph;
+  onChange: (g: DesignGraph) => void;
+  say: (text: string, err?: boolean) => void;
+  msg: Msg;
+  opened: Opened | null;
+  onOpened: (o: Opened | null) => void;
+};
 type Field = "max" | "bud";
 
 function ErrLine({ id, text }: { id: string; text: string }) {
@@ -15,10 +25,10 @@ function ErrLine({ id, text }: { id: string; text: string }) {
   );
 }
 
-export default function GraphSettings({ graph, onChange }: Props) {
+export default function GraphSettings({ graph, onChange, say, msg, opened, onOpened }: Props) {
   const loop = graph.loop ?? null;
-  const [max, setMax] = useState(String(loop?.maxIterations ?? LOOP_LIMITS.iterDefault));
-  const [bud, setBud] = useState(loop?.budgetUsd == null ? "" : String(loop.budgetUsd));
+  const [max, setMax] = useState(() => loopDrafts(loop).max);
+  const [bud, setBud] = useState(() => loopDrafts(loop).bud);
   const [errs, setErrs] = useState<Partial<Record<Field, string>>>({});
   const [announce, setAnnounce] = useState("");
   const annTimer = useRef<number | undefined>(undefined);
@@ -27,6 +37,16 @@ export default function GraphSettings({ graph, onChange }: Props) {
   const setErr = (f: Field, e: string | undefined) => {
     setErrs((p) => ({ ...p, [f]: e }));
     if (e && e !== errs[f]) { setAnnounce(""); window.clearTimeout(annTimer.current); annTimer.current = window.setTimeout(() => setAnnounce(e), 50); } // 같은 오류도 다시 낭독되게 비웠다가 넣는다
+  };
+  // 불러온 그래프의 루프 값으로 입력 초안을 다시 맞춘다
+  const adopt = (g: DesignGraph) => {
+    const d = loopDrafts(g.loop ?? null);
+    setMax(d.max);
+    setBud(d.bud);
+    setErrs({});
+    window.clearTimeout(annTimer.current);
+    setAnnounce("");
+    onChange(g);
   };
   const patch = (p: Partial<DesignLoop>) => {
     if (loop) onChange(setLoop(graph, { ...loop, ...p }));
@@ -137,6 +157,7 @@ export default function GraphSettings({ graph, onChange }: Props) {
           ? "노드 0개 · 노드 추가로 첫 노드를 만듭니다"
           : `노드 ${graph.nodes.length}개 · 연결 ${graph.edges.length}개 · 노드를 고르면 그 노드의 속성을 고칩니다`}
       </p>
+      <GraphSave graph={graph} onChange={adopt} say={say} msg={msg} opened={opened} onOpened={onOpened} />
       <p className="sr" role="status">{announce}</p>
     </div>
   );

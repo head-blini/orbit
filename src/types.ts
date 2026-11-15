@@ -47,3 +47,7 @@ export type DesignLoop = {
   onFail: "screen" | "none";
 };
 export type DesignGraph = { version: 1; nodes: DesignNode[]; edges: DesignEdge[]; loop?: DesignLoop | null };
+
+// 저장된 설계 그래프(Rust graphs::Entry)와 열린 그래프 표식
+export type GraphEntry = { id: string; name: string | null; savedAt: number | null; readable: boolean };
+export type Opened = { id: string | null; name: string; base: string }; // id null = 열린 파일을 지움

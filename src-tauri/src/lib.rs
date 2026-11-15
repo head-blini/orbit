@@ -1,4 +1,5 @@
 mod config;
+mod graphs;
 mod hooks;
 mod roadmap;
 mod screens;
@@ -20,6 +21,8 @@ struct AppState {
     store: Arc<Mutex<sessions::Store>>,
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
+    graphs_dir: Result<PathBuf, String>,
+    graphs_lock: Mutex<()>,
     term: term::Term,
 }
 
@@ -97,6 +100,34 @@ fn open_screens_dir(app: tauri::AppHandle, state: State<AppState>) -> Result<(),
     let d = state.screens_dir.as_ref().map_err(|e| e.clone())?;
     std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
     app.opener().open_path(d.display().to_string(), None::<&str>).map_err(|e| e.to_string())
+}
+
+fn graphs_dir(state: &AppState) -> Result<&PathBuf, String> {
+    state.graphs_dir.as_ref().map_err(|_| graphs::E_DIR.to_string())
+}
+
+#[tauri::command(async)]
+fn list_graphs(state: State<AppState>) -> Result<Vec<graphs::Entry>, String> {
+    graphs::list(graphs_dir(&state)?)
+}
+
+#[tauri::command(async)]
+fn load_graph(state: State<AppState>, id: String) -> Result<String, String> {
+    graphs::load(graphs_dir(&state)?, &id)
+}
+
+#[tauri::command(async)]
+fn save_graph(state: State<AppState>, id: Option<String>, name: String, graph: String) -> Result<graphs::Entry, String> {
+    let dir = graphs_dir(&state)?;
+    let _g = state.graphs_lock.lock().unwrap_or_else(|e| e.into_inner());
+    graphs::save(dir, id.as_deref(), &name, &graph)
+}
+
+#[tauri::command(async)]
+fn delete_graph(state: State<AppState>, id: String) -> Result<(), String> {
+    let dir = graphs_dir(&state)?;
+    let _g = state.graphs_lock.lock().unwrap_or_else(|e| e.into_inner());
+    graphs::delete(dir, &id)
 }
 
 #[tauri::command(async)]
@@ -241,7 +272,18 @@ pub fn run() {
                 });
             }
             let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default() });
+            let graphs_dir = app.path().app_data_dir().map(|d| d.join("graphs")).map_err(|e| e.to_string());
+            app.manage(AppState {
+                cfg,
+                server,
+                settings_path,
+                store,
+                projects_dir,
+                screens_dir,
+                graphs_dir,
+                graphs_lock: Mutex::new(()),
+                term: term::Term::default(),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -250,6 +292,10 @@ pub fn run() {
             get_sessions,
             list_screens,
             open_screens_dir,
+            list_graphs,
+            load_graph,
+            save_graph,
+            delete_graph,
             install_hooks,
             uninstall_hooks,
             term_open_folder,
