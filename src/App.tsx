@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
+import { createGate } from "./roadmapGate";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
@@ -13,8 +14,10 @@ type Status = {
   installed: boolean | null;
   settings_error: string | null;
   projects_error: string | null;
+  node_missing: boolean;
 };
 
+const NODE_MISSING = "✕ node를 찾지 못해 체크포인트가 꺼집니다 — node를 설치하거나 nvm·Homebrew 경로를 확인하세요";
 const HINT = "프로젝트 폴더 맨 위에 두면 여기 보입니다 — ## 묶음, - [ ] 할 일, - [x] 끝난 일";
 const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
 
@@ -126,13 +129,16 @@ export default function App() {
 
   // 세션을 새로 고르면 비우고(불러오는 중…), 30초 타이머(now)마다 이전 내용을 둔 채 다시 읽는다. 세션 미선택이면 부르지 않는다.
   useEffect(() => setRoadmap(null), [selected]);
+  const gate = useRef(createGate());
+  const selRef = useRef(selected);
+  selRef.current = selected;
   useEffect(() => {
-    if (!selected) return;
-    let cancelled = false;
-    invoke<Roadmap>("get_roadmap", { id: selected })
-      .then((r) => { if (!cancelled) setRoadmap(r); })
-      .catch((e) => { if (!cancelled) setRoadmap({ kind: "error", reason: String(e) }); });
-    return () => { cancelled = true; };
+    if (!selected || !gate.current.begin(selected)) return;
+    const id = selected;
+    invoke<Roadmap>("get_roadmap", { id })
+      .then((r) => { if (selRef.current === id) setRoadmap(r); })
+      .catch((e) => { if (selRef.current === id) setRoadmap({ kind: "error", reason: String(e) }); })
+      .finally(() => gate.current.end(id));
   }, [selected, now]);
 
   // 성공 문구는 10초 뒤 같은 문구일 때만 비운다. "✕"와 "처리 중…"은 남긴다.
@@ -166,7 +172,9 @@ export default function App() {
   const hookText = !status ? "훅 확인 중…"
     : status.settings_error ? "훅 ✕ 확인 실패"
     : status.installed ? "훅 설치됨" : "훅 설치 안 됨";
-  const shownResult = result || (status?.settings_error ? `✕ 확인 실패: ${status.settings_error}` : "");
+  const shownResult = result
+    || (status?.settings_error ? `✕ 확인 실패: ${status.settings_error}` : "")
+    || (status?.node_missing ? NODE_MISSING : "");
 
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
   const cur = selected ? sessions.get(selected) ?? null : null;
