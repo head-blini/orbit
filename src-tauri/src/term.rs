@@ -127,12 +127,16 @@ pub fn valid_id(id: &str) -> bool {
         && id.bytes().enumerate().all(|(i, b)| if matches!(i, 8 | 13 | 18 | 23) { b == b'-' } else { b.is_ascii_hexdigit() })
 }
 
-/// claude 인자: 새로 시작은 없음, 이어 가기는 `--resume <id>`(id는 호출자가 검증).
-pub fn args(resume: Option<&str>) -> Vec<&str> {
-    match resume {
-        Some(id) => vec!["--resume", id],
-        None => Vec::new(),
+/// claude 인자: 플러그인 경로가 있으면 `--plugin-dir <경로>`(앱이 정한 고정 값)와 메인 세션을 Lead로 하는 `--agent orbit:lead`, 이어 가기는 `--resume <id>`(id는 호출자가 검증).
+pub fn args<'a>(resume: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
+    let mut v = Vec::new();
+    if let Some(p) = plugin {
+        v.extend(["--plugin-dir", p, "--agent", "orbit:lead"]);
     }
+    if let Some(id) = resume {
+        v.extend(["--resume", id]);
+    }
+    v
 }
 
 /// 세션 id → 그 세션이 실행됐던 폴더(검증 통과한 것만).
@@ -192,6 +196,10 @@ impl Term {
         cmd.args(args);
         cmd.cwd(cwd);
         cmd.env("TERM", TERM_ENV);
+        // Finder로 띄운 앱의 PATH에는 Homebrew가 없어 훅의 node를 못 찾는다.
+        if let Ok(p) = std::env::join_paths(claude_dirs()) {
+            cmd.env("PATH", p);
+        }
         let mut child = pair.slave.spawn_command(cmd).map_err(|e| format!("claude를 시작하지 못했습니다: {e}"))?;
         drop(pair.slave);
         let (reader, writer) = match (pair.master.try_clone_reader(), pair.master.take_writer()) {
@@ -420,8 +428,10 @@ mod tests {
 
     #[test]
     fn args_none_empty_some_resume() {
-        assert!(args(None).is_empty());
-        assert_eq!(args(Some(ID)), vec!["--resume", ID]);
+        assert!(args(None, None).is_empty());
+        assert_eq!(args(Some(ID), None), vec!["--resume", ID]);
+        assert_eq!(args(None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
+        assert_eq!(args(Some(ID), Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
     }
 
     #[test]
