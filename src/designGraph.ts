@@ -13,7 +13,7 @@ export type Check<T> = { ok: true; value: T } | { ok: false; error: string };
 type Schema = Record<string, unknown> | null;
 
 const ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const SCHEMA_INPUT_MAX = LIMITS.schemaBytes * 4;
+export const SCHEMA_INPUT_MAX = LIMITS.schemaBytes * 4;
 const E_SCHEMA_BIG = "스키마가 16KB를 넘습니다";
 const E_SCHEMA_OBJ = "스키마는 JSON 객체({ … })여야 합니다";
 const E_RETRIES = "재시도는 0~5 사이 정수입니다";

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import "./DesignProps.css";
 import type { DesignGraph } from "./types";
-import { LIMITS, MODELS, checkModel, checkName, checkRetries, checkSchema, checkTask, disconnect, updateNode } from "./designGraph";
+import { LIMITS, MODELS, SCHEMA_INPUT_MAX, checkModel, checkName, checkRetries, checkSchema, checkTask, disconnect, updateNode } from "./designGraph";
 
 type Props = {
   graph: DesignGraph;
@@ -12,8 +12,6 @@ type Props = {
 };
 type Field = "name" | "task" | "retries" | "schema";
 type Errs = Partial<Record<Field, string>>;
-
-const SCHEMA_INPUT_MAX = LIMITS.schemaBytes * 4; // checkSchema 입력 길이 상한과 같음
 
 function ErrLine({ id, text }: { id: string; text: string }) {
   return (
@@ -60,7 +58,7 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
 
   const setErr = (f: Field, e: string | undefined) => {
     setErrs((p) => ({ ...p, [f]: e }));
-    if (e && e !== errs[f]) setAnnounce(e);
+    if (e && e !== errs[f]) { setAnnounce(""); window.setTimeout(() => setAnnounce(e), 50); } // 같은 오류도 다시 낭독되게 비웠다가 넣는다
   };
   const apply = (f: Field, r: { ok: true } | { ok: false; error: string }, patch: () => DesignGraph) => {
     if (r.ok) {

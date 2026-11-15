@@ -93,7 +93,17 @@ test("connect: messages carry names", () => {
 });
 test("disconnect removes only that edge", () => {
   const g = mk(3, [["node-1", "node-2"], ["node-2", "node-3"]]);
+  const before = clone(g);
   assert.deepEqual(disconnect(g, "node-1", "node-2").edges, [{ from: "node-2", to: "node-3" }]);
+  assert.deepEqual(g, before);
+});
+test("connect: success adds one edge, input unchanged", () => {
+  const g = mk(3, [["node-1", "node-2"]]);
+  const before = clone(g);
+  const r = connect(g, "node-2", "node-3");
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.graph.edges, [{ from: "node-1", to: "node-2" }, { from: "node-2", to: "node-3" }]);
+  assert.deepEqual(g, before);
 });
 
 // ---- 삭제 · 추가
@@ -178,7 +188,7 @@ test("checkSchema: >65536 chars rejected without JSON.parse", () => {
   let calls = 0;
   JSON.parse = (...a) => { calls++; return orig.apply(JSON, a); };
   try {
-    const r = checkSchema("{" + " ".repeat(65536) + "}");
+    const r = checkSchema("{" + " ".repeat(65535) + "}"); // 65,537자
     assert.equal(r.ok, false);
     assert.equal(r.error, "스키마가 16KB를 넘습니다");
     assert.equal(calls, 0);
@@ -221,8 +231,8 @@ test("parseGraph rejects bad input without throwing", () => {
   const inputs = [
     bad((x) => { x.version = 2; }),
     bad((x) => { x.nodes[0].id = "Bad_Id"; }),
-    bad((x) => { x.nodes[0].id = "a".repeat(65); }),
-    bad((x) => { x.nodes[1].id = "node-1"; }),
+    bad((x) => { x.edges = []; x.nodes[0].id = "a".repeat(65); }),
+    bad((x) => { x.edges = []; x.nodes[1].id = "node-1"; }),
     bad((x) => { x.edges.push({ from: "node-1", to: "node-9" }); }),
     bad((x) => { x.edges.push({ from: "node-2", to: "node-1" }); }),
     bad((x) => { x.edges.push({ from: "node-1", to: "node-1" }); }),
@@ -231,6 +241,7 @@ test("parseGraph rejects bad input without throwing", () => {
     bad((x) => { x.nodes[0].model = "gpt"; }),
     bad((x) => { x.nodes[0].retries = "2"; }),
     bad((x) => { x.nodes[0].retries = 6; }),
+    bad((x) => { x.nodes[0].retries = -1; }),
     bad((x) => { x.nodes[0].retries = 1.5; }),
     bad((x) => { x.nodes[0].task = 5; }),
     "문자열", null, undefined, 3, [], {}, { version: 1, nodes: "x", edges: [] },
@@ -268,4 +279,9 @@ test("step: arrows over columns", () => {
   assert.equal(step(c, "node-4", "ArrowRight"), null);
   assert.equal(step(c, "node-1", "ArrowRight"), "node-2");
   assert.equal(step(c, "nope", "ArrowRight"), null);
+  // 옆 열이 충분히 길면 같은 행
+  const c2 = [["a", "b", "c"], ["d", "e", "f"]];
+  assert.equal(step(c2, "b", "ArrowRight"), "e");
+  assert.equal(step(c2, "e", "ArrowLeft"), "b");
+  assert.equal(step(c2, "c", "ArrowRight"), "f");
 });

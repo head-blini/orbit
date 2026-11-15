@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
@@ -98,9 +98,16 @@ export default function App() {
   const [design, setDesign] = useState<DesignGraph>(() => emptyGraph());
   const [dsel, setDsel] = useState<string | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
-  const say = useCallback((text: string, err = false) => setMsg(text ? { text, err } : null), []);
+  const sayTimer = useRef<number | undefined>(undefined);
+  // 같은 문구도 다시 낭독되게 비웠다가 넣는다 (Terminal.tsx와 같은 방식)
+  const say = useCallback((text: string, err = false) => {
+    clearTimeout(sayTimer.current);
+    setMsg(null);
+    if (text) sayTimer.current = window.setTimeout(() => setMsg({ text, err }), 50);
+  }, []);
+  useEffect(() => () => clearTimeout(sayTimer.current), []);
   // 모드를 실제로 바꿀 때만 알림을 비운다(연결 모드 안내가 언마운트 뒤에 남지 않게).
-  const switchMode = (m: "observe" | "design") => { if (m !== mode) { setMode(m); setMsg(null); } };
+  const switchMode = (m: "observe" | "design") => { if (m !== mode) { setMode(m); clearTimeout(sayTimer.current); setMsg(null); } };
 
   const refresh = useCallback(() => {
     invoke<Status>("get_status")
