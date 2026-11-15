@@ -40,6 +40,13 @@ fn read_root(path: &Path) -> Result<Option<Value>, String> {
     Ok(Some(v))
 }
 
+/// 어느 파일이든 루트의 `disableAllHooks`가 불리언 true면 true. 읽기만 하며, 없음·깨짐·다른 타입은 false.
+pub fn hooks_disabled(files: &[PathBuf]) -> bool {
+    files.iter().any(|f| {
+        matches!(read_root(f), Ok(Some(v)) if v["disableAllHooks"].as_bool() == Some(true))
+    })
+}
+
 /// Orbit 핸들러를 모두 뺀다. 그 때문에 비게 된 그룹·이벤트·hooks도 지운다. 바뀌었으면 true.
 fn strip(root: &mut Value) -> Result<bool, String> {
     let Some(hooks) = root.get_mut("hooks") else {
@@ -209,6 +216,29 @@ mod tests {
 
     fn read(p: &Path) -> Value {
         serde_json::from_slice(&fs::read(p).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn hooks_disabled_reads_any_true() {
+        let d = Dir::new();
+        let missing = d.0.join("nope.json");
+        let t = d.file(r#"{"disableAllHooks": true}"#);
+        let before = fs::read(&t).unwrap();
+        assert!(hooks_disabled(&[missing.clone(), t.clone()]));
+        assert_eq!(fs::read(&t).unwrap(), before);
+        for body in [
+            r#"{"disableAllHooks": false}"#,
+            r#"{"disableAllHooks": "true"}"#,
+            r#"{"disableAllHooks": tru"#,
+            r#"[{"disableAllHooks": true}]"#,
+            r#"{}"#,
+        ] {
+            let f = d.file(body);
+            assert!(!hooks_disabled(&[f.clone()]), "{body}");
+            assert!(!hooks_disabled(&[missing.clone(), f]), "{body}");
+        }
+        assert!(!hooks_disabled(&[missing]));
+        assert!(!hooks_disabled(&[]));
     }
 
     fn orbit_handlers<'a>(root: &'a Value, ev: &str) -> Vec<&'a Value> {
