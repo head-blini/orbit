@@ -66,3 +66,49 @@ test("isHangul ranges", () => {
   for (const s of ["ㄱ", "ㅏ", "가", "힣", "ᄀ"]) assert.equal(isHangul(s), true, s);
   for (const s of ["a", "1", " ", "か", "漢", ""]) assert.equal(isHangul(s), false, s);
 });
+
+// REVIEW W2: 조건 `(this.active || isHangul(data))`의 변이 `(this.active)`·`(isHangul(data))`가 살아남던 경우들
+test("Hangul replacement with nothing pending is held (kills mutant: this.active only)", () => {
+  const ime = new HangulIme();
+  assert.deepEqual(ime.input("insertReplacementText", "안"), { handled: true, send: "" });
+  assert.equal(ime.pending, "안");
+});
+
+test("non-Hangul replacement while composing flushes instead of being swallowed (kills mutant: this.active)", () => {
+  const ime = new HangulIme();
+  ime.input("insertText", "ㅎ");
+  ime.input("insertReplacementText", "한");
+  assert.deepEqual(ime.input("insertReplacementText", "abc"), { handled: false, send: "한" });
+  assert.equal(ime.active, false);
+});
+
+test("same syllable replayed right after flush (Enter/blur) is dropped, not sent twice", () => {
+  const ime = new HangulIme();
+  ime.input("insertText", "ㅇ");
+  ime.input("insertReplacementText", "안");
+  assert.equal(ime.flush(), "안");
+  assert.deepEqual(ime.input("insertReplacementText", "안"), { handled: true, send: "" });
+  assert.equal(ime.active, false);
+  // 다른 입력이 끼면 다시 정상 취급
+  ime.input("insertText", "1");
+  assert.deepEqual(ime.input("insertReplacementText", "안"), { handled: true, send: "" });
+  assert.equal(ime.pending, "안");
+});
+
+test("empty replacement while composing clears pending without sending", () => {
+  const ime = new HangulIme();
+  ime.input("insertText", "ㅇ");
+  assert.deepEqual(ime.input("insertReplacementText", ""), { handled: true, send: "" });
+  assert.equal(ime.active, false);
+  assert.deepEqual(ime.input("insertReplacementText", ""), { handled: false, send: "" });
+});
+
+test("while composing, a replacement equal to the last flushed syllable still updates pending", () => {
+  const ime = new HangulIme();
+  ime.input("insertText", "ㅇ");
+  ime.input("insertReplacementText", "안");
+  ime.flush();
+  ime.input("insertReplacementText", "아");
+  assert.deepEqual(ime.input("insertReplacementText", "안"), { handled: true, send: "" });
+  assert.equal(ime.pending, "안");
+});
