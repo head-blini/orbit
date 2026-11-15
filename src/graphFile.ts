@@ -14,7 +14,7 @@ export function checkGraphName(s: string): Check<string> {
   const t = s.trim();
   if (t === "") return fail("이름을 입력하세요");
   if (t.length > 40) return fail("이름은 40자까지입니다");
-  if (/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/.test(t)) return fail("이름에 쓸 수 없는 문자가 있습니다");
+  if (/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(t)) return fail("이름에 쓸 수 없는 문자가 있습니다");
   return { ok: true, value: t };
 }
 
@@ -60,17 +60,18 @@ export function parseGraphFile(raw: unknown): Check<{ name: string; savedAt: num
   return { ok: true, value: { name: name.value, savedAt: env.savedAt, graph: p.value } };
 }
 
-export function isDirty(opened: Opened | null, g: DesignGraph): boolean {
+// key: 호출자가 이미 구한 graphKey(g). 넘기면 전체 stringify를 다시 하지 않는다
+export function isDirty(opened: Opened | null, g: DesignGraph, key?: string): boolean {
   if (!opened) return !(g.nodes.length === 0 && g.edges.length === 0 && !g.loop);
   if (opened.id === null) return true;
-  const k = graphKey(g);
+  const k = key ?? graphKey(g);
   return k === "" || k !== opened.base;
 }
 
-export function saveStatus(opened: Opened | null, g: DesignGraph): string {
+export function saveStatus(opened: Opened | null, g: DesignGraph, key?: string): string {
   if (!opened) return isDirty(null, g) ? "이름 없음 · 저장 안 됨" : "이름 없음";
   if (opened.id === null) return `${opened.name} · 저장 안 됨`;
-  return `${opened.name} · ${isDirty(opened, g) ? "저장 안 한 변경 있음" : "저장됨"}`;
+  return `${opened.name} · ${isDirty(opened, g, key) ? "저장 안 한 변경 있음" : "저장됨"}`;
 }
 
 export function loopDrafts(l: DesignLoop | null): { max: string; bud: string } {

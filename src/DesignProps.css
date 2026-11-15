@@ -45,7 +45,7 @@
 .glist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s-1); align-items: center; }
 .glist .sess .time { overflow-wrap: anywhere; }
 .btn.armed, .btn.armed:hover, .sess.armed, .sess.armed:hover { background: var(--c-ink); color: var(--c-paper); } /* 한 번 더 누르면 실행 */
-.sess.armed .time { color: var(--c-paper); }
+.sess.armed .time, .sess.armed:hover .time { color: var(--c-paper); } /* App.css .sess:hover .time보다 특이도가 높아야 한다 */
 .glist .bad { grid-column: 1 / -1; border-style: dashed; cursor: default; } /* 읽을 수 없음 = 점선 + ✕, 버튼 아님 */
 .glist .bad:hover { background: var(--c-paper); }
 .sess .mk { grid-row: 1 / 3; font-family: var(--f-pixel); font-size: var(--fs-pixel); }

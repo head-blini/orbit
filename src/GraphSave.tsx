@@ -39,7 +39,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
   const listRef = useRef<HTMLUListElement>(null);
   const armedRef = useRef<HTMLButtonElement>(null);
   const key = useMemo(() => graphKey(graph), [graph]);
-  const dirty = isDirty(opened, graph);
+  const dirty = isDirty(opened, graph, key);
 
   useEffect(() => {
     alive.current = true;
@@ -58,11 +58,11 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
   };
   useEffect(() => { void reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 삭제 뒤 포커스: 줄이 사라진 다음 렌더에서 다음 → 이전 → 이름 칸
+  // 삭제 뒤 포커스: reload()로 새 목록이 렌더된 뒤, 새 목록 기준 focusAt번째 삭제 버튼. 없으면 이름 칸(-1 포함)
   useEffect(() => {
     if (focusAt === null) return;
     const btns = listRef.current?.querySelectorAll<HTMLButtonElement>("li > button.btn") ?? [];
-    (btns[focusAt] ?? btns[focusAt - 1] ?? document.getElementById("gs-name"))?.focus();
+    (btns[focusAt] ?? document.getElementById("gs-name"))?.focus();
     setFocusAt(null);
   }, [focusAt, entries]);
 
@@ -109,10 +109,10 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
       setPending(null);
       try {
         const e = await call<GraphEntry>("save_graph", { id, name: n.value, graph: s.value });
-        if (!alive.current) return;
+        // 언마운트 뒤에도 App 상태는 갱신한다(저장은 이미 끝났다)
         onOpened({ id: e.id, name: n.value, base: key });
         say(`${josa(n.value, "을", "를")} ${over ? "덮어썼습니다" : "저장했습니다"}`);
-        void reload();
+        if (alive.current) void reload();
       } catch (err) {
         if (alive.current) say(err === GRAPH_CAP_ERROR ? String(err) : `저장하지 못했습니다 — ${String(err)}`, true);
       }
@@ -122,6 +122,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
   };
 
   const open = async (e: GraphEntry) => {
+    if (saving) return; // 저장 응답이 다른 그래프의 opened를 덮지 않게
     const nm = e.name ?? "";
     if (!(pending?.kind === "load" && pending.id === e.id)) {
       if (opened?.id === e.id && !dirty) { say(`${josa(nm, "은", "는")} 이미 열려 있습니다`); return; }
@@ -149,6 +150,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
   };
 
   const del = async (e: GraphEntry, i: number) => {
+    if (saving) return;
     if (!(pending?.kind === "del" && pending.id === e.id)) { arm({ kind: "del", id: e.id, prompt: P_DEL }); return; }
     setPending(null);
     try {
@@ -156,8 +158,10 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
       if (!alive.current) return;
       if (opened?.id === e.id) onOpened({ ...opened, id: null });
       say(`${josa(e.name ?? "", "을", "를")} 지웠습니다`);
-      setFocusAt(i);
-      void reload();
+      const l = await reload();
+      if (!alive.current) return;
+      const left = (l ?? []).filter((x) => x.readable).length;
+      setFocusAt(Math.min(i, left - 1)); // 같은 자리(다음), 마지막이면 이전, 비면 -1(이름 칸)
     } catch (err) {
       if (alive.current) say(`지우지 못했습니다 — ${String(err)}`, true);
     }
@@ -181,7 +185,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
       }}
     >
       <h3 className="px" id="gs-sv">저장</h3>
-      <p className="loop-sum">{saveStatus(opened, graph)}</p>
+      <p className="loop-sum">{saveStatus(opened, graph, key)}</p>
       <form className="f-row btn-last" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <div className="f">
           <label htmlFor="gs-name">그래프 이름</label>
@@ -237,7 +241,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
                 <li key={e.id}>
                   <button type="button" ref={loadArmed ? armedRef : undefined} className={`sess${loadArmed ? " armed" : ""}`}
                     aria-current={opened?.id === e.id ? true : undefined}
-                    aria-label={loadArmed ? `불러오기 확인: ${nm}` : undefined}
+                    aria-label={`${nm}, ${fmtTime(e.savedAt, Date.now())}`}
                     onClick={() => void open(e)}>
                     <span className="cur px" aria-hidden="true">▶</span>
                     <span className="name">{nm}</span>

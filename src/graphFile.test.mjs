@@ -27,8 +27,9 @@ test("2 checkGraphName", () => {
   for (const s of ["가".repeat(41), "😀".repeat(21)]) assert.deepEqual(f.checkGraphName(s), { ok: false, error: "이름은 40자까지입니다" });
   for (const s of ["가".repeat(40), "😀".repeat(20)]) assert.equal(f.checkGraphName(s).ok, true);
   assert.deepEqual(f.checkGraphName("  a  "), { ok: true, value: "a" });
-  for (const s of ["a‮b", "⁦a", "a\u0007", "a\u009f", "a\u007f", "a\nb"])
+  for (const s of ["a\u202ab", "a\u202eb", "a\u2066b", "a\u2069b", "a\u0000b", "a\u001fb", "a‮b", "⁦a", "a\u0007", "a\u009f", "a\u007f", "a\nb"])
     assert.deepEqual(f.checkGraphName(s), { ok: false, error: "이름에 쓸 수 없는 문자가 있습니다" }, JSON.stringify(s));
+  for (const s of ["a\u2029b", "a\u2065b", "a\u202fb", "a\u0020b", "a\u00a0b"]) assert.equal(f.checkGraphName(s).ok, true, JSON.stringify(s));
   const x = "<img src=x onerror=alert(1)>";
   assert.deepEqual(f.checkGraphName(x), { ok: true, value: x });
 });
@@ -114,6 +115,15 @@ test("7 S4 file path", () => {
   assert.doesNotThrow(() => (r = f.parseGraphFile(raw)));
   assert.equal(r.ok, false);
   console.log("S4 file path error:", r.error);
+  // 직렬화 경로: stringify가 던지는 값(bigint·순환)도 예외 없이 거부
+  const cyc = {};
+  cyc.self = cyc;
+  for (const schema of [{ a: 1n }, cyc]) {
+    const g = { version: 1, nodes: [rawNode(1, { schema })], edges: [] };
+    let x;
+    assert.doesNotThrow(() => (x = f.serializeGraph(g)));
+    assert.equal(x.ok, false);
+  }
 });
 
 test("8 R2 __proto__ not merged", () => {
@@ -122,6 +132,8 @@ test("8 R2 __proto__ not merged", () => {
     `{${P},"format":1,"name":"a","savedAt":1,"graph":{${P},"version":1,"nodes":[{${P},"id":"node-1","name":"n","task":"","model":"inherit","retries":0,"schema":{${P}}}],"edges":[],"loop":{${P},"until":null,"maxIterations":3,"budgetUsd":null,"onFail":"screen"}}}`;
   const r = f.parseGraphFile(raw);
   assert.equal(r.ok, true);
+  assert.deepEqual(Object.keys(r.value), ["name", "savedAt", "graph"]);
+  assert.deepEqual(Object.keys(r.value.graph), ["version", "nodes", "edges", "loop"]);
   assert.equal({}.polluted, undefined);
   assert.equal(Object.prototype.polluted, undefined);
   assert.deepEqual(Object.keys(r.value.graph.nodes[0]), ["id", "name", "task", "model", "retries", "schema"]);
@@ -137,6 +149,13 @@ test("9 unknown fields ignored", () => {
   const r = f.parseGraphFile(envOf(dirty, { extra: 1 }));
   assert.equal(r.ok, true);
   assert.deepEqual(r.value.graph, withLoop());
+  assert.deepEqual(Object.keys(r.value), ["name", "savedAt", "graph"]);
+  const top = clone(g);
+  top.mystery = { a: 1 };
+  const r2 = f.parseGraphFile(envOf(top));
+  assert.equal(r2.ok, true);
+  assert.deepEqual(Object.keys(r2.value.graph), Object.keys(withLoop()));
+  assert.equal("mystery" in r2.value.graph, false);
 });
 
 test("10 isDirty / saveStatus", () => {

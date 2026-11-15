@@ -5,6 +5,7 @@ use std::fs::DirEntry;
 use std::io::Read;
 use std::path::Path;
 
+// 상한과 E_CAP 문구는 graphFile.ts GRAPH_LIMITS·GRAPH_CAP_ERROR와 같은 값이다. 한쪽을 바꾸면 다른 쪽도 바꾼다
 pub const GRAPH_MAX_BYTES: usize = 24 * 1024 * 1024; // webview가 보낸 graph 원문
 pub const FILE_MAX_BYTES: u64 = 25 * 1024 * 1024; // 디스크 봉투
 pub const MAX_GRAPHS: usize = 100;
@@ -119,7 +120,7 @@ fn path_of(dir: &Path, id: &str) -> std::path::PathBuf {
     dir.join(format!("{id}.json"))
 }
 
-/// 파일 하나를 안전하게 읽는다. 원문과 파싱한 봉투를 돌려준다.
+/// 파일 하나를 안전하게 읽는다. 원문과 파싱한 봉투를 돌려준다. 검사 순서는 roadmap.rs::read와 같다.
 fn read_file(dir: &Path, p: &Path) -> Result<(String, Value), String> {
     let unreadable = || E_UNREADABLE.to_string();
     let meta = match std::fs::symlink_metadata(p) {
@@ -130,6 +131,7 @@ fn read_file(dir: &Path, p: &Path) -> Result<(String, Value), String> {
     if meta.file_type().is_symlink() || !meta.is_file() {
         return Err(unreadable());
     }
+    // 심볼릭 링크·정션으로 폴더 밖을 가리키는 경우를 막는다
     let inside = match (p.canonicalize(), dir.canonicalize()) {
         (Ok(f), Ok(d)) => f.parent() == Some(d.as_path()),
         _ => false,
@@ -138,6 +140,7 @@ fn read_file(dir: &Path, p: &Path) -> Result<(String, Value), String> {
         return Err(unreadable());
     }
     let f = std::fs::File::open(p).map_err(|_| unreadable())?;
+    // 위 검사와 open 사이에 파일이 바뀌었을 수 있어 열린 핸들로 다시 확인한다
     match f.metadata() {
         Ok(m) if m.is_file() => {
             if m.len() > FILE_MAX_BYTES {
@@ -356,6 +359,9 @@ mod tests {
             assert!(seen.insert(id));
         }
         assert!(is_id("g-0123456789abcdef"));
+        for bad in ["g-0123456789abcdeg", "g-gggggggggggggggg", "g-0123456789abcdez", "g-zzzzzzzzzzzzzzzz"] {
+            assert!(!is_id(bad), "{bad:?}");
+        }
         let long = "a".repeat(64);
         let longer = "a".repeat(65);
         for bad in [
@@ -532,6 +538,10 @@ mod tests {
         let (root, dir) = tmp();
         assert!(save(&dir, None, &"가".repeat(40), &g(1, 0)).is_ok());
         assert!(save(&dir, None, &"😀".repeat(20), &g(1, 0)).is_ok());
+        // 범위 바로 밖(U+2029·U+2065·U+202F)은 허용
+        for ok in ["a\u{2029}b", "a\u{2065}b", "a\u{202F}b"] {
+            assert!(save(&dir, None, ok, &g(1, 0)).is_ok(), "{ok:?}");
+        }
         let n = count_entries(&dir);
         let bads = [
             "".to_string(),
@@ -541,6 +551,10 @@ mod tests {
             "a\u{202E}b".to_string(),
             "\u{2066}a".to_string(),
             "a\u{7}".to_string(),
+            "a\u{202A}b".to_string(),
+            "a\u{2069}b".to_string(),
+            "a\u{0}b".to_string(),
+            "a\u{1F}b".to_string(),
             "a\u{9F}".to_string(),
             "a\n".to_string(),
         ];
