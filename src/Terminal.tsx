@@ -40,6 +40,8 @@ export default function Terminal({ session }: { session: Session | null }) {
   const noteTimer = useRef<number | undefined>(undefined);
   const ime = useRef(new HangulIme()); // 맥 WKWebView 한글 조합 보정 (hangulIme.ts)
 
+  const sess = session ? folderName(session) : "";
+
   // 같은 문구도 다시 낭독되게 비웠다가 넣는다
   const say = (s: string) => { clearTimeout(noteTimer.current); setNote(""); noteTimer.current = window.setTimeout(() => setNote(s), 50); };
 
@@ -124,9 +126,11 @@ export default function Terminal({ session }: { session: Session | null }) {
     return t;
   };
 
-  const openFolder = async () => {
+  // 시작 세 가지(폴더 열기·새로 시작·이어 가기)가 같은 경로를 쓴다. 웹뷰가 넘기는 값은 세션 id뿐이다.
+  const begin = async (how: "folder" | "new" | "resume") => {
     const box = boxRef.current;
     if (!box || !ready) return;
+    if (how !== "folder" && !session) return;
     const g = ++gen.current;
     setErr(""); setPhase("picking");
     try {
@@ -147,7 +151,8 @@ export default function Terminal({ session }: { session: Session | null }) {
         }
       };
       t.reset(); t.options.disableStdin = false; ime.current.flush(); // 이전 실행에서 남은 조합은 버린다
-      const name = await invoke<string | null>("term_open_folder", { onOut: ch });
+      const name = how === "folder" ? await invoke<string | null>("term_open_folder", { onOut: ch })
+        : await invoke("term_" + how, { id: session!.id, onOut: ch }).then(() => sess);
       if (g !== gen.current) return;
       if (name === null) { setShown(!!ranRef.current); setPhase(ranRef.current ? "ended" : "idle"); return; }
       ranRef.current = true;
@@ -170,7 +175,6 @@ export default function Terminal({ session }: { session: Session | null }) {
     invoke("term_stop").catch((e) => { setErr(String(e)); setPhase("running"); });
   };
 
-  const sess = session ? folderName(session) : "";
   const folder = phase === "idle" ? sess : ran;
   const stateText = !folder ? ""
     : phase === "picking" ? `${folder} · 시작하는 중…`
@@ -185,9 +189,11 @@ export default function Terminal({ session }: { session: Session | null }) {
         <h2 id="h-term" className="px" tabIndex={-1}>터미널</h2>
         <span className="term-state px" title={stateText}>{stateText}</span>
         <div className="term-btns">
-          <button type="button" className="btn" disabled={!canStart} onClick={openFolder}>폴더 열기</button>
-          <button type="button" className="btn" disabled aria-label={session ? `새로 시작: ${sess} 폴더` : undefined}>새로 시작</button>
-          <button type="button" className="btn" disabled aria-label={session ? `이어 가기: ${sess} 세션` : undefined}>이어 가기</button>
+          <button type="button" className="btn" disabled={!canStart} onClick={() => begin("folder")}>폴더 열기</button>
+          <button type="button" className="btn" disabled={!canStart || !session} onClick={() => begin("new")}
+            aria-label={session ? `새로 시작: ${sess} 폴더` : undefined}>새로 시작</button>
+          <button type="button" className="btn" disabled={!canStart || !session} onClick={() => begin("resume")}
+            aria-label={session ? `이어 가기: ${sess} 세션` : undefined}>이어 가기</button>
           <button type="button" className="btn" disabled={phase !== "running" && phase !== "stopping"}
             aria-disabled={phase === "stopping" ? "true" : undefined} onClick={stop}>종료</button>
         </div>

@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
-import Chat from "./Chat";
 import Terminal from "./Terminal";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
@@ -84,7 +83,6 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pickSeq, setPickSeq] = useState(0); // 세션 클릭마다 올려, 같은 세션 재클릭도 Chat이 알게 한다
   const [sessions, setSessions] = useState<Map<string, Session>>(new Map());
   const [loaded, setLoaded] = useState(false);
   const [sessionsError, setSessionsError] = useState(false);
@@ -201,7 +199,7 @@ export default function App() {
                   <li key={x.id}>
                     <button type="button" className={list.length >= CHIP_AT && x.id !== selected ? "sess chip" : "sess"}
                       aria-current={x.id === selected ? "true" : undefined}
-                      onClick={() => { setSelected(x.id); setNode(null); setPickSeq((n) => n + 1); }}>
+                      onClick={() => { setSelected(x.id); setNode(null); }}>
                       <span className="cur px" aria-hidden="true">▶</span>
                       <span className="name px">{folderName(x)}</span>
                       <Sym state={st} />
@@ -225,8 +223,6 @@ export default function App() {
       </section>
 
       <Terminal session={cur} />
-      {/* T3에서 삭제 — IME FAIL 시 사이드카 유지 선택지 */}
-      <div hidden><Chat session={cur} pickSeq={pickSeq} /></div>
 
       <div className="console"><Screen /></div>
     </div>

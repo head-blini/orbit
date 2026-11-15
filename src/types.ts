@@ -11,13 +11,6 @@ export type RoadmapLine = { mark: "heading" | "done" | "todo"; text: string };
 export type Roadmap = { kind: "missing" } | { kind: "toobig"; max_bytes: number; max_entries: number }
   | { kind: "error"; reason: string } | { kind: "found"; lines: RoadmapLine[]; skipped: boolean };
 
-export type ChatQuestion = { question: string; header: string; multiSelect: boolean; options: { label: string; description: string }[] };
-export type ChatOut =
-  | { t: "session"; id: string } | { t: "delta"; text: string }
-  | { t: "permit"; id: string; tool: string; target: string }
-  | { t: "ask"; id: string; questions: ChatQuestion[] } | { t: "closed"; id: string }
-  | { t: "done"; cost: number | null } | { t: "stopped" } | { t: "error"; message: string } | { t: "exit" };
-
 export const CHIP_AT = 6;
 export const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };
 export const LEAD_LABEL = { working: "실행 중", waiting: "대기", done: "끝남", error: "실패", stalled: "멈춤(추정)" } as const;
