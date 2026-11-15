@@ -182,8 +182,13 @@ export function checkRetries(raw: string): Check<number> {
 // 파싱된 값 검사: 일반 객체 + 압축 직렬화 UTF-8 바이트 상한. checkSchema·parseGraph 공용.
 function checkSchemaValue(v: unknown): Check<Record<string, unknown>> {
   if (!isPlain(v)) return fail(E_SCHEMA_OBJ);
-  if (new TextEncoder().encode(JSON.stringify(v)).length > LIMITS.schemaBytes) return fail(E_SCHEMA_BIG);
-  return { ok: true, value: v };
+  let n: number;
+  try {
+    n = new TextEncoder().encode(JSON.stringify(v)).length;
+  } catch {
+    return fail(E_SCHEMA_BIG);
+  }
+  return n > LIMITS.schemaBytes ? fail(E_SCHEMA_BIG) : { ok: true, value: v };
 }
 
 export function checkSchema(text: string): Check<Schema> {
