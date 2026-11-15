@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import "./DesignView.css";
-import { addNode, connect, layout, NODE_H, NODE_W, removeNode, step } from "./designGraph";
+import { addNode, CAP_ERROR, CAPS, connect, josa, layout, NODE_H, NODE_W, removeNode, step } from "./designGraph";
 import type { DesignGraph } from "./types";
 
 export type Msg = { text: string; err: boolean } | null;
@@ -43,9 +43,18 @@ export default function DesignView({ graph, selected, msg, onSelect, onChange, s
     setPending({ dom: `dn-${id}`, focus: true });
   };
 
+  const clearSel = () => {
+    onSelect(null);
+    say("선택을 풀었습니다 · 오른쪽은 그래프 설정");
+    // 곧 비활성화될 도구 버튼에 포커스가 남지 않게 한다
+    const a = document.activeElement;
+    if (a instanceof HTMLElement && a.id !== "dg-add" && a.closest(".dg-tools")) setPending({ dom: "dg-add", focus: true });
+  };
+
   const startLink = () => {
     if (linking) return cancel();
     if (selected === null) return;
+    if (graph.edges.length >= CAPS.edges) return say(CAP_ERROR.edges, true);
     setSrc(selected);
     say(`연결: ${nameOf(selected)} → 이을 노드를 고르고 Enter · Esc 취소`);
     setPending({ dom: `dn-${selected}`, focus: true });
@@ -66,14 +75,22 @@ export default function DesignView({ graph, selected, msg, onSelect, onChange, s
     const r = removeNode(graph, selected);
     onChange(r.graph);
     onSelect(null);
-    say(r.removed > 0 ? `${name}와 연결 ${r.removed}개를 지웠습니다` : `${name}를 지웠습니다`);
+    const base = r.removed > 0 ? `${josa(name, "과", "와")} 연결 ${r.removed}개를 지웠습니다` : `${josa(name, "을", "를")} 지웠습니다`;
+    say(r.untilCleared ? `${base} · 종료 조건: 횟수만` : base);
     setPending({ dom: "dg-add", focus: true });
   };
 
   const pick = (id: string) => {
     if (src !== null) {
       const r = connect(graph, src, id);
-      if (!r.ok) return say(r.error, true);
+      if (!r.ok) {
+        say(r.error, true);
+        if (r.reason === "limit") {
+          setSrc(null);
+          setPending({ dom: `dn-${src}`, focus: true });
+        }
+        return;
+      }
       onChange(r.graph);
       onSelect(id);
       say(`${nameOf(src)} → ${nameOf(id)} 연결했습니다`);
@@ -102,9 +119,13 @@ export default function DesignView({ graph, selected, msg, onSelect, onChange, s
     <div
       className="dg"
       onKeyDown={(e) => {
-        if (e.key === "Escape" && linking) {
+        if (e.key !== "Escape") return;
+        if (linking) {
           e.preventDefault();
           cancel();
+        } else if (selected !== null && (e.target as HTMLElement).closest("ol.nodes button")) {
+          e.preventDefault();
+          clearSel();
         }
       }}
     >
@@ -117,7 +138,14 @@ export default function DesignView({ graph, selected, msg, onSelect, onChange, s
         {msg?.err && <span className="px" aria-hidden="true">✕</span>}
         {msg?.text}
       </p>
-      <div className="gscroll">
+      <div
+        className="gscroll"
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest("ol.nodes button")) return;
+          if (linking) cancel();
+          else if (selected !== null) clearSel();
+        }}
+      >
         {graph.nodes.length === 0 ? (
           <div className="dg-empty">
             <p className="empty">빈 설계 그래프입니다</p>
