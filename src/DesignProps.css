@@ -25,3 +25,11 @@
 .links li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: var(--s-1); align-items: center; }
 .links .dir { font-family: var(--f-pixel); font-size: var(--fs-pixel); }
 .links .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 그래프 설정 (run 20261115-loop-settings DESIGN.md). 노드를 고르지 않은 설계 모드의 오른쪽 위 칸. 새 색·새 토큰 없음.
+   두 값 고르기(반복 끔/켬, 실패 시) = 모드 전환과 같은 메뉴 글자(.modes/.mode), 목록 고르기 = .f-sel */
+.loop-sum { margin: 0; font-family: var(--f-pixel); font-size: var(--fs-pixel); overflow-wrap: anywhere; } /* 요약 한 줄: 픽셀 12px ink */
+.f .modes { flex-wrap: wrap; margin-left: calc(-1 * var(--s-2)); } /* 메뉴 글자의 ▶ 칸이 라벨 왼쪽 선에 맞게 */
+.f .note { margin: 0; }
+.f-warn { margin: 0; overflow-wrap: anywhere; } /* 막지 않는 안내 = ink 13px 일반 글꼴, 기호·점선 없음(오류 ✕와 구분) */
+.f-row.num-first { grid-template-columns: 72px minmax(0, 1fr); } /* 최대 반복(좁음) | 예산(넓음) */
