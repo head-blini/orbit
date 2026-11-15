@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import "./DesignProps.css";
-import GraphSettings from "./GraphSettings";
 import type { DesignGraph } from "./types";
-import { LIMITS, MODELS, SCHEMA_INPUT_MAX, checkModel, checkName, checkRetries, checkSchema, checkTask, disconnect, hasPassed, updateNode } from "./designGraph";
+import { LIMITS, MODELS, SCHEMA_INPUT_MAX, checkModel, checkName, checkRetries, checkSchema, checkTask, disconnect, updateNode } from "./designGraph";
 
 type Props = {
   graph: DesignGraph;
@@ -46,7 +45,18 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
     setFocusAt(null);
   }, [focusAt, graph]);
 
-  if (!node) return <GraphSettings graph={graph} onChange={onChange} />;
+  if (!node) {
+    return graph.nodes.length === 0 ? (
+      <p className="empty">노드를 추가하면 여기서 속성을 고칩니다</p>
+    ) : (
+      <>
+        <p className="empty">노드를 고르면 속성을 고칠 수 있습니다</p>
+        <p className="note">
+          노드 {graph.nodes.length}개 · 연결 {graph.edges.length}개 · 고른 노드에서 Enter를 한 번 더 누르면 여기로 옵니다
+        </p>
+      </>
+    );
+  }
 
   const setErr = (f: Field, e: string | undefined) => {
     setErrs((p) => ({ ...p, [f]: e }));
@@ -89,8 +99,6 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
     ...graph.edges.filter((e) => e.from === node.id).map((e) => ({ dir: "→", sr: "나감: ", other: e.to, from: e.from, to: e.to })),
   ];
 
-  const isUntil = graph.loop?.until?.node === node.id;
-  const schemaDesc = [errs.schema && "dp-schema-err", isUntil && "dp-schema-loop", isUntil && !hasPassed(node.schema) && "dp-schema-w"].filter(Boolean).join(" ");
   const field = (f: Field, id: string, label: string, control: ReactNode) => (
     <div className="f">
       <label htmlFor={id}>{label}</label>
@@ -135,21 +143,14 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
         </div>
       </div>
       {errs.retries && <ErrLine id="dp-retries-err" text={errs.retries} />}
-      <div className="f">
-        <label htmlFor="dp-schema">스키마</label>
+      {field("schema", "dp-schema", "스키마",
         <textarea id="dp-schema" className="mono" rows={4} value={schema} maxLength={SCHEMA_INPUT_MAX}
           placeholder="비워 두면 스키마 없음"
           onChange={(e) => {
             setSchema(e.target.value);
             if (errs.schema) commitSchema(e.target.value); // 오류가 떠 있는 동안만 입력마다 재검사
           }}
-          onBlur={(e) => commitSchema(e.target.value)}
-          aria-invalid={errs.schema ? true : undefined}
-          aria-describedby={schemaDesc || undefined} />
-        {errs.schema && <ErrLine id="dp-schema-err" text={errs.schema} />}
-        {isUntil && <p className="note" id="dp-schema-loop">반복 종료 조건 노드 · 출력 passed가 true면 반복을 끝냅니다</p>}
-        {isUntil && !hasPassed(node.schema) && <p className="f-warn" id="dp-schema-w">스키마에 boolean passed가 없습니다</p>}
-      </div>
+          onBlur={(e) => commitSchema(e.target.value)} {...inv("schema", "dp-schema")} />)}
       <div className="f">
         <span className="lb">연결</span>
         {links.length === 0 ? (
@@ -171,7 +172,7 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
           </ul>
         )}
       </div>
-      <p className="note">id: {node.id} · 그래프로 돌아가기: Esc · 그래프 설정: Esc 한 번 더</p>
+      <p className="note">id: {node.id} · 그래프로 돌아가기: Esc</p>
       <p className="sr" role="status">{announce}</p>
     </div>
   );

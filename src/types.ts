@@ -40,10 +40,4 @@ export const folderName = (s: Session): string =>
 export type DesignModel = "inherit" | "sonnet" | "opus" | "haiku";
 export type DesignNode = { id: string; name: string; task: string; model: DesignModel; retries: number; schema: Record<string, unknown> | null };
 export type DesignEdge = { from: string; to: string };
-export type DesignLoop = {
-  until: { node: string } | null; // null = 횟수만. node = 기존 노드 id
-  maxIterations: number; // 정수 1~50
-  budgetUsd: number | null; // null = 없음. 0.01~1000, 소수 둘째 자리까지
-  onFail: "screen" | "none";
-};
-export type DesignGraph = { version: 1; nodes: DesignNode[]; edges: DesignEdge[]; loop?: DesignLoop | null };
+export type DesignGraph = { version: 1; nodes: DesignNode[]; edges: DesignEdge[] };

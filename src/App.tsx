@@ -250,7 +250,7 @@ export default function App() {
         </section>
       ) : (
         <section className="panel detail" aria-labelledby="h-props">
-          <h2 id="h-props" className="px">{dsel ? "노드 속성" : "그래프 설정"}</h2>
+          <h2 id="h-props" className="px">노드 속성</h2>
           <DesignProps key={dsel ?? ""} graph={design} selected={dsel} onChange={setDesign} say={say} />
         </section>
       )}
