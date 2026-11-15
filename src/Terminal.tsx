@@ -30,6 +30,7 @@ export default function Terminal({ session }: { session: Session | null }) {
   const [ran, setRan] = useState(""); // 터미널이 돌고 있는(돌았던) 폴더 이름
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
+  const [pickBusy, setPickBusy] = useState(false); // 폴더 선택 창이 떠 있는 동안
   const boxRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
@@ -145,6 +146,20 @@ export default function Terminal({ session }: { session: Session | null }) {
     const box = boxRef.current;
     if (!box || !ready) return;
     if (how !== "folder" && !session) return;
+    let picked = "";
+    if (how === "folder") {
+      // 고르는 동안 gen·phase·shown은 건드리지 않는다: 취소하면 지금 터미널이 그대로 이어진다
+      setPickBusy(true);
+      try {
+        const n = await invoke<string | null>("term_pick_folder");
+        if (n === null) return;
+        picked = n;
+      } catch (e) {
+        const msg = String(e);
+        setErr(msg); say(`✕ 오류: ${msg}`);
+        return;
+      } finally { setPickBusy(false); }
+    }
     const g = ++gen.current;
     refocus.current = inPanel(); // 시작 버튼이 disabled 되므로 취소·오류로 돌아오면 포커스를 되돌린다 (W7)
     setErr(""); setPhase("picking");
@@ -173,11 +188,10 @@ export default function Terminal({ session }: { session: Session | null }) {
           say("claude가 종료되었습니다");
         }
       };
-      const name = how === "folder" ? await invoke<string | null>("term_open_folder", { onOut: ch })
+      const name = how === "folder" ? await invoke("term_open_folder", { onOut: ch }).then(() => picked)
         : how === "new" ? await invoke("term_new", { id: session!.id, onOut: ch }).then(() => sess)
         : await invoke("term_resume", { id: session!.id, onOut: ch }).then(() => sess);
       if (g !== gen.current) return;
-      if (name === null) { setShown(!!ranRef.current); setPhase(ranRef.current ? "ended" : "idle"); return; }
       begun();
       ranRef.current = true;
       setRan(name);
@@ -189,6 +203,7 @@ export default function Terminal({ session }: { session: Session | null }) {
       if (g !== gen.current) return;
       const msg = String(e);
       setErr(msg); say(`✕ 오류: ${msg}`);
+      if (how === "folder" && termRef.current) termRef.current.options.disableStdin = true; // Rust가 이전 claude를 이미 끝냈을 수 있다
       setShown(!!ranRef.current); setPhase(ranRef.current ? "ended" : "idle");
     }
   };
@@ -210,6 +225,7 @@ export default function Terminal({ session }: { session: Session | null }) {
     : phase === "running" ? `${folder} · 실행 중`
     : phase === "stopping" ? `${folder} · 종료하는 중…`
     : phase === "ended" ? `${folder} · 종료됨` : folder;
+  const canOpen = ready && !pickBusy && (phase === "idle" || phase === "ended" || phase === "running");
   const canStart = ready && (phase === "idle" || phase === "ended");
 
   return (
@@ -218,7 +234,7 @@ export default function Terminal({ session }: { session: Session | null }) {
         <h2 id="h-term" className="px" tabIndex={-1}>터미널</h2>
         <span className="term-state px" title={stateText}>{stateText}</span>
         <div className="term-btns">
-          <button type="button" className="btn" disabled={!canStart} onClick={() => begin("folder")}>폴더 열기</button>
+          <button type="button" className="btn" disabled={!canOpen} onClick={() => begin("folder")}>폴더 열기</button>
           <button type="button" className="btn" disabled={!canStart || !session} onClick={() => begin("new")}
             aria-label={session ? `새로 시작: ${sess} 폴더` : undefined}>새로 시작</button>
           <button type="button" className="btn" disabled={!canStart || !session} onClick={() => begin("resume")}

@@ -3,13 +3,17 @@
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 #[cfg(windows)]
 pub const CLAUDE: &str = "claude.exe";
 #[cfg(not(windows))]
 pub const CLAUDE: &str = "claude";
+#[cfg(windows)]
+pub const NODE: &str = "node.exe";
+#[cfg(not(windows))]
+pub const NODE: &str = "node";
 pub const NOT_FOUND: &str = "claude를 찾을 수 없습니다 — Claude Code를 설치했는지 확인하세요";
 /// 터미널 종류만 알린다(Finder 실행 시 TERM 부재 대비). 색 설정이 아니다.
 const TERM_ENV: &str = "xterm-256color";
@@ -54,7 +58,7 @@ pub fn claude_dirs() -> Vec<PathBuf> {
         .map(|p| std::env::split_paths(&p).filter(|d| d.is_absolute()).collect())
         .unwrap_or_default();
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
-    if let Some(h) = home.filter(|h| !h.is_empty()) {
+    if let Some(h) = home.clone().filter(|h| !h.is_empty()) {
         v.push(PathBuf::from(h).join(".local").join("bin"));
     }
     #[cfg(target_os = "macos")]
@@ -62,12 +66,41 @@ pub fn claude_dirs() -> Vec<PathBuf> {
         v.push(PathBuf::from("/opt/homebrew/bin"));
         v.push(PathBuf::from("/usr/local/bin"));
     }
+    #[cfg(not(windows))]
+    if let Some(h) = home.filter(|h| !h.is_empty()) {
+        v.extend(nvm_bins(Path::new(&h)));
+    }
     v
+}
+
+/// `<home>/.nvm/versions/node/*/bin`, `vX.Y.Z` 내림차순. 해석이 안 되는 이름은 뒤. 폴더가 없으면 빈 목록.
+#[cfg_attr(windows, allow(dead_code))]
+fn nvm_bins(home: &Path) -> Vec<PathBuf> {
+    let root = home.join(".nvm").join("versions").join("node");
+    let Ok(rd) = std::fs::read_dir(&root) else { return Vec::new() };
+    let ver = |n: &str| -> Option<(u64, u64, u64)> {
+        let mut it = n.strip_prefix('v')?.split('.');
+        let v = (it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()?.parse().ok()?);
+        it.next().is_none().then_some(v)
+    };
+    let mut v: Vec<(Option<(u64, u64, u64)>, String)> = rd
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .map(|n| (ver(&n), n))
+        .collect();
+    v.sort_by(|a, b| b.0.is_some().cmp(&a.0.is_some()).then(b.0.cmp(&a.0)).then(a.1.cmp(&b.1)));
+    v.into_iter().map(|(_, n)| root.join(n).join("bin")).collect()
+}
+
+/// 절대 경로 폴더 중 처음으로 `name` 파일이 있는 곳의 절대 경로.
+pub fn find_named(dirs: &[PathBuf], name: &str) -> Option<PathBuf> {
+    dirs.iter().filter(|d| d.is_absolute()).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
 /// 절대 경로 폴더 중 처음으로 `claude` 파일이 있는 곳의 절대 경로.
 pub fn find_in(dirs: &[PathBuf]) -> Option<PathBuf> {
-    dirs.iter().filter(|d| d.is_absolute()).map(|d| d.join(CLAUDE)).find(|p| p.is_file())
+    find_named(dirs, CLAUDE)
 }
 
 /// 버퍼에서 UTF-8로 완성된 앞부분만 문자열로 꺼낸다. 잘린 꼬리(≤3바이트)는 버퍼에 남기고, 깨진 바이트는 U+FFFD.
@@ -184,6 +217,41 @@ fn descendants(ps: &str, root: u32) -> Vec<u32> {
     out
 }
 
+/// `pid ppid command…` 줄에서 command의 `--spawned-by` 뒤 `"pid":<숫자열>`이 정확히 root인 줄의 pid.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn spawned_by(ps: &str, root: u32) -> Vec<u32> {
+    ps.lines()
+        .filter_map(|l| {
+            let (pid, rest) = l.trim_start().split_once(char::is_whitespace)?;
+            let pid: u32 = pid.parse().ok()?;
+            let (ppid, rest) = rest.trim_start().split_once(char::is_whitespace)?;
+            let _ppid: u32 = ppid.parse().ok()?;
+            let after = &rest[rest.find("--spawned-by")? + "--spawned-by".len()..];
+            // `--spawned-by` 바로 다음 인자가 JSON 객체일 때만, 그 객체 안의 pid를 본다.
+            let obj = after.trim_start().strip_prefix('{')?;
+            let obj = &obj[..obj.find('}').unwrap_or(obj.len())];
+            let v = obj[obj.find("\"pid\":")? + 6..].trim_start();
+            let end = v.find(|c: char| !c.is_ascii_digit()).unwrap_or(v.len());
+            (end > 0 && v[..end].parse::<u32>().ok() == Some(root)).then_some(pid)
+        })
+        .collect()
+}
+
+/// 루트가 스스로 끝난 뒤 `--spawned-by {"pid":root}`로 남은 setsid 자손 트리를 정리한다.
+#[cfg(unix)]
+fn reap_spawned(root: u32) {
+    let ps = std::process::Command::new("/bin/ps")
+        .args(["-axo", "pid=,ppid=,command="])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    for p in spawned_by(&ps, root) {
+        kill_tree(p);
+    }
+}
+#[cfg(not(unix))]
+fn reap_spawned(_root: u32) {}
+
 #[cfg(unix)]
 fn kill_tree(pid: u32) {
     // claude는 `claude daemon run`·`--bg-pty-host`(백그라운드 세션)를 setsid로 새 그룹에 띄운다. 그룹 kill로는 안 닿으므로
@@ -200,6 +268,7 @@ fn kill_tree(pid: u32) {
 }
 
 impl Term {
+    #[cfg(test)]
     pub fn running(&self) -> bool {
         lk(&self.0).proc.is_some()
     }
@@ -257,8 +326,12 @@ impl Term {
             let mut g = lk(&slot);
             let mine = g.proc.as_ref().is_some_and(|p| p.epoch == epoch);
             let p = if mine { g.proc.take() } else { None };
+            let root = p.as_ref().and_then(|p| p.pid);
             drop(g);
             drop(p);
+            if let Some(r) = root {
+                reap_spawned(r);
+            }
         });
         // 읽기: 데이터 → Exit 순서를 한 스레드가 보장. send 실패는 무시하고 EOF까지 비운다
         std::thread::spawn(move || {
@@ -490,6 +563,105 @@ mod tests {
             let _ = std::process::Command::new("/bin/kill").args(["-KILL", &pid.to_string()]).output();
         }
         assert!(!left, "stop 뒤에도 다른 세션의 자손(pid {pid})이 남았다");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn nvm_bins_sorted_newest_first() {
+        let h = tmp("nvm");
+        assert!(nvm_bins(&h).is_empty());
+        let n = h.join(".nvm/versions/node");
+        for v in ["v9.0.0", "v20.1.0", "v18.2.0", "junk"] {
+            std::fs::create_dir_all(n.join(v)).unwrap();
+        }
+        std::fs::write(n.join("file"), b"").unwrap();
+        let want: Vec<PathBuf> = ["v20.1.0", "v18.2.0", "v9.0.0", "junk"].iter().map(|v| n.join(v).join("bin")).collect();
+        assert_eq!(nvm_bins(&h), want);
+        let _ = std::fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn find_named_finds_node() {
+        let d = tmp("node");
+        assert_eq!(find_named(&[d.clone()], NODE), None);
+        std::fs::write(d.join(NODE), b"").unwrap();
+        assert_eq!(find_named(&[PathBuf::from("rel"), d.clone()], NODE), Some(d.join(NODE)));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn spawned_by_matches_exact_pid_only() {
+        let ps = concat!(
+            " 50 1 claude daemon run --spawned-by {\"pid\":23026,\"x\":1}\n",
+            "51 1 x --spawned-by {\"pid\": 23026}\n",
+            "52 1 x --spawned-by {\"pid\":230260}\n",
+            "53 1 x --spawned-by {\"pid\":2302}\n",
+            "54 1 x {\"pid\":23026}\n",
+            "garbage\n55\n56 1\n57 x --spawned-by {\"pid\":23026}\n"
+        );
+        assert_eq!(spawned_by(ps, 23026), vec![50, 51]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawned_by_ignores_pid_in_other_args() {
+        let ps = concat!(
+            "60 1 x --spawned-by foo --other {\"pid\":23026}\n",
+            "61 1 x --spawned-by {\"label\":\"c\"} --arg {\"pid\":23026}\n",
+            "62 1 x --spawned-by {\"label\":\"c\",\"pid\":23026}\n"
+        );
+        assert_eq!(spawned_by(ps, 23026), vec![62]);
+    }
+
+    #[test]
+    fn self_exit_reaps_spawned_by_tree() {
+        use std::time::{Duration, Instant};
+        let t = Term::default();
+        let d = tmp("spawnedby");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let sh = r#"perl -e 'use POSIX; POSIX::setsid() or die; exec "/bin/sh", "-c", "sleep 300; :", "x", "--spawned-by", "{\"pid\":$ARGV[0]}"' $$ & echo "PID:$!"; sleep 1"#;
+        t.start(Some(PathBuf::from("/bin/sh")), d.to_str().unwrap(), &["-c", sh], move |m| {
+            let _ = tx.send(m);
+        })
+        .unwrap();
+        let mut seen = String::new();
+        let pid = loop {
+            let p = seen.lines().find_map(|l| l.trim().strip_prefix("PID:")?.trim().parse::<u32>().ok());
+            if let Some(p) = p {
+                break p;
+            }
+            match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
+                TermOut::Data { d } => seen.push_str(&d),
+                TermOut::Exit => panic!("셸이 먼저 끝났다: {seen:?}"),
+            }
+        };
+        let ps = || {
+            let o = std::process::Command::new("/bin/ps").args(["-axo", "pid=,ppid="]).output().expect("ps 실행 실패");
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        // 정리 전에 자손(sleep 300)을 잡아 둔다.
+        let mut kids = Vec::new();
+        let seen_until = Instant::now() + Duration::from_secs(5);
+        while kids.is_empty() && Instant::now() < seen_until {
+            kids = descendants(&ps(), pid);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // kill -0: 실행 실패는 panic, 종료 코드 비0만 "죽음"
+        let alive = |p: u32| std::process::Command::new("/bin/kill").args(["-0", &p.to_string()]).output().expect("kill 실행 실패").status.success();
+        let all: Vec<u32> = std::iter::once(pid).chain(kids.iter().copied()).collect();
+        let until = Instant::now() + Duration::from_secs(8);
+        while all.iter().any(|&p| alive(p)) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let left: Vec<u32> = all.iter().copied().filter(|&p| alive(p)).collect();
+        if !left.is_empty() {
+            let _ = std::process::Command::new("/bin/kill").args(["-KILL", &format!("-{pid}")]).output();
+            for p in &left {
+                let _ = std::process::Command::new("/bin/kill").args(["-KILL", &p.to_string()]).output();
+            }
+        }
+        assert!(!kids.is_empty(), "자손 sleep을 찾지 못했다(pid {pid})");
+        assert!(left.is_empty(), "스스로 끝난 뒤에도 자손이 남았다: 루트 {pid}, 남은 {left:?}");
         let _ = std::fs::remove_dir_all(&d);
     }
 

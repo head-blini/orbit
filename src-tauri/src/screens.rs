@@ -4,12 +4,16 @@ pub const EXTS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
 
 /// dir 바로 아래 그림 파일(dir.join(이름)), 이름순. dir이 없거나 못 읽으면 빈 목록.
 pub fn list(dir: &Path) -> Vec<PathBuf> {
+    if std::fs::symlink_metadata(dir).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        return Vec::new();
+    }
     let (Ok(canon), Ok(rd)) = (dir.canonicalize(), std::fs::read_dir(dir)) else {
         return Vec::new();
     };
     let mut out: Vec<PathBuf> = rd
         .flatten()
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter(|e| !multi_linked(e))
         .map(|e| dir.join(e.file_name()))
         .filter(|p| {
             let ext = p.extension().and_then(|x| x.to_str()).map(str::to_ascii_lowercase);
@@ -20,7 +24,18 @@ pub fn list(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-// 방어선(도달 경로 없음): list에서는 앞의 is_file()이 링크를 이미 걸러 이 검사가 거르는 입력을 만들 수 없다. 지우지 않는다.
+// 하드 링크(nlink > 1)는 다른 곳의 파일과 같은 내용이라 뺀다. Windows는 검사하지 않는다.
+#[cfg(unix)]
+fn multi_linked(e: &std::fs::DirEntry) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    e.metadata().map(|m| m.nlink() > 1).unwrap_or(true)
+}
+#[cfg(not(unix))]
+fn multi_linked(_: &std::fs::DirEntry) -> bool {
+    false
+}
+
+// 방어선(정상 경로에서는 도달하지 않음): list에서는 앞의 is_file()이 링크를 이미 걸러 이 검사가 거르는 입력을 만들 수 없다. 지우지 않는다.
 fn inside(dir_canon: &Path, p: &Path) -> bool {
     p.canonicalize().ok().and_then(|c| c.parent().map(|d| d == dir_canon)).unwrap_or(false)
 }
@@ -100,6 +115,36 @@ mod tests {
         } else {
             eprintln!("symlink_out_is_excluded: 링크를 만들 수 없어 단언을 건너뜀: {:?}", r);
         }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dir_symlink_gives_empty() {
+        let root = tmp();
+        let real = root.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("a.png"), b"x").unwrap();
+        let link = root.join("lnk");
+        #[cfg(unix)]
+        let r = std::os::unix::fs::symlink(&real, &link);
+        #[cfg(windows)]
+        let r = std::os::windows::fs::symlink_dir(&real, &link);
+        if r.is_ok() {
+            assert!(list(&link).is_empty());
+            assert_eq!(list(&real).len(), 1);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hard_link_is_excluded() {
+        let root = tmp();
+        let dir = root.join("screens");
+        std::fs::write(dir.join("b.png"), b"x").unwrap();
+        std::fs::hard_link(dir.join("b.png"), dir.join("a.png")).unwrap();
+        std::fs::write(dir.join("c.png"), b"x").unwrap();
+        assert_eq!(list(&dir), vec![dir.join("c.png")]);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -123,7 +123,7 @@ fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>
     // 마지막 열에 이미 끝난 노드가 하나라도 있으면 다음 열. 시각이 아니라 생성 순서로 안다.
     let last = agents.iter().map(|a| a.col).max().unwrap_or(1);
     let finished = agents.iter().any(|a| a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
-    let col = if finished { last + 1 } else { last };
+    let col = if finished { last.saturating_add(1) } else { last };
     agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col });
     if agents.len() > MAX_AGENTS {
         agents.remove(0);
@@ -131,23 +131,37 @@ fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>
     agents.len() - 1
 }
 
-fn nonempty(v: Option<&Value>) -> Option<&str> {
-    v.and_then(Value::as_str).filter(|s| !s.is_empty())
+const MAX_ID: usize = 256;
+const MAX_TEXT: usize = 256;
+const MAX_CWD: usize = 4096;
+
+/// id류 문자열. 너무 길면 없는 값으로 본다.
+fn id_str(v: Option<&Value>) -> Option<&str> {
+    v.and_then(Value::as_str).filter(|s| s.len() <= MAX_ID)
+}
+
+/// 표시용 문자열. 문자 경계에서 MAX_TEXT자로 자른다.
+fn text(v: Option<&Value>) -> Option<String> {
+    v.and_then(Value::as_str).map(|s| s.chars().take(MAX_TEXT).collect())
+}
+
+fn nonempty(v: Option<&Value>) -> Option<String> {
+    text(v).filter(|s| !s.is_empty())
 }
 
 /// 비어 있는 칸만 채운다.
 fn fill_from_input(a: &mut Agent, input: Option<&Value>) {
     if a.kind.is_none() {
-        a.kind = input.and_then(|i| i.get("subagent_type")).and_then(Value::as_str).map(str::to_string);
+        a.kind = text(input.and_then(|i| i.get("subagent_type")));
     }
     if a.description.is_none() {
-        a.description = input.and_then(|i| i.get("description")).and_then(Value::as_str).map(str::to_string);
+        a.description = text(input.and_then(|i| i.get("description")));
     }
 }
 
 fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
-    let aid = v.get("agent_id").and_then(Value::as_str);
-    let tuid = v.get("tool_use_id").and_then(Value::as_str);
+    let aid = id_str(v.get("agent_id"));
+    let tuid = id_str(v.get("tool_use_id"));
     let by_aid = |ag: &[Agent], id: &str| ag.iter().position(|a| a.agent_id.as_deref() == Some(id));
     let tool_node = is_agent_tool(v.get("tool_name").and_then(Value::as_str)) && aid.is_none();
     match name {
@@ -184,7 +198,7 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
             let Some(t) = tuid else { return };
             let mut i = node_by_tool(agents, t);
             let Some(r) = v.get("tool_response").and_then(Value::as_object) else { return };
-            if let Some(id) = r.get("agentId").and_then(Value::as_str) {
+            if let Some(id) = id_str(r.get("agentId")) {
                 if let Some(j) = agents.iter().enumerate().position(|(k, a)| k != i && a.agent_id.as_deref() == Some(id)) {
                     if agents[j].tool_use_id.is_some() {
                         // 자기 호출을 가진 노드는 합치지 않는다. 엇갈린 짝짓기였으니 id만 비운다.
@@ -220,7 +234,7 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
                 agents[i].state = NodeState::Running;
             } else if let Some(ty) = nonempty(v.get("agent_type")) {
                 // 추정 짝짓기: agent_id 없는 가장 오래된 running 노드 중 kind가 같거나 없는 것
-                let pair = agents.iter().position(|a| a.agent_id.is_none() && a.state == NodeState::Running && a.kind.as_deref().is_none_or(|k| k == ty));
+                let pair = agents.iter().position(|a| a.agent_id.is_none() && a.state == NodeState::Running && a.kind.as_deref().is_none_or(|k| k == ty.as_str()));
                 let i = pair.unwrap_or_else(|| push_agent(agents, None, None, NodeState::Running, Some(now)));
                 let a = &mut agents[i];
                 a.agent_id = Some(id.to_string());
@@ -306,8 +320,8 @@ impl Store {
     }
 
     pub fn ingest_hook(&mut self, v: &Value, now_ms: u64) -> Option<String> {
-        let sid = v.get("session_id")?.as_str()?;
-        self.touch(sid, Source::Hook, v.get("cwd").and_then(Value::as_str), now_ms, None);
+        let sid = id_str(v.get("session_id"))?;
+        self.touch(sid, Source::Hook, v.get("cwd").and_then(Value::as_str).filter(|c| c.len() <= MAX_CWD), now_ms, None);
         let name = v.get("hook_event_name").and_then(Value::as_str);
         let note = v.get("notification_type").and_then(Value::as_str);
         let state = match (name, note) {
@@ -328,12 +342,12 @@ impl Store {
             Some("PostToolUse") | Some("PostToolUseFailure") => Phase::Result,
             _ => return Some(sid.to_string()),
         };
-        if let Some(id) = v.get("tool_use_id").and_then(Value::as_str) {
+        if let Some(id) = id_str(v.get("tool_use_id")) {
             let ev = Event {
                 key: format!("{}:{id}", if phase == Phase::Call { "call" } else { "result" }),
                 tool_use_id: Some(id.to_string()),
                 phase,
-                tool: v.get("tool_name").and_then(Value::as_str).unwrap_or("").to_string(),
+                tool: text(v.get("tool_name")).unwrap_or_default(),
                 at_ms: now_ms,
                 source: Source::Hook,
             };
@@ -347,9 +361,9 @@ impl Store {
         let ts = obj.get("timestamp").and_then(Value::as_str).and_then(parse_ms);
         let at = ts.unwrap_or(read_ms);
         // timestamp 없는 줄은 last_ms를 올리지 못한다(max)
-        self.touch(session, Source::Log, obj.get("cwd").and_then(Value::as_str), ts.unwrap_or(0), ts);
+        self.touch(session, Source::Log, obj.get("cwd").and_then(Value::as_str).filter(|c| c.len() <= MAX_CWD), ts.unwrap_or(0), ts);
         let sidechain = obj.get("isSidechain").and_then(Value::as_bool) == Some(true);
-        let uuid = obj.get("uuid").and_then(Value::as_str);
+        let uuid = id_str(obj.get("uuid"));
         let blocks = obj.get("message").and_then(|m| m.get("content")).and_then(Value::as_array);
         for (i, b) in blocks.into_iter().flatten().enumerate() {
             let (phase, id) = match b.get("type").and_then(Value::as_str) {
@@ -357,7 +371,7 @@ impl Store {
                 Some("tool_result") => (Phase::Result, b.get("tool_use_id")),
                 _ => continue,
             };
-            let id = id.and_then(Value::as_str);
+            let id = id_str(id);
             if let (Some(id), Some(s), false) = (id, self.sessions.get_mut(session), sidechain) {
                 log_agent(&mut s.agents, b, phase, id, ts);
             }
@@ -368,7 +382,7 @@ impl Store {
                 (None, None) => continue,
             };
             let tool = if phase == Phase::Call {
-                b.get("name").and_then(Value::as_str).map(str::to_string)
+                text(b.get("name"))
             } else {
                 id.and_then(|id| {
                     let call = format!("call:{id}");
@@ -1078,5 +1092,62 @@ mod tests {
         let mut st = Store::default();
         pre(&mut st, "t1");
         assert_eq!(serde_json::to_value(&ag(&st)[0]).unwrap()["col"], 1);
+    }
+
+    #[test]
+    fn z_col_saturates() {
+        let mut ag = vec![Agent { tool_use_id: None, agent_id: None, kind: None, description: None, state: NodeState::Done, started_ms: None, duration_ms: None, tokens: None, col: u32::MAX }];
+        let i = push_agent(&mut ag, None, None, NodeState::Running, None);
+        assert_eq!(ag[i].col, u32::MAX);
+    }
+
+    #[test]
+    fn z_long_strings_capped() {
+        let mut st = Store::default();
+        let long = "a".repeat(300);
+        assert!(st.ingest_hook(&json!({"hook_event_name":"Stop","session_id":long}), 1).is_none());
+        let v = json!({"hook_event_name":"PreToolUse","session_id":S,"tool_use_id":long,"tool_name":"Read"});
+        assert!(st.ingest_hook(&v, 1).is_some());
+        assert_eq!(evs(&st).len(), 0);
+        let v = json!({"hook_event_name":"UserPromptSubmit","session_id":"s2","cwd":"c".repeat(5000)});
+        st.ingest_hook(&v, 1);
+        assert_eq!(st.get("s2").unwrap().cwd, None);
+        let v = json!({"hook_event_name":"PreToolUse","session_id":S,"tool_use_id":"t","tool_name":"Agent",
+            "tool_input":{"description":"한".repeat(1000),"subagent_type":"가".repeat(1000)}});
+        st.ingest_hook(&v, 1);
+        let a = &st.get(S).unwrap().agents[0];
+        assert_eq!(a.description.as_ref().unwrap().chars().count(), 256);
+        assert_eq!(a.kind.as_ref().unwrap().chars().count(), 256);
+    }
+
+    #[test]
+    fn z_log_and_hook_limits() {
+        let long = "a".repeat(300);
+        // 로그: id·uuid·tool_use_id 상한
+        let mut st = Store::default();
+        st.ingest_log(S, &use_line(&long, "Read"), 1);
+        assert!(evs(&st).iter().all(|e| e.tool_use_id.is_none() && !e.key.contains("aaa")));
+        let mut st = Store::default();
+        let v = json!({"uuid":long,"message":{"content":[{"type":"tool_use","name":"Read"}]}});
+        st.ingest_log(S, &v, 1);
+        assert_eq!(st.get(S).unwrap().events.len(), 0);
+        let mut st = Store::default();
+        st.ingest_log(S, &res_line(&long), 1);
+        assert_eq!(st.get(S).unwrap().events.len(), 0);
+        let mut st = Store::default();
+        let mut v = use_line("t", "Read");
+        v["cwd"] = json!("c".repeat(5000));
+        st.ingest_log(S, &v, 1);
+        assert_eq!(st.get(S).unwrap().cwd, None);
+        // 훅: agent_id·tool_response.agentId·tool_name
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", &long, json!("t")), 1);
+        assert_eq!(ag(&st).len(), 0);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 1);
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t1", json!({"tool_response":{"status":"completed","agentId":long}})), 1);
+        assert_eq!(ag(&st)[0].agent_id, None);
+        assert_eq!(ag(&st)[0].state, NodeState::Done);
+        st.ingest_hook(&ah("PreToolUse", &"한".repeat(1000), "t2", json!({})), 1);
+        assert_eq!(evs(&st).last().unwrap().tool.chars().count(), 256);
     }
 }

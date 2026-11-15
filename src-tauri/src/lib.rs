@@ -22,6 +22,8 @@ struct AppState {
     screens_dir: Result<PathBuf, String>,
     term: term::Term,
     plugin_dir: Option<String>,
+    /// 마지막으로 고른 폴더. 경로는 웹뷰로 나가지 않는다.
+    picked: Mutex<Option<String>>,
 }
 
 #[derive(serde::Serialize)]
@@ -31,6 +33,7 @@ struct Status {
     installed: Option<bool>,
     settings_error: Option<String>,
     projects_error: Option<String>,
+    node_missing: bool,
 }
 
 fn lock(s: &Mutex<sessions::Store>) -> std::sync::MutexGuard<'_, sessions::Store> {
@@ -69,7 +72,8 @@ fn get_status(state: State<AppState>) -> Status {
         Err(e) => (None, Some(e)),
     };
     let projects_error = state.projects_dir.as_ref().err().cloned();
-    Status { listen_addr, server_error, installed, settings_error, projects_error }
+    let node_missing = state.plugin_dir.is_some() && term::find_named(&term::claude_dirs(), term::NODE).is_none();
+    Status { listen_addr, server_error, installed, settings_error, projects_error, node_missing }
 }
 
 #[tauri::command(async)]
@@ -85,9 +89,12 @@ fn get_sessions(state: State<AppState>) -> Vec<sessions::Session> {
 }
 
 #[tauri::command(async)]
-fn list_screens(state: State<AppState>) -> Vec<String> {
+fn list_screens(app: tauri::AppHandle, state: State<AppState>) -> Vec<String> {
     match &state.screens_dir {
-        Ok(d) => screens::list(d).iter().map(|p| p.display().to_string()).collect(),
+        Ok(d) => {
+            let scope = app.asset_protocol_scope();
+            screens::list(d).iter().filter(|p| scope.allow_file(p).is_ok()).map(|p| p.display().to_string()).collect()
+        }
         Err(_) => Vec::new(),
     }
 }
@@ -113,27 +120,33 @@ fn uninstall_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     Ok(backup.map(|p| p.display().to_string()))
 }
 
-/// 폴더 선택 창 → 그 폴더에서 claude 시작. 경로는 웹뷰로 나가지 않고 폴더 이름만 돌려준다(취소는 None).
+/// 폴더 선택 창. 경로는 Rust에만 두고 폴더 이름만 돌려준다(취소는 None). 실행 중이어도 거부하지 않는다.
 #[tauri::command(async)]
-fn term_open_folder(
-    app: tauri::AppHandle,
-    state: State<AppState>,
-    on_out: tauri::ipc::Channel<term::TermOut>,
-) -> Result<Option<String>, String> {
+fn term_pick_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    if state.term.running() {
-        return Err("이미 실행 중입니다".into());
-    }
-    let Some(fp) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
+    let Some(fp) = app.dialog().file().blocking_pick_folder() else {
+        *state.picked.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        return Ok(None);
+    };
     let path = fp.into_path().map_err(|_| "폴더 경로를 읽을 수 없습니다".to_string())?;
     let s = path.to_str().ok_or("폴더 경로를 읽을 수 없습니다")?;
     let s = term::strip_verbatim_disk(s);
     term::check_cwd(s)?;
-    state.term.start(term::find_in(&term::claude_dirs()), s, &term::args(None, state.plugin_dir.as_deref()), move |m| {
-        let _ = on_out.send(m);
-    })?;
     let name = std::path::Path::new(s).file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned());
+    *state.picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(s.to_string());
     Ok(Some(name))
+}
+
+/// 고른 폴더에서 claude 시작. 실행 중이면 먼저 정리한다.
+#[tauri::command(async)]
+fn term_open_folder(state: State<AppState>, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+    let picked = state.picked.lock().unwrap_or_else(|e| e.into_inner()).take();
+    let s = picked.ok_or("폴더를 먼저 고르세요")?;
+    term::check_cwd(&s)?;
+    state.term.stop();
+    state.term.start(term::find_in(&term::claude_dirs()), &s, &term::args(None, state.plugin_dir.as_deref()), move |m| {
+        let _ = on_out.send(m);
+    })
 }
 
 /// 세션 id의 폴더에서 claude 시작(`resume`이면 `--resume <id>`). 경로는 Rust 안에서만 쓴다.
@@ -251,7 +264,7 @@ pub fn run() {
                 .ok()
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default(), plugin_dir });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default(), plugin_dir, picked: Mutex::new(None) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -262,6 +275,7 @@ pub fn run() {
             open_screens_dir,
             install_hooks,
             uninstall_hooks,
+            term_pick_folder,
             term_open_folder,
             term_new,
             term_resume,

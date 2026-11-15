@@ -18,15 +18,27 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
   const moveKey = session ? `${session.id}|${nCols}|${agents.map((a) => a.state).join(",")}` : "";
 
   useEffect(() => { manual.current = false; }, [session?.id]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // 키보드 포커스가 그래프 안이면 포커스된 노드가 밀리지 않게 스크롤하지 않는다.
+  const follow = (behavior: ScrollBehavior) => {
+    if (scrollRef.current?.contains(document.activeElement)) return;
+    targetRef.current?.scrollIntoView({ inline: manual.current || selected ? "nearest" : "end", block: "nearest", behavior });
+  };
+  const followRef = useRef(follow);
+  followRef.current = follow;
   useEffect(() => {
-    // 키보드 포커스가 그래프 안이면 포커스된 노드가 밀리지 않게 스크롤하지 않는다.
-    if (targetRef.current?.closest(".gscroll")?.contains(document.activeElement)) return;
-    targetRef.current?.scrollIntoView({
-      inline: manual.current || selected ? "nearest" : "end", block: "nearest",
-      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-    });
+    followRef.current(matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moveKey]);
+  // 창 크기가 바뀌어도 직접 스크롤하지 않았다면 실행 중 열이 계속 보이게 한다.
+  const hasSession = !!session;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!hasSession || !el) return;
+    const ro = new ResizeObserver(() => { if (!manual.current) followRef.current("auto"); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasSession]);
 
   if (!session) return <p className="empty">세션을 고르면 에이전트 흐름이 보입니다</p>;
 
@@ -93,7 +105,7 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
   const cw = columns.length ? (columns.length + 1) * PX - (PX - W) : PX + W;
   const touch = () => { manual.current = true; };
   return (
-    <div className="gscroll" onWheel={touch} onPointerDown={touch} onKeyDown={touch}>
+    <div className="gscroll" ref={scrollRef} onWheel={touch} onPointerDown={touch} onKeyDown={touch}>
       <div className="canvas" style={{ width: cw, height: ch }}>
         <svg className="edges" width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} shapeRendering="crispEdges" aria-hidden="true">
           {edges}
