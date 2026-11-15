@@ -151,7 +151,7 @@ pub fn strip_verbatim_disk(s: &str) -> &str {
     }
 }
 
-fn write_json(w:&mut impl Write, msg: &Value) -> Result<(), String> {
+fn write_json(w: &mut impl Write, msg: &Value) -> Result<(), String> {
     let mut line = msg.to_string();
     line.push('\n');
     w.write_all(line.as_bytes()).and_then(|_| w.flush()).map_err(|e| format!("사이드카에 쓰지 못했습니다: {}", e.kind()))
@@ -298,9 +298,9 @@ mod tests {
         #[cfg(windows)]
         {
             assert!(check_cwd(r"C:\orbit-no-such-dir-xyz").is_err());
-            assert!(check_cwd(r"\\server\share\p").is_err());
+            assert_eq!(check_cwd(r"\\server\share\p").unwrap_err(), "로컬 절대 경로가 아닙니다");
             assert!(check_cwd(r"\\?\C:\Windows").is_err());
-            assert!(check_cwd(r"\\?\UNC\server\share\p").is_err());
+            assert_eq!(check_cwd(r"\\?\UNC\server\share\p").unwrap_err(), "로컬 절대 경로가 아닙니다");
         }
         #[cfg(not(windows))]
         assert!(check_cwd("/orbit-no-such-dir-xyz").is_err());
