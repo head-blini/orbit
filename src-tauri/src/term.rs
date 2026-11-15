@@ -87,10 +87,11 @@ fn node_version_out(node: &Path, limit: Duration) -> Option<String> {
         .spawn()
         .ok()?;
     let out = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut buf = Vec::new();
         let _ = out.take(64).read_to_end(&mut buf);
-        buf
+        let _ = tx.send(buf);
     });
     let start = Instant::now();
     let status = loop {
@@ -104,7 +105,8 @@ fn node_version_out(node: &Path, limit: Duration) -> Option<String> {
             }
         }
     };
-    let buf = reader.join().ok()?;
+    // 자손이 stdout을 쥐고 남아 있으면 읽기가 안 끝난다. 남은 시간만 기다리고 포기한다.
+    let buf = rx.recv_timeout(limit.saturating_sub(start.elapsed()).max(Duration::from_millis(200))).ok()?;
     status.success().then(|| String::from_utf8_lossy(&buf).into_owned())
 }
 
@@ -128,6 +130,11 @@ fn user_node_ok() -> bool {
             .and_then(|p| node_version_out(&p, Duration::from_secs(2)))
             .is_some_and(|o| node_ok(&o))
     })
+}
+
+/// 사용자 node 판정을 미리 데운다(첫 Term::start가 `node -v`를 기다리지 않게).
+pub fn warm() {
+    let _ = user_node_ok();
 }
 
 /// 쓸 수 있는 node(내장 또는 충분한 사용자 node)가 있는가.
@@ -719,8 +726,18 @@ mod tests {
         let t = Instant::now();
         assert_eq!(node_version_out(&slow, Duration::from_millis(300)), None);
         assert!(t.elapsed() < Duration::from_secs(2));
+        let held = mk("held", "#!/bin/sh\necho v18.0.0\nsleep 5 &\n");
+        let t = Instant::now();
+        assert_eq!(node_version_out(&held, Duration::from_millis(300)), None);
+        assert!(t.elapsed() < Duration::from_secs(2));
         assert_eq!(node_version_out(&d.join("nope"), lim), None);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn warm_computes_user_node_check() {
+        warm();
+        assert!(USER_NODE_OK.get().is_some());
     }
 
     #[test]

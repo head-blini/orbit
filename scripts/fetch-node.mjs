@@ -5,7 +5,7 @@
 // 올릴 때: VER·SHA를 같이 바꾼다(SHA는 SHASUMS256.txt의 darwin-arm64.tar.gz 줄).
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, realpathSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,10 +24,39 @@ export function shaFromShasums(text, file) {
   return null;
 }
 
+// 리다이렉트를 따라가도 https://nodejs.org 안에서만 간다.
+export function allowedUrl(u) {
+  try {
+    const x = new URL(u);
+    return x.protocol === "https:" && x.hostname === "nodejs.org";
+  } catch {
+    return false;
+  }
+}
+
 async function get(url) {
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  for (let hop = 0; hop < 5; hop++) {
+    if (!allowedUrl(url)) throw new Error(`허용하지 않는 주소: ${url}`);
+    const res = await fetch(url, { redirect: "manual" });
+    if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
+      url = new URL(res.headers.get("location"), url).href;
+      continue;
+    }
+    if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+  throw new Error("리다이렉트가 너무 많다");
+}
+
+const sha256File = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
+
+// 캐시가 온전한가: VERSION(`<VER> <SHA> <bin/node 해시>`)이 맞고 LICENSE가 있고 bin/node가 기록한 해시와 같다.
+export function cacheValid(dest, stamp) {
+  const bin = join(dest, "bin", "node");
+  const versionFile = join(dest, "VERSION");
+  if (!existsSync(bin) || !existsSync(versionFile) || !existsSync(join(dest, "LICENSE"))) return false;
+  const [ver, sha, binSha, ...rest] = readFileSync(versionFile, "utf8").trim().split(/\s+/);
+  return rest.length === 0 && `${ver} ${sha}` === stamp && !!binSha && sha256File(bin) === binSha;
 }
 
 async function main() {
@@ -38,7 +67,7 @@ async function main() {
   const dest = join(dirname(fileURLToPath(import.meta.url)), "..", "src-tauri", "resources", "node");
   const stamp = `${VER} ${SHA}`;
   const versionFile = join(dest, "VERSION");
-  if (existsSync(join(dest, "bin", "node")) && existsSync(versionFile) && readFileSync(versionFile, "utf8").trim() === stamp) {
+  if (cacheValid(dest, stamp)) {
     console.log(`fetch-node: 캐시 사용 (v${VER})`);
     return;
   }
@@ -59,7 +88,7 @@ async function main() {
     renameOrCopy(join(tmp, NAME, "bin", "node"), join(dest, "bin", "node"));
     chmodSync(join(dest, "bin", "node"), 0o755);
     renameOrCopy(join(tmp, NAME, "LICENSE"), join(dest, "LICENSE"));
-    writeFileSync(versionFile, `${stamp}\n`);
+    writeFileSync(versionFile, `${stamp} ${sha256File(join(dest, "bin", "node"))}\n`);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -75,7 +104,14 @@ function renameOrCopy(from, to) {
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+const isMain = (() => {
+  try {
+    return !!process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
   main().catch((e) => {
     console.error(`fetch-node: 실패 — ${e.message}`);
     process.exit(1);

@@ -25,8 +25,15 @@ fn is_orbit(h: &Value) -> bool {
         && h.get("headers").and_then(|x| x.get(TOKEN_HEADER)).is_some()
 }
 
+const MAX_SETTINGS: u64 = 4 * 1024 * 1024;
+
 /// 파일 내용을 읽어 JSON으로 파싱한다. 파일 없음 = Ok(None).
 fn read_root(path: &Path) -> Result<Option<Value>, String> {
+    match fs::metadata(path) {
+        Ok(m) if !m.is_file() => return Err("settings가 일반 파일이 아님".into()),
+        Ok(m) if m.len() > MAX_SETTINGS => return Err("settings 파일이 너무 큼".into()),
+        _ => {}
+    }
     let bytes = match fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -239,6 +246,19 @@ mod tests {
         }
         assert!(!hooks_disabled(&[missing]));
         assert!(!hooks_disabled(&[]));
+    }
+
+    #[test]
+    fn read_root_rejects_non_file_and_oversize() {
+        let d = Dir::new();
+        assert!(read_root(&d.0).is_err());
+        let big = d.0.join("big.json");
+        let mut body = String::from("{\"a\":\"");
+        body.push_str(&"x".repeat(MAX_SETTINGS as usize));
+        body.push_str("\"}");
+        fs::write(&big, body).unwrap();
+        assert!(read_root(&big).is_err());
+        assert!(!hooks_disabled(&[big]));
     }
 
     fn orbit_handlers<'a>(root: &'a Value, ev: &str) -> Vec<&'a Value> {

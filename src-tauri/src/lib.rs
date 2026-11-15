@@ -218,7 +218,7 @@ pub fn run() {
                 }
             }
             std::thread::spawn(|| {
-                term::node_usable();
+                term::warm();
             });
             let cfg = app
                 .path()
