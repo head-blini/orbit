@@ -24,3 +24,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# 내장 node는 빌드 때 scripts/fetch-node.mjs가 받는다 (커밋하지 않음)
+/src-tauri/resources/node/*
+!/src-tauri/resources/node/.gitkeep
