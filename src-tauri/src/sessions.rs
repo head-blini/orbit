@@ -1119,4 +1119,35 @@ mod tests {
         assert_eq!(a.description.as_ref().unwrap().chars().count(), 256);
         assert_eq!(a.kind.as_ref().unwrap().chars().count(), 256);
     }
+
+    #[test]
+    fn z_log_and_hook_limits() {
+        let long = "a".repeat(300);
+        // 로그: id·uuid·tool_use_id 상한
+        let mut st = Store::default();
+        st.ingest_log(S, &use_line(&long, "Read"), 1);
+        assert!(evs(&st).iter().all(|e| e.tool_use_id.is_none() && !e.key.contains("aaa")));
+        let mut st = Store::default();
+        let v = json!({"uuid":long,"message":{"content":[{"type":"tool_use","name":"Read"}]}});
+        st.ingest_log(S, &v, 1);
+        assert_eq!(st.get(S).unwrap().events.len(), 0);
+        let mut st = Store::default();
+        st.ingest_log(S, &res_line(&long), 1);
+        assert_eq!(st.get(S).unwrap().events.len(), 0);
+        let mut st = Store::default();
+        let mut v = use_line("t", "Read");
+        v["cwd"] = json!("c".repeat(5000));
+        st.ingest_log(S, &v, 1);
+        assert_eq!(st.get(S).unwrap().cwd, None);
+        // 훅: agent_id·tool_response.agentId·tool_name
+        let mut st = Store::default();
+        st.ingest_hook(&sub("SubagentStart", &long, json!("t")), 1);
+        assert_eq!(ag(&st).len(), 0);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 1);
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t1", json!({"tool_response":{"status":"completed","agentId":long}})), 1);
+        assert_eq!(ag(&st)[0].agent_id, None);
+        assert_eq!(ag(&st)[0].state, NodeState::Done);
+        st.ingest_hook(&ah("PreToolUse", &"한".repeat(1000), "t2", json!({})), 1);
+        assert_eq!(evs(&st).last().unwrap().tool.chars().count(), 256);
+    }
 }

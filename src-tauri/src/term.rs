@@ -265,6 +265,7 @@ fn kill_tree(pid: u32) {
 }
 
 impl Term {
+    #[cfg(test)]
     pub fn running(&self) -> bool {
         lk(&self.0).proc.is_some()
     }
@@ -612,7 +613,8 @@ mod tests {
         .unwrap();
         let mut seen = String::new();
         let pid = loop {
-            if let Some(p) = seen.split("PID:").nth(1).and_then(|s| s.split_whitespace().next()).and_then(|s| s.parse::<u32>().ok()) {
+            let p = seen.lines().find_map(|l| l.trim().strip_prefix("PID:")?.trim().parse::<u32>().ok());
+            if let Some(p) = p {
                 break p;
             }
             match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
@@ -620,16 +622,33 @@ mod tests {
                 TermOut::Exit => panic!("셸이 먼저 끝났다: {seen:?}"),
             }
         };
-        let alive = |p: u32| std::process::Command::new("/bin/kill").args(["-0", &p.to_string()]).output().is_ok_and(|o| o.status.success());
+        let ps = || {
+            let o = std::process::Command::new("/bin/ps").args(["-axo", "pid=,ppid="]).output().expect("ps 실행 실패");
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        // 정리 전에 자손(sleep 300)을 잡아 둔다.
+        let mut kids = Vec::new();
+        let seen_until = Instant::now() + Duration::from_secs(5);
+        while kids.is_empty() && Instant::now() < seen_until {
+            kids = descendants(&ps(), pid);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // kill -0: 실행 실패는 panic, 종료 코드 비0만 "죽음"
+        let alive = |p: u32| std::process::Command::new("/bin/kill").args(["-0", &p.to_string()]).output().expect("kill 실행 실패").status.success();
+        let all: Vec<u32> = std::iter::once(pid).chain(kids.iter().copied()).collect();
         let until = Instant::now() + Duration::from_secs(8);
-        while alive(pid) && Instant::now() < until {
+        while all.iter().any(|&p| alive(p)) && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(50));
         }
-        let left = alive(pid);
-        if left {
-            let _ = std::process::Command::new("/bin/kill").args(["-KILL", &pid.to_string()]).output();
+        let left: Vec<u32> = all.iter().copied().filter(|&p| alive(p)).collect();
+        if !left.is_empty() {
+            let _ = std::process::Command::new("/bin/kill").args(["-KILL", &format!("-{pid}")]).output();
+            for p in &left {
+                let _ = std::process::Command::new("/bin/kill").args(["-KILL", &p.to_string()]).output();
+            }
         }
-        assert!(!left, "스스로 끝난 뒤에도 --spawned-by 자손(pid {pid})이 남았다");
+        assert!(!kids.is_empty(), "자손 sleep을 찾지 못했다(pid {pid})");
+        assert!(left.is_empty(), "스스로 끝난 뒤에도 자손이 남았다: 루트 {pid}, 남은 {left:?}");
         let _ = std::fs::remove_dir_all(&d);
     }
 

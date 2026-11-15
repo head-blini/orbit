@@ -490,4 +490,42 @@ mod tests {
         let n: usize = st.all().iter().map(|s| s.events.len()).sum();
         assert_eq!(n, 1);
     }
+
+    #[test]
+    fn o_slim_keeps_agent_fields_through_ingest() {
+        use crate::sessions::{NodeState, Store};
+        let t = Tmp::new();
+        let text = concat!(
+            r#"{"timestamp":"2000-03-01T00:00:00Z","uuid":"u1","message":{"content":[{"type":"tool_use","id":"t1","name":"Agent","input":{"subagent_type":"orbit:x","description":"do it","prompt":"big"}}]}}"#, "\n",
+            r#"{"timestamp":"2000-03-01T00:00:01Z","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"boom"}]}}"#, "\n",
+            r#"{"timestamp":"2000-03-01T00:00:02Z","uuid":"u3","isSidechain":true,"message":{"content":[{"type":"tool_use","id":"t2","name":"Agent","input":{"subagent_type":"y"}}]}}"#, "\n",
+        );
+        append(&log(&t), text.as_bytes());
+        let mut w = Watcher::new(t.0.clone());
+        let mut st = Store::default();
+        w.poll(|s, v| {
+            st.ingest_log(s, &v, 1);
+        });
+        let ag = &st.get(U).unwrap().agents;
+        assert_eq!(ag.len(), 1, "sidechain 줄은 노드를 만들지 않는다");
+        assert_eq!(ag[0].kind.as_deref(), Some("orbit:x"));
+        assert_eq!(ag[0].description.as_deref(), Some("do it"));
+        assert_eq!(ag[0].state, NodeState::Failed);
+    }
+
+    #[test]
+    fn p_duplicate_keys_pinned() {
+        let t = Tmp::new();
+        let text = concat!(
+            r#"{"uuid":"a","uuid":"b"}"#, "\n",
+            r#"{"uuid":"ok","message":{"content":[{"type":"tool_use","id":"a","id":"b"},{"type":"tool_use","id":"c"}]}}"#, "\n",
+        );
+        append(&log(&t), text.as_bytes());
+        let mut w = Watcher::new(t.0.clone());
+        let r = collect(&mut w);
+        assert_eq!(r.len(), 1, "최상위 중복 키 줄은 버린다");
+        let c = &r[0].1["message"]["content"];
+        assert!(c[0].is_null(), "중복 키 블록은 Null");
+        assert_eq!(c[1]["id"], "c");
+    }
 }
