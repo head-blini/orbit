@@ -4,7 +4,8 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 pub const CLAUDE: &str = "claude.exe";
@@ -52,8 +53,98 @@ fn lk(m: &Mutex<Inner>) -> MutexGuard<'_, Inner> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// 찾을 폴더: 앱 PATH 중 절대 경로만 → ~/.local/bin → (macOS) Homebrew.
+static BUNDLED: OnceLock<PathBuf> = OnceLock::new();
+static USER_NODE_OK: OnceLock<bool> = OnceLock::new();
+
+/// 내장 node 폴더를 등록한다. 한 번만 되고, 두 번째 호출은 무시한다.
+pub fn set_bundled_bin(dir: PathBuf) {
+    let _ = BUNDLED.set(dir);
+}
+
+/// 체크포인트 훅(`harness/hooks/gate.mjs`)이 도는 최소 node 버전.
+/// 근거(gate.mjs를 읽어 뽑은 값, 각 기능이 처음 들어간 버전은 기억에 기댄 것이라 미확인):
+/// `node:` 접두 import(14.13.1), `||=`(15.0), `Array.prototype.at`(16.6.0), `Object.hasOwn`(16.9.0).
+/// gate.mjs가 더 새 문법을 쓰면 이 값도 올릴 것.
+const MIN_NODE: (u64, u64, u64) = (16, 9, 0);
+
+/// `node -v` 출력이 최소 버전 이상인지. 판정을 못 하면(형식이 다르면) false.
+fn node_ok(out: &str) -> bool {
+    let t = out.trim();
+    let mut it = t.strip_prefix('v').unwrap_or(t).split('.');
+    let mut n = || it.next()?.parse::<u64>().ok();
+    let (Some(a), Some(b), Some(c)) = (n(), n(), n()) else { return false };
+    it.next().is_none() && (a, b, c) >= MIN_NODE
+}
+
+/// 셸 없이 `node -v`를 실행해 stdout 앞 64바이트를 돌려준다. 시간 초과·실패·0이 아닌 종료는 None.
+fn node_version_out(node: &Path, limit: Duration) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(node)
+        .arg("-v")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let out = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = out.take(64).read_to_end(&mut buf);
+        buf
+    });
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    let buf = reader.join().ok()?;
+    status.success().then(|| String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// 우선순위: 쓸 만한 사용자 node가 있으면 그쪽이 먼저고 내장은 맨 뒤다(claude 안의 셸 `node`·npm이 사용자 node로 돈다).
+/// 없거나 낡았으면 체크포인트를 살리려고 내장을 맨 앞에 둔다.
+fn order_dirs(mut base: Vec<PathBuf>, bundled: Option<&Path>, user_ok: bool) -> Vec<PathBuf> {
+    if let Some(b) = bundled {
+        if user_ok {
+            base.push(b.to_path_buf());
+        } else {
+            base.insert(0, b.to_path_buf());
+        }
+    }
+    base
+}
+
+/// 내장 폴더를 뺀 기본 목록에서 찾은 사용자 node가 최소 버전 이상인지. 앱 실행 동안 캐시한다.
+fn user_node_ok() -> bool {
+    *USER_NODE_OK.get_or_init(|| {
+        find_named(&base_dirs(), NODE)
+            .and_then(|p| node_version_out(&p, Duration::from_secs(2)))
+            .is_some_and(|o| node_ok(&o))
+    })
+}
+
+/// 쓸 수 있는 node(내장 또는 충분한 사용자 node)가 있는가.
+pub fn node_usable() -> bool {
+    BUNDLED.get().is_some() || user_node_ok()
+}
+
+/// claude에 줄 PATH 폴더. 내장 node가 없으면 `node -v`를 실행하지 않는다.
 pub fn claude_dirs() -> Vec<PathBuf> {
+    match BUNDLED.get() {
+        None => base_dirs(),
+        Some(b) => order_dirs(base_dirs(), Some(b), user_node_ok()),
+    }
+}
+
+/// 찾을 폴더(내장 node 제외): 앱 PATH 중 절대 경로만 → ~/.local/bin → (macOS) Homebrew → nvm.
+fn base_dirs() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).filter(|d| d.is_absolute()).collect())
         .unwrap_or_default();
@@ -301,6 +392,7 @@ impl Term {
         cmd.cwd(cwd);
         cmd.env("TERM", TERM_ENV);
         // Finder로 띄운 앱의 PATH에는 Homebrew가 없어 훅의 node를 못 찾는다.
+        // 내장 node는 쓸 만한 사용자 node가 있으면 맨 뒤, 없거나 낡았으면 맨 앞(claude_dirs).
         if let Ok(p) = std::env::join_paths(claude_dirs()) {
             cmd.env("PATH", p);
         }
@@ -578,6 +670,57 @@ mod tests {
         let want: Vec<PathBuf> = ["v20.1.0", "v18.2.0", "v9.0.0", "junk"].iter().map(|v| n.join(v).join("bin")).collect();
         assert_eq!(nvm_bins(&h), want);
         let _ = std::fs::remove_dir_all(&h);
+    }
+
+    #[test]
+    fn node_ok_compares_numerically() {
+        for s in ["v16.9.0\n", "v16.10.0", "v18.0.0", "v22.11.0", "  v17.0.0  "] {
+            assert!(node_ok(s), "{s:?}");
+        }
+        for s in ["v16.8.9", "v15.14.0", "v4.9.1", "v9.99.99", "", "v20", "v20.1", "v20.1.2.3", "20.x.0", "node"] {
+            assert!(!node_ok(s), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn order_dirs_places_bundled() {
+        let base = vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")];
+        assert_eq!(order_dirs(base.clone(), None, true), base);
+        assert_eq!(order_dirs(base.clone(), None, false), base);
+        let b = PathBuf::from("/bundle/bin");
+        let last = order_dirs(base.clone(), Some(&b), true);
+        assert_eq!(last.last(), Some(&b));
+        assert_eq!(last[..3], base[..]);
+        let first = order_dirs(base.clone(), Some(&b), false);
+        assert_eq!(first.first(), Some(&b));
+        assert_eq!(first[1..], base[..]);
+        assert_eq!(last.iter().filter(|p| **p == b).count(), 1);
+        assert_eq!(first.iter().filter(|p| **p == b).count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_version_out_reads_and_times_out() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::{Duration, Instant};
+        let d = tmp("nodev");
+        let mk = |name: &str, body: &str| {
+            let p = d.join(name);
+            std::fs::write(&p, body).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let lim = Duration::from_secs(2);
+        let ok = mk("ok", "#!/bin/sh\necho v18.0.0\n");
+        let out = node_version_out(&ok, lim).expect("some");
+        assert!(node_ok(&out));
+        assert_eq!(node_version_out(&mk("fail", "#!/bin/sh\nexit 1\n"), lim), None);
+        let slow = mk("slow", "#!/bin/sh\nsleep 5\n");
+        let t = Instant::now();
+        assert_eq!(node_version_out(&slow, Duration::from_millis(300)), None);
+        assert!(t.elapsed() < Duration::from_secs(2));
+        assert_eq!(node_version_out(&d.join("nope"), lim), None);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
