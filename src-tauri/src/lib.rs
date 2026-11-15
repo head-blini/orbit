@@ -24,6 +24,8 @@ struct AppState {
     plugin_dir: Option<String>,
     /// 마지막으로 고른 폴더. 경로는 웹뷰로 나가지 않는다.
     picked: Mutex<Option<String>>,
+    /// 마지막으로 start에 성공한 cwd. 훅 설정 점검에만 쓰고 웹뷰로 나가지 않는다.
+    ran: Mutex<Option<String>>,
 }
 
 #[derive(serde::Serialize)]
@@ -34,6 +36,7 @@ struct Status {
     settings_error: Option<String>,
     projects_error: Option<String>,
     node_missing: bool,
+    hooks_disabled: bool,
 }
 
 fn lock(s: &Mutex<sessions::Store>) -> std::sync::MutexGuard<'_, sessions::Store> {
@@ -72,8 +75,15 @@ fn get_status(state: State<AppState>) -> Status {
         Err(e) => (None, Some(e)),
     };
     let projects_error = state.projects_dir.as_ref().err().cloned();
-    let node_missing = state.plugin_dir.is_some() && term::find_named(&term::claude_dirs(), term::NODE).is_none();
-    Status { listen_addr, server_error, installed, settings_error, projects_error, node_missing }
+    let node_missing = state.plugin_dir.is_some() && !term::node_usable();
+    let mut files: Vec<PathBuf> = state.settings_path.iter().cloned().collect();
+    if let Some(ran) = state.ran.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        let d = std::path::Path::new(ran).join(".claude");
+        files.push(d.join("settings.json"));
+        files.push(d.join("settings.local.json"));
+    }
+    let hooks_disabled = hooks::hooks_disabled(&files);
+    Status { listen_addr, server_error, installed, settings_error, projects_error, node_missing, hooks_disabled }
 }
 
 #[tauri::command(async)]
@@ -146,7 +156,9 @@ fn term_open_folder(state: State<AppState>, on_out: tauri::ipc::Channel<term::Te
     state.term.stop();
     state.term.start(term::find_in(&term::claude_dirs()), &s, &term::args(None, state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
-    })
+    })?;
+    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+    Ok(())
 }
 
 /// 세션 id의 폴더에서 claude 시작(`resume`이면 `--resume <id>`). 경로는 Rust 안에서만 쓴다.
@@ -159,7 +171,9 @@ fn term_from_session(
     let cwd = term::session_cwd(&lock(&state.store), id)?;
     state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(resume.then_some(id), state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
-    })
+    })?;
+    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some(cwd);
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -193,6 +207,19 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            let node_bin = if cfg!(debug_assertions) {
+                Ok(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/node/bin")))
+            } else {
+                app.path().resource_dir().map(|d| d.join("node").join("bin"))
+            };
+            if let Ok(b) = node_bin {
+                if b.join(term::NODE).is_file() {
+                    term::set_bundled_bin(b);
+                }
+            }
+            std::thread::spawn(|| {
+                term::node_usable();
+            });
             let cfg = app
                 .path()
                 .app_data_dir()
@@ -264,7 +291,7 @@ pub fn run() {
                 .ok()
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default(), plugin_dir, picked: Mutex::new(None) });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default(), plugin_dir, picked: Mutex::new(None), ran: Mutex::new(None) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
