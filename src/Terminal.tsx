@@ -154,7 +154,7 @@ export default function Terminal({ session }: { session: Session | null }) {
       try { fitRef.current?.fit(); } catch { /* 기본 크기 */ }
       await invoke("term_resize", { cols: t.cols, rows: t.rows });
       // B2: 폴더 창 취소·시작 오류에는 이전 화면을 건드리지 않는다. 시작이 확인되는 첫 순간(첫 출력 또는 시작 성공)에 한 번만 비운다.
-      let started = false;
+      let started = false, ended = false;
       const begun = () => {
         if (started) return;
         started = true;
@@ -168,7 +168,7 @@ export default function Terminal({ session }: { session: Session | null }) {
         else {
           t.write(END);
           t.options.disableStdin = true;
-          refocus.current = refocus.current || inPanel();
+          refocus.current = refocus.current && inPanel(); ended = true;
           setPhase("ended");
           say("claude가 종료되었습니다");
         }
@@ -182,7 +182,8 @@ export default function Terminal({ session }: { session: Session | null }) {
       ranRef.current = true;
       setRan(name);
       setPhase((p) => (p === "ended" ? p : "running"));
-      t.focus(); refocus.current = false;
+      if (!ended) t.focus(); // 즉시 종료로 Exit가 먼저 왔으면 stdin 꺼진 xterm으로 포커스를 가져가지 않는다
+      refocus.current = false;
       say(`${name} 폴더에서 claude 실행 중`);
     } catch (e) {
       if (g !== gen.current) return;
