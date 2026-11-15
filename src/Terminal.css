@@ -1,0 +1,15 @@
+/* 터미널 (run 20261115-terminal DESIGN.md). 머리 줄(제목 · 상태 · 버튼 4개) / 오류 줄(있을 때만) / 화면 */
+.terminal { display: flex; flex-direction: column; }
+.term-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); white-space: nowrap; }
+.term-head h2 { margin: 0; font-weight: normal; }
+.term-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-dark); } /* 남는 폭, 넘치면 말줄임 */
+.term-btns { display: flex; gap: var(--s-2); }
+.term-err { margin: 0 0 var(--s-2); overflow-wrap: anywhere; } /* 글자 = ink, 일반 글꼴. 머리말만 픽셀 */
+.term-err .px { margin-right: var(--s-1); }
+.term-body { flex: 1; min-height: 0; display: grid; place-content: center; gap: var(--s-1); text-align: center; } /* 시작 전 빈 칸 */
+.term-body .note { margin: 0; }
+/* 화면 칸: 안쪽 4px 여백 안에 xterm. 포커스 링은 칸 안쪽(-2px)에 그려 패널 overflow에 잘리지 않는다 */
+.term { flex: 1; min-height: 0; padding: var(--s-1); }
+.term:focus-within { outline: 2px solid var(--c-ink); outline-offset: -2px; }
+/* xterm#5704: 병합 후 삭제. 한글 조합 미리보기: xterm 기본 검정·흰색 대신 4명암 */
+.xterm .composition-view { background: var(--c-paper); color: var(--c-ink); text-decoration: underline; }

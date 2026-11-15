@@ -4,7 +4,7 @@ Claude Code용 GUI 관제실. 설계서는 [SPEC.md](SPEC.md) — 확정된 결�
 
 ## 스택과 명령
 
-- Tauri 2 (Rust, `src-tauri/`) + React 19 · Vite · TypeScript (`src/`). Windows 우선, 경로 처리는 크로스플랫폼으로.
+- Tauri 2 (Rust, `src-tauri/`) + React 19 · Vite · TypeScript (`src/`). macOS 우선(윈도우도 지원), 경로 처리는 크로스플랫폼으로.
 - `npm run tauri dev` — 데스크톱 앱 실행 (프론트만: `npm run dev`, http://localhost:1420)
 - `npm run build` — 타입 검사 + 프론트 빌드
 - `cargo test` / `cargo build` (`src-tauri/`에서)

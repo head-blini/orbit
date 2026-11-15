@@ -1,14 +1,14 @@
-mod chat;
 mod config;
 mod hooks;
 mod roadmap;
 mod screens;
 mod server;
 mod sessions;
+mod term;
 mod watch;
 
 use std::net::SocketAddr;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State};
@@ -20,7 +20,7 @@ struct AppState {
     store: Arc<Mutex<sessions::Store>>,
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
-    chat: chat::Chat,
+    term: term::Term,
 }
 
 #[derive(serde::Serialize)]
@@ -112,48 +112,65 @@ fn uninstall_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     Ok(backup.map(|p| p.display().to_string()))
 }
 
+/// 폴더 선택 창 → 그 폴더에서 claude 시작. 경로는 웹뷰로 나가지 않고 폴더 이름만 돌려준다(취소는 None).
 #[tauri::command(async)]
-fn chat_send(app: tauri::AppHandle, state: State<AppState>, session: String, text: String) -> Result<(), String> {
-    let cwd = if session.is_empty() { state.chat.picked() } else { lock(&state.store).get(&session).and_then(|s| s.cwd.clone()) };
-    state.chat.send(&app, cwd, &text)
-}
-
-/// 폴더 선택 창을 Rust 안에서 띄운다. 경로는 웹뷰로 나가지 않고 폴더 이름만 돌려준다(취소는 None).
-#[tauri::command(async)]
-fn chat_open_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Option<String>, String> {
+fn term_open_folder(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    on_out: tauri::ipc::Channel<term::TermOut>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
+    if state.term.running() {
+        return Err("이미 실행 중입니다".into());
+    }
     let Some(fp) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
     let path = fp.into_path().map_err(|_| "폴더 경로를 읽을 수 없습니다".to_string())?;
     let s = path.to_str().ok_or("폴더 경로를 읽을 수 없습니다")?;
-    let s = chat::strip_verbatim_disk(s);
-    chat::check_cwd(s)?;
-    state.chat.stop();
-    state.chat.set_picked(s.to_string());
+    let s = term::strip_verbatim_disk(s);
+    term::check_cwd(s)?;
+    state.term.start(term::find_in(&term::claude_dirs()), s, &term::args(None), move |m| {
+        let _ = on_out.send(m);
+    })?;
     let name = std::path::Path::new(s).file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned());
     Ok(Some(name))
 }
 
-#[tauri::command(async)]
-fn chat_permit(state: State<AppState>, id: String, decision: String) -> Result<(), String> {
-    if !matches!(decision.as_str(), "allow" | "deny" | "session") {
-        return Err("알 수 없는 선택".into());
-    }
-    state.chat.write(&serde_json::json!({"t": "permit", "id": id, "decision": decision}))
+/// 세션 id의 폴더에서 claude 시작(`resume`이면 `--resume <id>`). 경로는 Rust 안에서만 쓴다.
+fn term_from_session(
+    state: &AppState,
+    id: &str,
+    resume: bool,
+    on_out: tauri::ipc::Channel<term::TermOut>,
+) -> Result<(), String> {
+    let cwd = term::session_cwd(&lock(&state.store), id)?;
+    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(resume.then_some(id)), move |m| {
+        let _ = on_out.send(m);
+    })
 }
 
 #[tauri::command(async)]
-fn chat_answer(state: State<AppState>, id: String, answers: HashMap<String, String>) -> Result<(), String> {
-    state.chat.write(&serde_json::json!({"t": "answer", "id": id, "answers": answers}))
+fn term_new(state: State<AppState>, id: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+    term_from_session(&state, &id, false, on_out)
 }
 
 #[tauri::command(async)]
-fn chat_interrupt(state: State<AppState>) -> Result<(), String> {
-    state.chat.write(&serde_json::json!({"t": "interrupt"}))
+fn term_resume(state: State<AppState>, id: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+    term_from_session(&state, &id, true, on_out)
 }
 
 #[tauri::command(async)]
-fn chat_reset(state: State<AppState>) {
-    state.chat.stop();
+fn term_write(state: State<AppState>, data: String) -> Result<(), String> {
+    state.term.write(&data)
+}
+
+#[tauri::command(async)]
+fn term_resize(state: State<AppState>, cols: u16, rows: u16) -> Result<(), String> {
+    state.term.resize(cols, rows)
+}
+
+#[tauri::command(async)]
+fn term_stop(state: State<AppState>) {
+    state.term.stop();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -224,7 +241,7 @@ pub fn run() {
                 });
             }
             let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, chat: chat::Chat::default() });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default() });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -235,18 +252,19 @@ pub fn run() {
             open_screens_dir,
             install_hooks,
             uninstall_hooks,
-            chat_send,
-            chat_open_folder,
-            chat_permit,
-            chat_answer,
-            chat_interrupt,
-            chat_reset
+            term_open_folder,
+            term_new,
+            term_resume,
+            term_write,
+            term_resize,
+            term_stop
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, ev| {
             if let tauri::RunEvent::Exit = ev {
-                app.state::<AppState>().chat.stop();
+                let st = app.state::<AppState>();
+                st.term.stop();
             }
         });
 }
