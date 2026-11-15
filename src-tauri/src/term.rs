@@ -158,10 +158,45 @@ fn kill_tree(pid: u32) {
         .output();
 }
 
+/// `ps -axo pid=,ppid=` 출력에서 root의 자손 pid(root 제외). 형식이 깨진 줄은 건너뛴다.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn descendants(ps: &str, root: u32) -> Vec<u32> {
+    let pairs: Vec<(u32, u32)> = ps
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            match (it.next()?.parse().ok()?, it.next()?.parse().ok()?, it.next()) {
+                (pid, ppid, None) => Some((pid, ppid)),
+                _ => None,
+            }
+        })
+        .collect();
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(p) = stack.pop() {
+        for &(c, pp) in &pairs {
+            if pp == p && c != root && !out.contains(&c) {
+                out.push(c);
+                stack.push(c);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(unix)]
 fn kill_tree(pid: u32) {
-    // portable-pty가 setsid하므로 pid = pgid (미확인, M9로 실측)
-    let _ = std::process::Command::new("/bin/kill").args(["-TERM", "--", &format!("-{pid}")]).output();
+    // claude는 `claude daemon run`·`--bg-pty-host`(백그라운드 세션)를 setsid로 새 그룹에 띄운다. 그룹 kill로는 안 닿으므로
+    // 루트가 죽어 자손이 launchd로 넘어가기 전에 부모-자식 관계로 자손을 먼저 모아 각각 보낸다. Orbit이 띄운 트리 밖은 건드리지 않는다.
+    let kids = std::process::Command::new("/bin/ps")
+        .args(["-axo", "pid=,ppid="])
+        .output()
+        .map(|o| descendants(&String::from_utf8_lossy(&o.stdout), pid))
+        .unwrap_or_default();
+    // portable-pty가 setsid하므로 pid = pgid
+    let mut targets = vec![format!("-{pid}")];
+    targets.extend(kids.iter().map(|k| k.to_string()));
+    let _ = std::process::Command::new("/bin/kill").arg("-TERM").arg("--").args(&targets).output();
 }
 
 impl Term {
@@ -399,6 +434,62 @@ mod tests {
         rx.recv_timeout(Duration::from_secs(3)).expect("stop/resize가 막힌 write 때문에 멈췄다");
         assert!(!t.running());
         wrx.recv_timeout(Duration::from_secs(10)).expect("stop 뒤 막힌 write가 풀려야 한다").ok();
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn descendants_walks_tree_only_under_root() {
+        // 1 ─ 10(root) ─ 11 ─ 13, 10 ─ 12 / 1 ─ 20 ─ 21 (다른 트리), 줄 형식이 깨진 줄은 무시
+        let ps = " 10 1\n11 10\n12 10\n 13  11\n20 1\n21 20\nbad line\n\n";
+        let mut d = descendants(ps, 10);
+        d.sort();
+        assert_eq!(d, vec![11, 12, 13]);
+        assert!(descendants(ps, 99).is_empty());
+    }
+
+    // claude가 띄우는 `claude daemon run`·`--bg-pty-host`는 setsid로 새 프로세스 그룹에 들어가 그룹 kill을 벗어난다 (DEBUG.md 버그 2)
+    #[cfg(unix)]
+    #[test]
+    fn stop_kills_descendant_in_other_session() {
+        use std::time::{Duration, Instant};
+        let t = Term::default();
+        let d = tmp("setsid");
+        let (tx, rx) = std::sync::mpsc::channel();
+        let sh = r#"perl -e 'use POSIX; POSIX::setsid() or die; exec "sleep", "300"' & echo "PID:$!"; wait"#;
+        t.start(Some(PathBuf::from("/bin/sh")), d.to_str().unwrap(), &["-c", sh], move |m| {
+            let _ = tx.send(m);
+        })
+        .unwrap();
+        let mut seen = String::new();
+        let pid = loop {
+            if let Some(p) = seen.split("PID:").nth(1).and_then(|s| s.split_whitespace().next()).and_then(|s| s.parse::<u32>().ok()) {
+                break p;
+            }
+            match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
+                TermOut::Data { d } => seen.push_str(&d),
+                TermOut::Exit => panic!("셸이 먼저 끝났다: {seen:?}"),
+            }
+        };
+        let alive = |p: u32| std::process::Command::new("/bin/kill").args(["-0", &p.to_string()]).output().is_ok_and(|o| o.status.success());
+        // setsid가 끝나 sleep이 자기 그룹에 들어갈 때까지 기다린다
+        let until = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < until {
+            let o = std::process::Command::new("/bin/ps").args(["-o", "pgid=", "-p", &pid.to_string()]).output().unwrap();
+            if String::from_utf8_lossy(&o.stdout).trim() == pid.to_string() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        t.stop();
+        let until = Instant::now() + Duration::from_secs(5);
+        while alive(pid) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let left = alive(pid);
+        if left {
+            let _ = std::process::Command::new("/bin/kill").args(["-KILL", &pid.to_string()]).output();
+        }
+        assert!(!left, "stop 뒤에도 다른 세션의 자손(pid {pid})이 남았다");
         let _ = std::fs::remove_dir_all(&d);
     }
 
