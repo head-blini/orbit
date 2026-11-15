@@ -17,6 +17,7 @@ type Pending = { kind: "save" | "load" | "del"; id: string; prompt: string };
 
 const P_SAVE = "같은 이름이 있습니다 · 한 번 더 누르면 덮어씁니다";
 const P_LOAD = "저장 안 한 변경이 사라집니다 · 한 번 더 누르면 불러옵니다";
+const P_BUSY = "다른 작업이 끝난 뒤에 다시 누르세요";
 const P_DEL = "한 번 더 누르면 지웁니다 · 되돌릴 수 없습니다";
 
 // 동기 throw와 비동기 거부를 모두 문자열 사유로 바꾼다. 원문 오류 객체는 화면에 내지 않는다
@@ -36,6 +37,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
   const [pending, setPending] = useState<Pending | null>(null);
   const [focusAt, setFocusAt] = useState<number | null>(null);
   const alive = useRef(true);
+  const busy = useRef(false); // 저장·불러오기·삭제가 서로 막는다
   const listRef = useRef<HTMLUListElement>(null);
   const armedRef = useRef<HTMLButtonElement>(null);
   const key = useMemo(() => graphKey(graph), [graph]);
@@ -80,7 +82,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
   const arm = (p: Pending) => { setPending(p); say(p.prompt); };
 
   const save = async () => {
-    if (saving) return;
+    if (busy.current) { say(P_BUSY); return; }
     const n = checkGraphName(name);
     if (!n.ok) {
       setNameErr(n.error);
@@ -90,6 +92,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
     }
     const s = serializeGraph(graph);
     if (!s.ok) { say(`저장하지 못했습니다 — ${s.error}`, true); return; }
+    busy.current = true;
     setSaving(true);
     try {
       const list = entries ?? (await reload());
@@ -117,18 +120,20 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
         if (alive.current) say(err === GRAPH_CAP_ERROR ? String(err) : `저장하지 못했습니다 — ${String(err)}`, true);
       }
     } finally {
+      busy.current = false;
       if (alive.current) setSaving(false);
     }
   };
 
   const open = async (e: GraphEntry) => {
-    if (saving) return; // 저장 응답이 다른 그래프의 opened를 덮지 않게
+    if (busy.current) { say(P_BUSY); return; } // 진행 중인 저장·불러오기·삭제와 겹치지 않게
     const nm = e.name ?? "";
     if (!(pending?.kind === "load" && pending.id === e.id)) {
       if (opened?.id === e.id && !dirty) { say(`${josa(nm, "은", "는")} 이미 열려 있습니다`); return; }
       if (dirty) { arm({ kind: "load", id: e.id, prompt: P_LOAD }); return; }
     }
     setPending(null);
+    busy.current = true;
     try {
       const raw = await call<string>("load_graph", { id: e.id });
       const r = parseGraphFile(raw);
@@ -146,13 +151,16 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
       if (!alive.current) return;
       say(`불러오지 못했습니다 — ${String(err)}`, true);
       void reload();
+    } finally {
+      busy.current = false;
     }
   };
 
   const del = async (e: GraphEntry, i: number) => {
-    if (saving) return;
+    if (busy.current) { say(P_BUSY); return; }
     if (!(pending?.kind === "del" && pending.id === e.id)) { arm({ kind: "del", id: e.id, prompt: P_DEL }); return; }
     setPending(null);
+    busy.current = true;
     try {
       await call("delete_graph", { id: e.id });
       if (!alive.current) return;
@@ -164,6 +172,8 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
       setFocusAt(Math.min(i, left - 1)); // 같은 자리(다음), 마지막이면 이전, 비면 -1(이름 칸)
     } catch (err) {
       if (alive.current) say(`지우지 못했습니다 — ${String(err)}`, true);
+    } finally {
+      busy.current = false;
     }
   };
 
@@ -241,7 +251,7 @@ export default function GraphSave({ graph, onChange, say, msg, opened, onOpened 
                 <li key={e.id}>
                   <button type="button" ref={loadArmed ? armedRef : undefined} className={`sess${loadArmed ? " armed" : ""}`}
                     aria-current={opened?.id === e.id ? true : undefined}
-                    aria-label={`${nm}, ${fmtTime(e.savedAt, Date.now())}`}
+                    aria-label={loadArmed ? `불러오기 확인: ${nm}` : `${nm}, ${fmtTime(e.savedAt, Date.now())}`}
                     onClick={() => void open(e)}>
                     <span className="cur px" aria-hidden="true">▶</span>
                     <span className="name">{nm}</span>
