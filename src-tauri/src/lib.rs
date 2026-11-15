@@ -114,8 +114,23 @@ fn uninstall_hooks(state: State<AppState>) -> Result<Option<String>, String> {
 
 #[tauri::command(async)]
 fn chat_send(app: tauri::AppHandle, state: State<AppState>, session: String, text: String) -> Result<(), String> {
-    let cwd = lock(&state.store).get(&session).and_then(|s| s.cwd.clone());
+    let cwd = if session.is_empty() { state.chat.picked() } else { lock(&state.store).get(&session).and_then(|s| s.cwd.clone()) };
     state.chat.send(&app, cwd, &text)
+}
+
+/// 폴더 선택 창을 Rust 안에서 띄운다. 경로는 웹뷰로 나가지 않고 폴더 이름만 돌려준다(취소는 None).
+#[tauri::command(async)]
+fn chat_open_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(fp) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
+    let path = fp.into_path().map_err(|_| "폴더 경로를 읽을 수 없습니다".to_string())?;
+    let s = path.to_str().ok_or("폴더 경로를 읽을 수 없습니다")?;
+    let s = chat::strip_verbatim_disk(s);
+    chat::check_cwd(s)?;
+    state.chat.stop();
+    state.chat.set_picked(s.to_string());
+    let name = std::path::Path::new(s).file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned());
+    Ok(Some(name))
 }
 
 #[tauri::command(async)]
@@ -145,6 +160,7 @@ fn chat_reset(state: State<AppState>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let cfg = app
                 .path()
@@ -220,6 +236,7 @@ pub fn run() {
             install_hooks,
             uninstall_hooks,
             chat_send,
+            chat_open_folder,
             chat_permit,
             chat_answer,
             chat_interrupt,
