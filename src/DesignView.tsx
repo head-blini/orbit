@@ -53,6 +53,7 @@ export default function DesignView({ graph, selected, msg, onSelect, onChange, s
 
   const add = () => {
     const r = addNode(graph);
+    if (!r.ok) return say(r.error, true);
     onChange(r.graph);
     onSelect(r.id);
     say(`${r.graph.nodes.find((n) => n.id === r.id)?.name ?? r.id}을 추가했습니다`);
