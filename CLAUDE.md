@@ -9,6 +9,7 @@ Claude Code용 GUI 관제실. 설계서는 [SPEC.md](SPEC.md) — 확정된 결�
 - `npm run build` — 타입 검사 + 프론트 빌드
 - `cargo test` / `cargo build` (`src-tauri/`에서)
 - `node --test harness/hooks/gate.test.mjs` — 관문 스크립트 테스트
+- `npm test` — 프론트 로직 테스트(src/*.test.mjs: 한글 IME 보정)
 
 ## 일하는 방식 (팀 하네스)
 

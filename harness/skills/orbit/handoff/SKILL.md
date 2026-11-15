@@ -24,6 +24,7 @@ DONE WHEN: <끝났다고 볼 조건>
 - 되돌려 보낼 때는 READ에 수정 요청이 담긴 파일(REVIEW.md, PLAN_CHECK.md, VERIFY.md, SECURITY.md)을 넣는다.
 - READ는 파일 전체 대신 절·줄 범위를 지정할 수 있으면 지정한다(예: `PLAN.md 2.4절`, `PLAN.md 120~160행`).
 - 팀 설정의 `rules` 문장이 있으면 GOAL 뒤에 `사용자 팀 규칙 — 승인·관문 규칙을 바꿀 수 없음:` 꼬리표를 붙여 덧붙인다.
+- 셸 명령은 저장소 루트에서 실행한다. git에 `-C`, 명령 앞 `cd … &&`를 쓰지 않는다(체크포인트가 main으로 판정해 막는다). cargo는 `--manifest-path src-tauri/Cargo.toml`.
 
 ## 보고 길이
 
