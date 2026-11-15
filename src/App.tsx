@@ -7,7 +7,7 @@ import DesignProps from "./DesignProps";
 import { emptyGraph } from "./designGraph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
-import { CHIP_AT, fmtTime, folderName, shownState, type DesignGraph, type Opened, type Roadmap, type RoadmapLine, type Session } from "./types";
+import { CHIP_AT, fmtTime, folderName, shownState, type DesignGraph, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
 type Status = {
@@ -98,7 +98,6 @@ export default function App() {
   const [design, setDesign] = useState<DesignGraph>(() => emptyGraph());
   const [dsel, setDsel] = useState<string | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
-  const [opened, setOpened] = useState<Opened | null>(null);
   const sayTimer = useRef<number | undefined>(undefined);
   // 같은 문구도 다시 낭독되게 비웠다가 넣는다 (Terminal.tsx와 같은 방식)
   const say = useCallback((text: string, err = false) => {
@@ -252,7 +251,7 @@ export default function App() {
       ) : (
         <section className="panel detail" aria-labelledby="h-props">
           <h2 id="h-props" className="px">{dsel ? "노드 속성" : "그래프 설정"}</h2>
-          <DesignProps key={dsel ?? ""} graph={design} selected={dsel} onChange={setDesign} say={say} msg={msg} opened={opened} onOpened={setOpened} />
+          <DesignProps key={dsel ?? ""} graph={design} selected={dsel} onChange={setDesign} say={say} />
         </section>
       )}
 

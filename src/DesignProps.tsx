@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import "./DesignProps.css";
 import GraphSettings from "./GraphSettings";
-import type { Msg } from "./DesignView";
-import type { DesignGraph, Opened } from "./types";
+import type { DesignGraph } from "./types";
 import { LIMITS, MODELS, SCHEMA_INPUT_MAX, checkModel, checkName, checkRetries, checkSchema, checkTask, disconnect, hasPassed, updateNode } from "./designGraph";
 
 type Props = {
@@ -11,9 +10,6 @@ type Props = {
   selected: string | null;
   onChange: (g: DesignGraph) => void;
   say: (text: string, err?: boolean) => void;
-  msg: Msg;
-  opened: Opened | null;
-  onOpened: (o: Opened | null) => void;
 };
 type Field = "name" | "task" | "retries" | "schema";
 type Errs = Partial<Record<Field, string>>;
@@ -27,7 +23,7 @@ function ErrLine({ id, text }: { id: string; text: string }) {
   );
 }
 
-export default function DesignProps({ graph, selected, onChange, say, msg, opened, onOpened }: Props) {
+export default function DesignProps({ graph, selected, onChange, say }: Props) {
   const node = selected ? graph.nodes.find((n) => n.id === selected) : undefined;
   // 초안은 지역 상태. App이 key={선택 id}로 다시 마운트하므로 노드를 바꾸면 버려진다.
   const [name, setName] = useState(node?.name ?? "");
@@ -50,7 +46,7 @@ export default function DesignProps({ graph, selected, onChange, say, msg, opene
     setFocusAt(null);
   }, [focusAt, graph]);
 
-  if (!node) return <GraphSettings graph={graph} onChange={onChange} say={say} msg={msg} opened={opened} onOpened={onOpened} />;
+  if (!node) return <GraphSettings graph={graph} onChange={onChange} />;
 
   const setErr = (f: Field, e: string | undefined) => {
     setErrs((p) => ({ ...p, [f]: e }));
