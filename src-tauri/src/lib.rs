@@ -5,6 +5,7 @@ mod roadmap;
 mod screens;
 mod server;
 mod sessions;
+mod term;
 mod watch;
 
 use std::net::SocketAddr;
@@ -21,6 +22,7 @@ struct AppState {
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
     chat: chat::Chat,
+    term: term::Term,
 }
 
 #[derive(serde::Serialize)]
@@ -156,6 +158,44 @@ fn chat_reset(state: State<AppState>) {
     state.chat.stop();
 }
 
+/// 폴더 선택 창 → 그 폴더에서 claude 시작. 경로는 웹뷰로 나가지 않고 폴더 이름만 돌려준다(취소는 None).
+#[tauri::command(async)]
+fn term_open_folder(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    on_out: tauri::ipc::Channel<term::TermOut>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    if state.term.running() {
+        return Err("이미 실행 중입니다".into());
+    }
+    let Some(fp) = app.dialog().file().blocking_pick_folder() else { return Ok(None) };
+    let path = fp.into_path().map_err(|_| "폴더 경로를 읽을 수 없습니다".to_string())?;
+    let s = path.to_str().ok_or("폴더 경로를 읽을 수 없습니다")?;
+    let s = chat::strip_verbatim_disk(s);
+    chat::check_cwd(s)?;
+    state.term.start(term::find_in(&term::claude_dirs()), s, &[], move |m| {
+        let _ = on_out.send(m);
+    })?;
+    let name = std::path::Path::new(s).file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned());
+    Ok(Some(name))
+}
+
+#[tauri::command(async)]
+fn term_write(state: State<AppState>, data: String) -> Result<(), String> {
+    state.term.write(&data)
+}
+
+#[tauri::command(async)]
+fn term_resize(state: State<AppState>, cols: u16, rows: u16) -> Result<(), String> {
+    state.term.resize(cols, rows)
+}
+
+#[tauri::command(async)]
+fn term_stop(state: State<AppState>) {
+    state.term.stop();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -224,7 +264,7 @@ pub fn run() {
                 });
             }
             let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, chat: chat::Chat::default() });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, chat: chat::Chat::default(), term: term::Term::default() });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -240,13 +280,19 @@ pub fn run() {
             chat_permit,
             chat_answer,
             chat_interrupt,
-            chat_reset
+            chat_reset,
+            term_open_folder,
+            term_write,
+            term_resize,
+            term_stop
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, ev| {
             if let tauri::RunEvent::Exit = ev {
-                app.state::<AppState>().chat.stop();
+                let st = app.state::<AppState>();
+                st.chat.stop();
+                st.term.stop();
             }
         });
 }
