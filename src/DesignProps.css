@@ -33,3 +33,19 @@
 .f .note { margin: 0; }
 .f-warn { margin: 0; overflow-wrap: anywhere; } /* 막지 않는 안내 = ink 13px 일반 글꼴, 기호·점선 없음(오류 ✕와 구분) */
 .f-row.num-first { grid-template-columns: 72px minmax(0, 1fr); } /* 최대 반복(좁음) | 예산(넓음) */
+
+.detail .gsave h3 { margin: 0; } /* App.css가 DesignProps.css보다 뒤에 로드돼(App.tsx 6행 → 11행) .detail h3가 이기므로 시안 계산 값에 맞춘다 */
+/* 그래프 저장 (run 20261115-graph-save DESIGN.md). 그래프 설정 폼 아래, 같은 칸 안. 새 색·새 토큰 없음.
+   묶음 제목 = 로드맵 h3, 현재 그래프 줄 = .loop-sum, 목록 항목 = 세션 목록 .sess 상자, 확인 대기 = 반전(연결 모드 켜짐과 같은 문법) */
+.gsave { display: grid; gap: var(--s-2); margin-top: var(--s-2); min-width: 0; }
+.gsave h3 { margin: 0; }
+.f-row.btn-last { grid-template-columns: minmax(0, 1fr) auto; align-items: end; } /* 이름 입력(넓음) | 저장 버튼 */
+.gl-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-2); }
+.gl-head .note { margin: 0; }
+.glist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s-1); align-items: center; }
+.glist .sess .time { overflow-wrap: anywhere; }
+.btn.armed, .btn.armed:hover, .sess.armed, .sess.armed:hover { background: var(--c-ink); color: var(--c-paper); } /* 한 번 더 누르면 실행 */
+.sess.armed .time { color: var(--c-paper); }
+.glist .bad { grid-column: 1 / -1; border-style: dashed; cursor: default; } /* 읽을 수 없음 = 점선 + ✕, 버튼 아님 */
+.glist .bad:hover { background: var(--c-paper); }
+.sess .mk { grid-row: 1 / 3; font-family: var(--f-pixel); font-size: var(--fs-pixel); }
