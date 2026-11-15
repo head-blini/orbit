@@ -18,9 +18,18 @@ struct Proc {
 pub struct Chat {
     proc: Arc<Mutex<Option<Proc>>>,
     epoch: AtomicU64,
+    picked: Mutex<Option<String>>,
 }
 
 impl Chat {
+    pub fn set_picked(&self, p: String) {
+        *self.picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(p);
+    }
+
+    pub fn picked(&self) -> Option<String> {
+        self.picked.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     /// 사이드카가 없으면 띄워 `start`를, 있으면 `send`를 쓴다(있을 때 cwd는 무시).
     pub fn send(&self, app: &tauri::AppHandle, cwd: Option<String>, text: &str) -> Result<(), String> {
         if self.proc.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
@@ -70,13 +79,8 @@ impl Chat {
         text: &str,
         mut on_line: impl FnMut(Value) + Send + 'static,
     ) -> Result<(), String> {
-        let cwd = cwd.filter(|c| !c.is_empty()).ok_or("세션 폴더를 알 수 없습니다")?;
-        if !crate::roadmap::local_abs(cwd) {
-            return Err("로컬 절대 경로가 아닙니다".into());
-        }
-        if !std::path::Path::new(cwd).is_dir() {
-            return Err("폴더가 없습니다".into());
-        }
+        let cwd = cwd.ok_or("세션 폴더를 알 수 없습니다")?;
+        check_cwd(cwd)?;
         let mut g = self.proc.lock().unwrap_or_else(|e| e.into_inner());
         if g.is_some() {
             return Err("이미 대화가 있습니다".into());
@@ -122,6 +126,28 @@ impl Chat {
             }
         });
         Ok(())
+    }
+}
+
+/// 사이드카 cwd로 쓸 수 있는 경로인지 검사한다(비어 있지 않음, 로컬 절대 경로, 폴더).
+pub fn check_cwd(cwd: &str) -> Result<(), String> {
+    if cwd.is_empty() {
+        return Err("세션 폴더를 알 수 없습니다".into());
+    }
+    if !crate::roadmap::local_abs(cwd) {
+        return Err("로컬 절대 경로가 아닙니다".into());
+    }
+    if !std::path::Path::new(cwd).is_dir() {
+        return Err("폴더가 없습니다".into());
+    }
+    Ok(())
+}
+
+/// `\\?\X:\...` 드라이브 경로만 `X:\...`로 벗긴다. `\\?\UNC\...`는 그대로 둔다.
+pub fn strip_verbatim_disk(s: &str) -> &str {
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') && rest.as_bytes()[0].is_ascii_alphabetic() => rest,
+        _ => s,
     }
 }
 
@@ -263,5 +289,34 @@ mod tests {
         let missing = "/orbit-no-such-dir-xyz";
         assert_eq!(c.spawn_with(Some(missing), "hi", none).unwrap_err(), "폴더가 없습니다");
         assert!(c.write(&json!({"t":"close"})).is_err());
+    }
+
+    #[test]
+    fn check_cwd_rejects_bad_and_accepts_dir() {
+        assert!(check_cwd("").is_err());
+        assert!(check_cwd("rel/dir").is_err());
+        #[cfg(windows)]
+        {
+            assert!(check_cwd(r"C:\orbit-no-such-dir-xyz").is_err());
+            assert_eq!(check_cwd(r"\\server\share\p").unwrap_err(), "로컬 절대 경로가 아닙니다");
+            assert!(check_cwd(r"\\?\C:\Windows").is_err());
+            assert_eq!(check_cwd(r"\\?\UNC\server\share\p").unwrap_err(), "로컬 절대 경로가 아닙니다");
+        }
+        #[cfg(not(windows))]
+        assert!(check_cwd("/orbit-no-such-dir-xyz").is_err());
+        let f = std::env::temp_dir().join(format!("orbit-chat-file-{}", std::process::id()));
+        std::fs::write(&f, b"x").unwrap();
+        let r = check_cwd(f.to_str().unwrap());
+        let _ = std::fs::remove_file(&f);
+        assert!(r.is_err());
+        assert!(check_cwd(std::env::temp_dir().to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn strip_verbatim_disk_only_strips_drive_paths() {
+        assert_eq!(strip_verbatim_disk(r"\\?\C:\x"), r"C:\x");
+        assert_eq!(strip_verbatim_disk(r"\\?\UNC\server\share\p"), r"\\?\UNC\server\share\p");
+        assert_eq!(strip_verbatim_disk(r"C:\x"), r"C:\x");
+        assert_eq!(strip_verbatim_disk(r"\\?\"), r"\\?\");
     }
 }

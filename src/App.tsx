@@ -83,6 +83,7 @@ export default function App() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pickSeq, setPickSeq] = useState(0); // 세션 클릭마다 올려, 같은 세션 재클릭도 Chat이 알게 한다
   const [sessions, setSessions] = useState<Map<string, Session>>(new Map());
   const [loaded, setLoaded] = useState(false);
   const [sessionsError, setSessionsError] = useState(false);
@@ -199,7 +200,7 @@ export default function App() {
                   <li key={x.id}>
                     <button type="button" className={list.length >= CHIP_AT && x.id !== selected ? "sess chip" : "sess"}
                       aria-current={x.id === selected ? "true" : undefined}
-                      onClick={() => { setSelected(x.id); setNode(null); }}>
+                      onClick={() => { setSelected(x.id); setNode(null); setPickSeq((n) => n + 1); }}>
                       <span className="cur px" aria-hidden="true">▶</span>
                       <span className="name px">{folderName(x)}</span>
                       <Sym state={st} />
@@ -222,7 +223,7 @@ export default function App() {
         {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
-      <Chat session={cur} />
+      <Chat session={cur} pickSeq={pickSeq} />
 
       <div className="console"><Screen /></div>
     </div>

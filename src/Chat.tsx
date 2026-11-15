@@ -64,7 +64,9 @@ function AskCard({ item, onAnswer }: { item: Extract<Item, { k: "ask" }>; onAnsw
   );
 }
 
-export default function Chat({ session }: { session: Session | null }) {
+export default function Chat({ session, pickSeq }: { session: Session | null; pickSeq: number }) {
+  const [folder, setFolder] = useState<string | null>(null); // 고른 폴더 이름(경로는 Rust만 안다)
+  const [picking, setPicking] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [open, setOpen] = useState(false); // 대화가 있다(다음 보내기는 같은 대화)
   const [running, setRunning] = useState(false);
@@ -172,7 +174,8 @@ export default function Chat({ session }: { session: Session | null }) {
 
   const pend = [...items].reverse().find((i) => (i.k === "permit" || i.k === "ask") && i.result === null);
   const askOne = pend?.k === "ask" && pend.questions.length === 1 ? pend : null;
-  const canSend = !running && (open || session !== null);
+  useEffect(() => setFolder(null), [session?.id, pickSeq]); // 왼쪽에서 세션을 누르면 고른 폴더를 버린다
+  const canSend = !running && !picking && (open || session !== null || folder !== null);
   const typing = canSend || askOne !== null;
 
   const answer = (id: string, answers: Record<string, string>, shown: string, free: boolean) => {
@@ -196,13 +199,13 @@ export default function Chat({ session }: { session: Session | null }) {
       const q = askOne.questions[0];
       answer(askOne.id, { [q.question]: t }, t, true);
       setText("");
-    } else if (canSend && (open || session)) {
-      setItems((p) => [...(open ? p : [...p, { k: "sep", name: folderName(session!) } as Item]), { k: "me", text: t }, { k: "ai", text: "", live: true }]);
+    } else if (canSend && (open || session || folder)) {
+      setItems((p) => [...(open ? p : [...p, { k: "sep", name: folder ?? folderName(session!) } as Item]), { k: "me", text: t }, { k: "ai", text: "", live: true }]);
       setOpen(true);
       say("Claude가 답하는 중");
       run(true);
       setText("");
-      invoke("chat_send", { session: session?.id ?? "", text: t }).catch((e) => { setOpen(open); fail(e); });
+      invoke("chat_send", { session: folder ? "" : session?.id ?? "", text: t }).catch((e) => { setOpen(open); fail(e); });
     }
   };
 
@@ -217,13 +220,29 @@ export default function Chat({ session }: { session: Session | null }) {
     setItems([]); setOpen(false); clearTimeout(noteTimer.current); setNote(""); run(false);
   };
 
-  const emptyText = session ? `보내면 ${folderName(session)} 폴더에서 새 대화를 시작합니다` : "세션을 고르면 그 폴더에서 대화를 시작합니다";
+  const pickFolder = () => {
+    setPicking(true);
+    invoke<string | null>("chat_open_folder")
+      .then((name) => {
+        if (name === null) return; // 취소
+        if (items.length > 0) reset();
+        setFolder(name);
+      })
+      .catch(fail)
+      .finally(() => setPicking(false));
+  };
+
+  const emptyText = folder ? `보내면 ${folder} 폴더에서 새 대화를 시작합니다`
+    : session ? `보내면 ${folderName(session)} 폴더에서 새 대화를 시작합니다` : "세션을 고르면 그 폴더에서 대화를 시작합니다";
 
   return (
     <section className="panel chat" aria-labelledby="h-chat">
       <div className="chat-head">
         <h2 id="h-chat" className="px" tabIndex={-1}>채팅</h2>
-        {items.length > 0 && <button type="button" className="btn" disabled={running} onClick={reset}>새 대화</button>}
+        <div style={{ display: "flex", gap: "var(--s-2)" }}>
+          <button type="button" className="btn" disabled={running || picking} onClick={pickFolder}>폴더 열기</button>
+          {items.length > 0 && <button type="button" className="btn" disabled={running} onClick={reset}>새 대화</button>}
+        </div>
       </div>
       {items.length === 0 ? <div className="chat-body"><p className="empty">{emptyText}</p></div> : (
         <div className="chat-log" role="log" aria-live="off" aria-label="대화" tabIndex={0}>
