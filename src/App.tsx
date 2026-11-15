@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
 import Chat from "./Chat";
+import Terminal from "./Terminal";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
@@ -223,7 +224,9 @@ export default function App() {
         {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
-      <Chat session={cur} pickSeq={pickSeq} />
+      <Terminal session={cur} />
+      {/* T3에서 삭제 — IME FAIL 시 사이드카 유지 선택지 */}
+      <div hidden><Chat session={cur} pickSeq={pickSeq} /></div>
 
       <div className="console"><Screen /></div>
     </div>
