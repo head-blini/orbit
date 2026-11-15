@@ -15,9 +15,11 @@ type Status = {
   settings_error: string | null;
   projects_error: string | null;
   node_missing: boolean;
+  hooks_disabled: boolean;
 };
 
-const NODE_MISSING = "✕ node를 찾지 못해 체크포인트가 꺼집니다 — node를 설치하거나 nvm·Homebrew 경로를 확인하세요";
+const NODE_MISSING = "✕ 쓸 수 있는 node(16.9 이상)가 없어 체크포인트가 꺼집니다 — node를 설치·업데이트하거나 nvm·Homebrew 경로를 확인하세요";
+const HOOKS_DISABLED = "✕ settings에 disableAllHooks가 켜져 있어 체크포인트가 꺼집니다 — 그 설정을 지우거나 false로 바꾸세요";
 const HINT = "프로젝트 폴더 맨 위에 두면 여기 보입니다 — ## 묶음, - [ ] 할 일, - [x] 끝난 일";
 const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
 
@@ -100,7 +102,7 @@ export default function App() {
       .catch((e) => setStatusError(String(e)));
   }, []);
 
-  useEffect(refresh, [refresh]);
+  useEffect(refresh, [refresh, now]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +176,7 @@ export default function App() {
     : status.installed ? "훅 설치됨" : "훅 설치 안 됨";
   const shownResult = result
     || (status?.settings_error ? `✕ 확인 실패: ${status.settings_error}` : "")
+    || (status?.hooks_disabled ? HOOKS_DISABLED : "")
     || (status?.node_missing ? NODE_MISSING : "");
 
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
