@@ -227,7 +227,10 @@ fn spawned_by(ps: &str, root: u32) -> Vec<u32> {
             let (ppid, rest) = rest.trim_start().split_once(char::is_whitespace)?;
             let _ppid: u32 = ppid.parse().ok()?;
             let after = &rest[rest.find("--spawned-by")? + "--spawned-by".len()..];
-            let v = after[after.find("\"pid\":")? + 6..].trim_start();
+            // `--spawned-by` 바로 다음 인자가 JSON 객체일 때만, 그 객체 안의 pid를 본다.
+            let obj = after.trim_start().strip_prefix('{')?;
+            let obj = &obj[..obj.find('}').unwrap_or(obj.len())];
+            let v = obj[obj.find("\"pid\":")? + 6..].trim_start();
             let end = v.find(|c: char| !c.is_ascii_digit()).unwrap_or(v.len());
             (end > 0 && v[..end].parse::<u32>().ok() == Some(root)).then_some(pid)
         })
@@ -600,6 +603,16 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn spawned_by_ignores_pid_in_other_args() {
+        let ps = concat!(
+            "60 1 x --spawned-by foo --other {\"pid\":23026}\n",
+            "61 1 x --spawned-by {\"label\":\"c\"} --arg {\"pid\":23026}\n",
+            "62 1 x --spawned-by {\"label\":\"c\",\"pid\":23026}\n"
+        );
+        assert_eq!(spawned_by(ps, 23026), vec![62]);
+    }
+
     #[test]
     fn self_exit_reaps_spawned_by_tree() {
         use std::time::{Duration, Instant};
