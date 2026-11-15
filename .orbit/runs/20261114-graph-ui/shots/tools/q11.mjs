@@ -1,0 +1,12 @@
+import { connect } from './c.mjs';
+const c = await connect(9333, '1420'); const sleep = ms => new Promise(r => setTimeout(r, ms));
+const src = `(()=>{let v;Object.defineProperty(window,'__TAURI_INTERNALS__',{configurable:true,get(){return v},set(x){v=x;if(x&&x.invoke&&!x.__w){const o=x.invoke.bind(x);x.invoke=(c,a,op)=>c==='list_screens'?Promise.resolve([]):o(c,a,op);x.__w=1}}})})()`;
+const r = await c.send('Page.addScriptToEvaluateOnNewDocument', { source: src });
+await c.send('Page.reload'); await sleep(4000);
+console.log(await c.ev(`JSON.stringify({imgs:document.querySelectorAll('.lcd img').length, disabled:document.querySelector('.lcd').disabled, label:document.querySelector('.lcd').getAttribute('aria-label')})`));
+await c.view(1400, 900);
+await c.shot('C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/v2/13-empty-lcd-simulated.png');
+await c.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: r.identifier });
+await c.send('Page.reload'); await sleep(3000);
+console.log('restored imgs', await c.ev(`document.querySelectorAll('.lcd img').length`));
+c.close();

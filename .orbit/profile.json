@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-14T00:00:00Z",
+  "stack": ["typescript", "react", "vite", "rust", "tauri", "node"],
+  "signals": {
+    "designer": ["package.json: react ^19, vite", "src/App.tsx, src/App.css: UI 코드와 CSS"],
+    "reviewer-accessibility": ["package.json: react ^19 (웹뷰 UI)", "src/App.tsx, src/App.css"],
+    "data": [],
+    "devops": ["src-tauri/tauri.conf.json: bundle.targets=all (데스크톱 패키징)"],
+    "security-deep": [
+      "CLAUDE.md: 훅 수신 서버(127.0.0.1+토큰), settings.json 병합 쓰기가 제품 요건",
+      "harness/hooks/gate.mjs, harness/hooks/hooks.json, harness/agents/*.md: 훅·에이전트 설정과 관문",
+      "src-tauri/capabilities/default.json: Tauri capability"
+    ],
+    "reviewer-performance": [],
+    "qa-mobile": []
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "run": "20261114-roadmap-file",
+  "track": "quick",
+  "request": "오르빗 저장소에 ROADMAP.md를 만든다(마일스톤 ⑤의 로드맵 패널이 읽는 파일, 지금은 없어서 패널이 비어 있음). 사용자: \"니가 알아서순서대로 하셈\" — Lead가 권한 순서(ROADMAP.md 작성 → push(사용자 몫) → 마일스톤 ⑥)를 맡김. 내용은 SPEC.md의 마일스톤과 2단계 항목, .orbit/decisions.md의 미뤄 둔 작업을 그대로 옮긴다(새 계획을 지어내지 않는다).",
+  "stage": "done",
+  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "designer": "off: 문서 파일 하나",
+    "data": "off: DB 없음",
+    "devops": "off: 배포 변경 없음",
+    "security-deep": "off: 새 마크다운 파일 하나"
+  },
+  "team": "team.yaml 없음 → 전부 기본값.",
+  "approvals": [],
+  "tasks": { "T1": "done(68de7b6)" },
+  "history": [
+    { "stage": "plan", "result": "started", "at": "2026-11-14", "note": "quick: 새 파일 ROADMAP.md 하나. 마일스톤 ⑤ 머지(0e3ec25) 뒤 main에서 시작. 형식은 SPEC.md 52행(`## 묶음`, `- [ ]` / `- [x]`). 사용자가 순서를 Lead에게 맡겼으므로 check ship PASS면 머지까지 진행하고 결과를 보고한다." },
+    { "stage": "plan", "result": "done", "at": "2026-11-14", "note": "PLAN.md: T1 하나(ROADMAP.md 새 파일, 묶음 3). Lead 조정 두 가지 — (1) 2단계의 '자동화 에이전트는 최소 권한 + 샌드박스로 실행' 줄은 할 일이 아니라 원칙이라 로드맵에서 뺀다(항목 15 → 14, 기대 값 3/14/5). (2) '맥용 앱 빌드'는 사용자가 이 대화에서 요청한 것(\"맥에서 실행할수있는 앱으로도 만들어줄래?\")이라 유지하고 .orbit/decisions.md 16번에 출처를 적는다. ④ 이름을 '그래프 UI'로 줄인 것은 타임라인 삭제 결정과 맞아 그대로 둔다." },
+    { "stage": "build", "result": "started", "at": "2026-11-14", "note": "T1 → engineer" },
+    { "stage": "build", "result": "done", "at": "2026-11-14", "note": "T1 68de7b6 (ROADMAP.md 새 파일만). 실제 파서로 (3, 14, 5, false) 확인 — engineer 보고. 하네스 발견: run 브랜치에서 `git restore -- src-tauri/src/roadmap.rs`가 'main/master 위에서는 …(N2-b): restore' 사유로 막힘(브랜치 오판 또는 과차단, 원인 미확인 — 관문 보강은 보류 항목이라 .orbit/decisions.md 10번에 메모만)." },
+    { "stage": "verify", "result": "started", "at": "2026-11-14", "note": "qa 호출" },
+    { "stage": "verify", "result": "PASS", "at": "2026-11-14", "note": "VERIFY.md(COMMIT 68de7b6). 실제 앱(임시 폴더 환경)에서 로드맵 패널 '5 / 14', 묶음 3 확인, cargo test 100 통과. check ship = PASS verify, PASS commit 68de7b6. Lead가 스크린샷 shots/roadmap-panel.png를 열어 패널 표시를 확인." },
+    { "stage": "release", "result": "done", "at": "2026-11-14", "note": "사용자가 순서를 Lead에게 맡김('니가 알아서순서대로 하셈') → 묻지 않고 머지. git switch main, git merge --no-ff orbit/20261114-roadmap-file (ROADMAP.md 새 파일 +21). push 없음(사용자 몫). 다음: 마일스톤 ⑥ 세션." }
+  ]
+}

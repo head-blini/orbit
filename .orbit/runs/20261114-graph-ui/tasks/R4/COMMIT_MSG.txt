@@ -1,0 +1,5 @@
+fix(graph): show meta line on Lead node when not running (R4, W13)
+
+Waiting shows "권한 요청", otherwise "— · —" per DESIGN 9.1.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

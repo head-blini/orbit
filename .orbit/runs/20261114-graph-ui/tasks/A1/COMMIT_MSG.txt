@@ -1,0 +1,6 @@
+feat(sessions): assign subagent stage column Agent.col (A1)
+
+A node gets its column once at creation: next column if any node in the last
+column already finished, else the same column. Merge keeps min. Tests r_col_*.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

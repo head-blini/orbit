@@ -1,0 +1,39 @@
+{
+  "run": "20261115-open-folder",
+  "track": "full",
+  "request": "폴더 열기로 새 세션: '폴더 열기' 버튼으로 사용자가 고른 폴더에서 새 채팅을 시작한다. tauri-plugin-dialog + 최소 dialog: capability, 고른 경로는 Rust에서 검증(존재하는 디렉터리, 정규화), 새 의존성은 이 플러그인 하나. ROADMAP.md에 항목 한 줄 추가(머지 때 체크). 디자인은 decisions.md '화면 배치 확정'(layout_v4), 기존 상단 바/세션 목록 스타일 재사용, 새 시안 없음. resume 묶음 여부는 BRIEF에서 질문.",
+  "stage": "done",
+  "loops": { "plan": 1, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "researcher": "on: tauri-plugin-dialog 최신 버전·capability 이름 조사(profile.json은 있음)",
+    "designer": "off: 기존 스타일 재사용, 새 시안 없음(요청)",
+    "data": "off: profile signals 비어 있음, DB 없음",
+    "devops": "off: 배포 없음",
+    "security-deep": "on: profile security-deep(capabilities/default.json) + capability·외부 입력 경로 변경",
+    "reviewer-accessibility": "on: UI 버튼 추가",
+    "reviewer-idiom": "on: stack rust/tauri/react",
+    "reviewer-performance": "off: 핫패스 아님",
+    "reviewer-data": "off: DB 없음",
+    "qa-mobile": "off"
+  },
+  "approvals": [
+    { "gate": "brief", "result": "approved", "at": "2026-11-15T00:10:00Z", "via": "AskUserQuestion" },
+    { "gate": "plan", "result": "approved", "at": "2026-11-15T00:30:00Z", "via": "AskUserQuestion" }
+  ],
+  "tasks": { "T1": "done c565526", "T2": "done 2b6a932", "T3": "done 2c3db15" },
+  "history": [
+    { "stage": "brief", "result": "started", "at": "2026-11-15T00:00:00Z" },
+    { "stage": "brief", "result": "approved", "at": "2026-11-15T00:10:00Z" },
+    { "stage": "plan", "result": "started", "at": "2026-11-15T00:10:00Z" },
+    { "stage": "plan", "result": "PLAN_CHECK FAIL (B1-B3), loop 1", "at": "2026-11-15T00:20:00Z" },
+    { "stage": "plan", "result": "PLAN_CHECK PASS, approved", "at": "2026-11-15T00:30:00Z" },
+    { "stage": "build", "result": "started", "at": "2026-11-15T00:30:00Z" },
+    { "stage": "review", "result": "REVIEW PASS (W1·W2 fixed 32e9d04, W3-W5 deferred to chat removal)", "at": "2026-11-15T01:10:00Z" },
+    { "stage": "security", "result": "SECURITY PASS @32e9d04", "at": "2026-11-15T01:30:00Z" },
+    { "stage": "verify", "result": "VERIFY FAIL @32e9d04: criteria 1-13 pass in real app; unverified: 14 (existing-session send, 1-call limit), in-app error line, no-new-color visual. Stopped for user decision; not merged.", "at": "2026-11-15T01:30:00Z" },
+    { "stage": "verify", "result": "user accepted risk (relayed); QA rewrote VERIFY with accepted-risk section but kept VERDICT: FAIL (unverified ≠ passed). check verify FAIL. Not merged.", "at": "2026-11-15T01:45:00Z" },
+    { "stage": "verify", "result": "user allowed 1 more call (relayed); QA verified (a)(b)(c) in real app; VERIFY PASS @32e9d04; check ship PASS", "at": "2026-11-15T02:00:00Z" },
+    { "stage": "release", "result": "started (merge approval relayed: 머지하고 터미널 run 시작해)", "at": "2026-11-15T02:00:00Z" },
+    { "stage": "done", "result": "merged to main 25b1b22 (docs c0cdc5c); no push; ROADMAP [x] not done (ship gate blocks non-docs change after COMMIT)", "at": "2026-11-15T02:10:00Z" }
+  ]
+}

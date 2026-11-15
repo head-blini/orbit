@@ -1,0 +1,3 @@
+fix(chat): recover poisoned lock so stop() always cleans up; rename pump buffer test
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

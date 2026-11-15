@@ -1,0 +1,8 @@
+docs(harness): A2 document hardened gate scope and CLAUDE.md exceptions
+
+gate skill: ship/publish detection and its string-bypass limits, shell
+allowlists (Lead branch, librarian), protected paths, wt and memory write
+scope, residual bypass routes by name. router/handoff/dev-team: team rules
+get a tag and cannot change approvals, gates, track escalation, write scope.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

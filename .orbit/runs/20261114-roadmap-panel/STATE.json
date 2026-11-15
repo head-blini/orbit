@@ -1,0 +1,21 @@
+{
+  "run": "20261114-roadmap-panel",
+  "track": "full",
+  "request": "마일스톤 ⑤: 오른쪽 위 패널을 프로젝트 로드맵(큰 계획과 진행)으로 바꾸고 기존 상세·설정 내용은 화면에서 뺀다. 그래프 노드 이름의 orbit:qa 표기를 고친다. (.orbit/decisions.md 15번)",
+  "stage": "done",
+  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "track": "full: 큰 화면 변경 + 외부 입력(사용자 로드맵 파일, 로그에서 온 cwd를 경로로 사용) + Rust 명령·capability 변경 가능",
+    "researcher": "off: profile.json 있음, 새 외부 API 조사 불필요",
+    "designer": "on: profile designer(package.json: react 19) + 패널 교체(DESIGN 승인 필요)",
+    "reviewer-accessibility": "on: UI 변경",
+    "security-deep": "on: 로그에서 온 경로로 파일을 읽는 새 신뢰 경계",
+    "data": "off: DB 변경 없음",
+    "devops": "off: 배포·빌드 설정 변경 없음",
+    "reviewer-performance": "off: 신호 없음",
+    "reviewer-idiom": "off: 작은 변경"
+  },
+  "approvals": [{ "gate": "brief", "result": "approved", "at": "2026-11-14T00:30:00Z", "via": "AskUserQuestion" }, { "gate": "design", "result": "approved", "at": "2026-11-14T01:00:00Z", "via": "AskUserQuestion" }, { "gate": "plan", "result": "approved", "at": "2026-11-14T01:40:00Z", "via": "AskUserQuestion" }],
+  "tasks": { "D1": "done 2075c30", "R1": "done 3aa5fa4", "S1": "done 20e101c", "L1": "done 8305631", "R2": "done 6057936", "F1": "done 2145246", "V1": "pending", "V2": "pending" },
+  "history": [{ "stage": "brief", "result": "started", "at": "2026-11-14T00:00:00Z" }]
+}

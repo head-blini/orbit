@@ -1,0 +1,7 @@
+docs(harness): align librarian step 2 with COMMIT rule, gate skill matches review fixes (RF1)
+
+- librarian: after the reviewed COMMIT only CHANGELOG* and docs/** may change
+- gate skill: checkout is blocked on main, quoted-git rebase and command
+  substitution residuals, out-of-project git -C residual
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

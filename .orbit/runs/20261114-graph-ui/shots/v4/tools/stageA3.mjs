@@ -1,0 +1,20 @@
+import { hook, H, agent, log, sleep, SID1, SID2 } from './d.mjs';
+log(SID2, [{ type: 'user', sessionId: SID2, cwd: 'C:\\qa\\notes', timestamp: '2026-11-12T09:10:00.000Z', message: { role: 'user', content: 'x' } }]);
+await sleep(2500);
+await hook(H('UserPromptSubmit', 'qa-err', { cwd: 'C:\\qa\\api-server' }));
+await hook(H('StopFailure', 'qa-err', { cwd: 'C:\\qa\\api-server', error: 'server_error' }));
+await hook(H('UserPromptSubmit', 'qa-blog', { cwd: 'C:\\qa\\my-blog' }));
+await hook(H('Notification', 'qa-blog', { cwd: 'C:\\qa\\my-blog', notification_type: 'permission_prompt' }));
+await hook(H('UserPromptSubmit', SID1, { cwd: 'C:\\qa\\orbit' }));
+await agent(SID1, 1, 'architect', 'done', { ms: 130000, tokens: 41000 });
+await agent(SID1, 2, 'plan-checker', 'done', { ms: 40000, tokens: 12000 });
+for (const n of [3, 4, 5]) await agent(SID1, n, 'engineer', 'run');
+const post = async (n, ms, tokens) => {
+  await hook(H('SubagentStop', SID1, { agent_id: 'a-' + n, agent_type: 'engineer' }));
+  await hook(H('PostToolUse', SID1, { tool_name: 'Agent', tool_use_id: 't-' + n, tool_response: { status: 'completed', agentId: 'a-' + n, totalTokens: tokens, totalDurationMs: ms } }));
+};
+await post(3, 302000, 88000);
+await post(4, 271000, 70000);
+await agent(SID1, 6, 'reviewer', 'wait');
+await hook(H('PreToolUse', SID1, { cwd: 'C:\\qa\\orbit', tool_name: 'Read', tool_use_id: 'r-1' }));
+console.log('stage A3 sent');

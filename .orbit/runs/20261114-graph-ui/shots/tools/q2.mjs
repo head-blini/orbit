@@ -1,0 +1,12 @@
+import { connect } from './c.mjs';
+import fs from 'node:fs';
+const c = await connect(9333, '1420');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const clickBtn = t => c.ev(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.innerText.trim()===${JSON.stringify(t)});b.click();return 'ok'})()`);
+const detail = () => c.ev(`document.querySelector('.detail').innerText`);
+const sf = process.env.TEMP + '/orbit-qa4/settings.json';
+const show = async (l) => { console.log('=== '+l); console.log((await detail()).replace(/\n+/g,' | ')); const s=fs.readFileSync(sf,'utf8'); console.log('settings hooks keys:', Object.keys(JSON.parse(s).hooks||{}).length, 'keep-me:', s.includes('keep-me'), 'allow:', s.includes('Bash(ls:*)'), 'token-in-file:', /token/i.test(s)); console.log('backups:', fs.readdirSync(process.env.TEMP+'/orbit-qa4').filter(f=>f.includes('bak')||f.includes('backup')).join(',')); };
+await clickBtn('설치'); await sleep(1500); await show('after install');
+await clickBtn('제거'); await sleep(1500); await show('after uninstall');
+await clickBtn('설치'); await sleep(1500); await show('after reinstall');
+c.close();

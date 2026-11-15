@@ -1,0 +1,6 @@
+feat(sessions): show short agent kind in exported snapshots
+
+stalled() strips the plugin prefix (orbit:qa -> qa) from agents[].kind on
+export; the Store keeps the original kind so SubagentStart pairing is unchanged.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>

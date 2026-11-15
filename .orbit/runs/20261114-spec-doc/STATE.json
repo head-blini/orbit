@@ -1,0 +1,25 @@
+{
+  "run": "20261114-spec-doc",
+  "track": "quick",
+  "request": ".orbit/decisions.md 후속 목록 3번: 문서 run (quick): SPEC.md — \"다크 테마 기본\" → 게임보이 RPG 밝은 테마, 실행 엔진 절의 settingSources → 플러그인 로드(HARNESS 8절), 2단계 \"보안 점검 템플릿 예\" → HARNESS 11절 참조.",
+  "stage": "done",
+  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "designer": "off: 문서 수정, UI 코드 변경 없음",
+    "data": "off: DB 없음",
+    "devops": "off: 배포·빌드 설정 변경 없음",
+    "security-deep": "off: SPEC.md 한 파일, 에이전트 설정·훅 변경 없음"
+  },
+  "team": "team.yaml 없음 → 전부 기본값. profile.json은 오늘 작성된 것 그대로 사용.",
+  "approvals": [],
+  "tasks": { "T1": "done(70acb64)" },
+  "history": [
+    { "stage": "plan", "result": "started", "at": "2026-11-14", "note": "quick: 마크다운 한 파일, 세 군데. run-id 20261114-spec-doc-fixes는 앱 worktree에 빈 브랜치로 남아 있어 다른 id 사용. 사용자 지시 'SPEC run 시작'." },
+    { "stage": "plan", "result": "done", "at": "2026-11-14", "note": "PLAN.md: T1 하나(SPEC.md 39·65·86행). quick이라 plan 승인 없음. architect가 알린 범위 밖 불일치: SPEC 45행 '노드 색'·48행 '실패는 빨간색'이 색 없는 팔레트와 안 맞음(열린 문제 ①, 이번에 안 고침)." },
+    { "stage": "build", "result": "started", "at": "2026-11-14", "note": "T1 → engineer" },
+    { "stage": "build", "result": "done", "at": "2026-11-14", "note": "T1 70acb64 (SPEC.md만, +4 -3). 검증 명령은 engineer 보고." },
+    { "stage": "verify", "result": "started", "at": "2026-11-14", "note": "qa 호출" },
+    { "stage": "verify", "result": "PASS", "at": "2026-11-14", "note": "VERIFY.md(COMMIT 70acb64). 세 항목과 범위 밖 무변경 통과. check ship = PASS verify, PASS commit 70acb64. Lead가 git diff main...HEAD 본문 확인(SPEC.md 3곳, +4 -3). quick이라 머지 여부는 사용자에게 물음 — 대기." },
+    { "stage": "release", "result": "done", "at": "2026-11-14", "note": "사용자 답(채팅 '머지'). Lead가 git switch main, git merge --no-ff orbit/20261114-spec-doc 실행(SPEC.md 1파일, +4 -3). push 없음. 남긴 것: 새 줄의 '(근거: .orbit/decisions.md …)' 표기는 git 밖 파일을 가리킴, SPEC '노드 색'·'실패는 빨간색'은 열린 문제 ① 결정 뒤 수정." }
+  ]
+}

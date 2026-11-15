@@ -1,0 +1,7 @@
+﻿10:26:35 [{"cls":"node","t":"Lead | 끝남"}]
+10:26:36 [{"cls":"node is-run","t":"Lead | 실행 중"}]
+10:26:39 [{"cls":"node is-run","t":"Lead | 실행 중"},{"cls":"node is-run","t":"Explore | 실행 중"}]
+10:26:53 [{"cls":"node is-run","t":"Lead | 실행 중"},{"cls":"node","t":"Explore | 끝남 | 14초 · 20k 토큰"}]
+10:26:56 [{"cls":"node is-run","t":"Lead | 실행 중"},{"cls":"node","t":"Explore | 끝남 | 14초 · 20k 토큰"},{"cls":"node is-run","t":"general-purpose | 실행 중"}]
+10:26:59 [{"cls":"node is-run","t":"Lead | 실행 중"},{"cls":"node","t":"Explore | 끝남 | 14초 · 20k 토큰"},{"cls":"node","t":"general-purpose | 끝남 | 2초 · 36k 토큰"}]
+10:27:03 [{"cls":"node","t":"Lead | 끝남"},{"cls":"node","t":"Explore | 끝남 | 14초 · 20k 토큰"},{"cls":"node","t":"general-purpose | 끝남 | 2초 · 36k 토큰"}]

@@ -1,0 +1,52 @@
+{
+  "run": "20261114-gate-commit-binding",
+  "track": "full",
+  "request": ".orbit/runs/20261114-harness-hardening/SECURITY.md의 권고 N1~N4를 닫는다. N1: ship 판정이 검토받은 커밋인지 보지 않음 — 관문 산출물에 검토한 커밋 해시를 적고 ship 때 브랜치 해시와 대조. N2: main 위에서 머지 없이 커밋이 쌓임(cherry-pick, checkout <ref> -- 경로+commit, .git/refs/heads/main 쓰기) — .git/ 보호와 main에서 읽기 명령만 허용. N3: --git-dir/--work-tree/GIT_DIR, PowerShell Push-Location/sl, git rebase --onto X --root main 미감지. N4: ~/.gitconfig·~/.config/git/config 쓰기 허용.",
+  "stage": "done",
+  "loops": { "plan": 1, "review": 3, "debug": 0, "security": 0 },
+  "roles": {
+    "designer": "off: UI 변경 없음",
+    "data": "off: profile 신호 없음, DB 없음",
+    "devops": "off: 배포·빌드 설정 변경 없음",
+    "security-deep": "on: profile security-deep + 관문 훅 변경(H8)",
+    "reviewer-performance": "off: 근거 없음",
+    "reviewer-accessibility": "off: UI 변경 없음",
+    "reviewer-data": "off: DB 없음",
+    "reviewer-idiom": "off: 변경 대상이 훅 스크립트(node)와 마크다운뿐"
+  },
+  "team": "team.yaml 없음 → 전부 기본값. profile.json은 이전 run의 것(오늘 작성) 그대로 사용, researcher 생략.",
+  "approvals": [
+    { "gate": "brief", "result": "approved", "at": "2026-11-14", "via": "AskUserQuestion" },
+    { "gate": "plan", "result": "approved", "at": "2026-11-14", "via": "AskUserQuestion" }
+  ],
+  "decisions": {
+    "Q1a": "묶은 해시가 대상의 조상이고 그 뒤 커밋이 CHANGELOG*·docs/**만 바꿨으면 출고 허용 (사용자 선택, BRIEF 기본안)",
+    "Q1b": "COMMIT 줄은 VERIFY.md·SECURITY.md만. REVIEW.md는 묶지 않고 잔여로 문서화 (사용자 선택)",
+    "Q2": "reference-transaction 계속 미룸, ORBIT_GATE=off 제거 안 함 (사용자 선택 '①만 한다'). 자동 승인 켜기 전에 reference-transaction 재결정",
+    "Q3": "읽기 형태가 아닌 git config를 모든 역할에서 차단 (사용자 선택)",
+    "Q4": "C2(SKILL 문서)·P5(테스트 2사례)만 넣음. C1·R10 미룸 (사용자 선택 '①만 한다')",
+    "config": "에이전트가 CLAUDE.md·.claude/를 고치지 않으므로 config 승인은 기록하지 않음 (이전 run과 같음)",
+    "kit": "이전 run과 같음: gate.mjs·gate.test.mjs 수정은 RUN_DIR/kit/ 수정본 + APPLY.md, 사람이 Claude 밖에서 적용·커밋"
+  },
+  "tasks": { "K1": "done(kit, 65 중 pass 46 / fail 19 — 의도된 실패)", "K4": "done(kit)", "A1": "done(885cf98)", "K2": "done(kit, 65/65 — engineer 보고)", "A2": "done(de97621)", "review-fix-1": "done(834dd2a + kit, 69/69)", "review-fix-2": "done(e88c825 + kit, 70/70)", "review-fix-3": "done(4a35fe7 + kit, 71/71)", "APPLY": "waiting-human" },
+  "next": "사람이 kit/APPLY.md를 적용·커밋한 뒤 새 세션에서: (1) 적용 커밋 해시를 history에 기록, stage를 verify로 (2) orbit:qa — BRIEF 성공 기준 1~25, 훅 1회 실행 시간 실측, VERIFY.md에 COMMIT 줄 (3) orbit:security(security-deep) — 22사례 재대조, N1~N4 재현, SECURITY.md에 같은 COMMIT 줄. SKILL 잔여 목록에 refs/heads/orbit/other:main·대소문자 push 형태 추가 요청 (4) check ship PASS면 orbit:librarian — run 브랜치에서 CHANGELOG·docs/solutions만 커밋, switch main과 merge --no-ff를 따로 실행, push 없음. 사용자에게 보고할 후속 후보: reference-transaction(자동 승인 켜기 전 재결정), ORBIT_GATE=off 제거, C1 승인 출처, R10, router/SKILL.md:88의 orbit/<run-id>/<task> 브랜치 D/F 충돌.",
+  "history": [
+    { "stage": "brief", "result": "started", "at": "2026-11-14", "note": "full: 관문 훅 변경(H8). 이전 run 20261114-harness-hardening의 SECURITY N1~N4 후속." },
+    { "stage": "brief", "result": "approved", "at": "2026-11-14", "note": "BRIEF.md + Q1~Q4 모두 기본안으로 사용자 답" },
+    { "stage": "plan", "result": "PASS (1회차), 사용자 승인", "at": "2026-11-14", "note": "check plan = PASS. PLAN_CHECK 권고 R-a~R-g는 K1·K2·A2에서 반영." },
+    { "stage": "build", "result": "started", "at": "2026-11-14", "note": "웨이브 1: K1·K4·A1" },
+    { "stage": "build", "result": "done", "at": "2026-11-14", "note": "A1 885cf98, A2 de97621, kit(K1·K2·K4) 테스트 65/65(engineer 보고). 훅 시간 실측은 미확인(qa 몫)." },
+    { "stage": "review", "result": "started", "at": "2026-11-14", "note": "full 패널: correctness, tests, maintainability, rules" },
+    { "stage": "review", "result": "FAIL (1회차)", "at": "2026-11-14", "note": "차단 2: B1 locates의 -m 값 걷어내기가 $(…) 속 위치 변경을 숨김, B2 rebasesMain의 따옴표 치환이 따옴표 안 git 호출을 숨김(둘 다 옛 gate 대비 회귀, 코드 추적). 키트 테스트 65/65(correctness·tests 직접 실행). review-fix-1 → engineer." },
+    { "stage": "review", "result": "FAIL (2회차)", "at": "2026-11-14", "note": "review-fix-1(834dd2a + kit 69/69). 차단 2: N1 따옴표 없는 -m 값이 ;cd를 삼킴, N2 main}·main> 미인식(둘 다 옛 gate 대비 회귀, 코드 추적). Lead 결정: 걷어내기를 지우고 키트 판정을 옛 판정의 상위 집합으로(locates는 원문, rebase는 옛 정규식 OR rebasesMain). review-fix-2 → engineer." },
+    { "stage": "review", "result": "FAIL (3회차)", "at": "2026-11-14", "note": "review-fix-2(e88c825 + kit 70/70). N1·N2 해소, 상위 집합 대조 통과. 차단 1: B3 ORBIT_REF 뒤쪽 경계(PLAN N1-c)가 orbit/other~0 같은 다른 id를 목록에서 빠뜨림(옛 gate 대비 회귀, 코드 추적). review-fix-3 → engineer (루프 3/3, 한도 마지막)." },
+    { "stage": "review", "result": "PASS (4회차)", "at": "2026-11-14", "note": "review-fix-3(4a35fe7 + kit 71/71, correctness 직접 실행). B3 해소, 옛 gate 대비 회귀 없음(코드 대조). check review = PASS. 남은 참고: refs/heads/orbit/other:main·대소문자 push(옛 gate부터 있던 잔여, SKILL 잔여 목록에 미기재)." },
+    { "stage": "apply", "result": "waiting-human", "at": "2026-11-14", "note": "사람이 kit/APPLY.md 1~7을 Claude 밖에서 실행. 적용 커밋 해시를 여기에 기록할 것." },
+    { "stage": "apply", "result": "done", "at": "2026-11-14", "note": "사람이 적용·커밋: 720f340cd84f6e789975c7a9d3e45dc6720d0fb9 (gate.mjs, gate.test.mjs 2파일, Lead가 git show --stat로 확인). 되돌리기는 이 해시로 git revert. 새 세션 check ship: PASS plan/review, FAIL verify/security/commit, run=20261114-gate-commit-binding track=full (사용자가 붙여 준 출력, APPLY 7 기대와 일치). 이 run의 Lead는 원래 세션에서 다른 세션으로 넘어옴(사용자 지시)." },
+    { "stage": "verify", "result": "started", "at": "2026-11-14", "note": "qa와 security(security-deep) 병렬 호출. COMMIT 대상 720f340." },
+    { "stage": "verify", "result": "PASS", "at": "2026-11-14", "note": "VERIFY.md(COMMIT 720f340). 기준 1~23·25 통과, 적용된 gate.test.mjs 71/71. check verify = PASS. 훅 시간: 비git 40ms, git 101ms, main merge 판정 232ms. 미확인: 기준 8·16·17~20 등은 테스트로만, 큰 저장소·실제 세션 페이로드 시간." },
+    { "stage": "security", "result": "PASS (차단 0, 권고 F1~F3)", "at": "2026-11-14", "note": "SECURITY.md(COMMIT 720f340). 옛 관문 대비 회귀 0건(명령 61개 × 2상태 나란히 판정). N3 닫힘, N1·N2·N4 부분. BRIEF 목표(자동 승인에서도 미통과 코드가 main에 못 들어감)는 여전히 미달성: F1 git replace로 COMMIT 대조 통과, F2 git symbolic-ref HEAD refs/heads/main 뒤 commit·merge, F3 git config --global … --list가 실제로는 쓰기(모두 옛 관문에서도 열려 있었음, 실제 git 재현). 출고 전 사용자 결정 대기." },
+    { "stage": "release", "result": "started", "at": "2026-11-14", "note": "check ship = PASS(plan, review, verify, security, commit 720f340). 사용자 결정(채팅 '머지하고 후속으로'): 지금 main에 머지, F1~F3은 후속 목록(.orbit/decisions.md 10번)으로. push 없음. 자동 승인 모드는 계속 켜지 않는 전제." },
+    { "stage": "release", "result": "done", "at": "2026-11-14", "note": "librarian: 기록 커밋 29b3d13(CHANGELOG.md, docs/solutions/harness-gate-string-detection.md), 머지 커밋 83e355d(main, --no-ff, 부모 8d50ddd + 29b3d13, 9파일). 새 COMMIT 대조 관문 아래 첫 출고, 훅에 막히지 않음. Lead가 git log·status·show로 확인. push 없음(사용자가 직접). 미처리: gate/SKILL.md 잔여 목록에 Start-Process git, refs/heads/orbit/other:main·대소문자 push 기재(decisions.md 10번과 함께)." }
+  ]
+}

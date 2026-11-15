@@ -1,0 +1,4 @@
+﻿I ran both steps in order. The Explore agent slept 10 seconds and replied "ok". After it returned, the general-purpose agent read `a.txt`, which contains one line: `hello`.
+
+DONE
+exit=0 secs=28

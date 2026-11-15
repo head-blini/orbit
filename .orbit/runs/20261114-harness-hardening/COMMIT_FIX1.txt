@@ -1,0 +1,3 @@
+docs(harness): R1 R6 gate skill states foreign-ref limit, rebase resume, common shell rules
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

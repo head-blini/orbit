@@ -1,0 +1,3 @@
+fix(ui): panel position relative, drop trailing gap, reword sidecar-exit text
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

@@ -1,0 +1,6 @@
+feat(ui): top bar hook controls and roadmap panel
+
+Replace the detail panel with a read-only ROADMAP.md view (summary bar, groups,
+states), move hook status/buttons to the top bar, re-read on select and 30s tick.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>

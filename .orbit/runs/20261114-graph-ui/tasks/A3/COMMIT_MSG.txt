@@ -1,0 +1,3 @@
+style(graph): node shape E (rounded double border, no inversion) and gscroll panel CSS (A3)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

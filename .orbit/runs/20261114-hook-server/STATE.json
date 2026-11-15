@@ -1,0 +1,36 @@
+{
+  "run": "20261114-hook-server",
+  "track": "full",
+  "request": "마일스톤 ②: 훅 수신 서버(Rust, 127.0.0.1 + 토큰, POST /events → 프론트 emit) + 훅 설치 도우미(전역/프로젝트 settings.json에 훅 추가·제거, 백업 후 병합, 원자적 쓰기, Windows 훅 명령, 짧은 타임아웃). SPEC.md '1단계: 관찰' 데이터 수집 1·2번.",
+  "stage": "done",
+  "loops": { "plan": 1, "review": 1, "debug": 1, "security": 1 },
+  "roles": {
+    "researcher": "on: 요청이 최신 Claude Code 훅 문서 확인을 요구",
+    "security-deep": "auto: profile security-deep(CLAUDE.md: 훅 수신 서버·settings.json 병합) + 로컬 서버·토큰·사용자 설정 수정",
+    "designer": "off: UI는 설치 버튼 정도의 최소, 디자인은 마일스톤 ④(.orbit/decisions.md)",
+    "reviewer-accessibility": "auto: profile(react 19) + 버튼 UI 추가",
+    "reviewer-idiom": "auto: profile stack rust — 새 Rust 서버 코드",
+    "data": "off: 신호 없음, DB 변경 없음",
+    "devops": "off: 배포·패키징 변경 없음",
+    "reviewer-performance": "off: 신호 없음",
+    "qa-mobile": "off: 신호 없음"
+  },
+  "approvals": [
+    { "gate": "brief", "result": "approved", "at": "2026-11-14T01:00:00Z", "via": "AskUserQuestion" },
+    { "gate": "plan", "result": "approved (새 의존성 tiny_http 0.12.0, getrandom 0.4.3, serde_json preserve_order 포함)", "at": "2026-11-14T02:00:00Z", "via": "AskUserQuestion" }
+  ],
+  "tasks": { "T0": "done 01a1a20", "T1": "done c8dfe26", "T2": "done f9fe836", "T3": "done ac32866", "T4": "done c47919b", "T5": "done 976cecd", "T6": "done 9f681b1" },
+  "history": [
+    { "stage": "brief", "result": "started", "at": "2026-11-14T00:00:00Z" },
+    { "stage": "brief", "result": "approved (결정은 DECISIONS.md)", "at": "2026-11-14T01:00:00Z" },
+    { "stage": "plan", "result": "started", "at": "2026-11-14T01:00:00Z" },
+    { "stage": "plan", "result": "PLAN_CHECK FAIL(B1) → 수정 → PASS, 사용자 승인", "at": "2026-11-14T02:00:00Z" },
+    { "stage": "build", "result": "started", "at": "2026-11-14T02:00:00Z" },
+    { "stage": "review", "result": "PASS (차단 0, A1~A6 수정 4c2a2a4, 2차 리뷰 PASS)", "at": "2026-11-14T04:00:00Z" },
+    { "stage": "verify", "result": "1차 FAIL(기준 6: SessionStart http 훅 미지원) → 사용자 결정 SessionStart 제외(ebcd1da) → 2차 PASS @1395da7", "at": "2026-11-14T06:00:00Z" },
+    { "stage": "security", "result": "1차 FAIL(S1·S2) → S1 사용자 수용, S2 수정(1395da7) → 2차 PASS @1395da7", "at": "2026-11-14T06:00:00Z" },
+    { "stage": "release", "result": "check ship 전부 PASS, 기록 커밋 7a564c8, main 머지 67be479, push 없음", "at": "2026-11-14T06:30:00Z" },
+    { "stage": "done", "result": "기준 10(실제 ~/.claude/settings.json 설치)은 사용자 확인 대기", "at": "2026-11-14T06:30:00Z" },
+    { "stage": "done", "result": "기준 10 사용자 확인: 실제 설정에 설치 한 번 누른 뒤 타임라인에 이벤트가 올라옴 (사용자 원문 '설치 한번 누르고 타임라인 올라오네', 다른 세션의 Lead가 기록). 실행은 npm.cmd run tauri dev (PowerShell 실행 정책이 npm.ps1을 막음). 에이전트가 화면을 직접 본 것은 아님.", "at": "2026-11-14" }
+  ]
+}

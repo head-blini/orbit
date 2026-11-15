@@ -1,0 +1,8 @@
+feat(chat): add Rust sidecar module and split roadmap::local_abs
+
+chat.rs spawns the node sidecar (std::process), pumps stdout JSON lines to
+the "chat" event with a streaming 1 MiB line cap, and stops it with
+close -> 3s -> taskkill /T /F. roadmap::local_abs is split out of for_cwd
+(behavior unchanged).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

@@ -1,0 +1,159 @@
+{
+  "model": "x",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:53039/events",
+            "headers": {
+              "X-Orbit-Token": "6e268679ece677c5f328a5375b2f728eab079ac7733d9b64f1a39b099ceedff8"
+            },
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

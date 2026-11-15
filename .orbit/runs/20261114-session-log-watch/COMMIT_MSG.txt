@@ -1,0 +1,6 @@
+docs: record milestone 3 session log watch
+
+CHANGELOG entry and docs/solutions/session-log-watch.md (decisions,
+measurements, unverified items, pitfalls, follow-ups).
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

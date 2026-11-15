@@ -1,0 +1,12 @@
+import { connect } from './c.mjs';
+const c = await connect(9333, '1420'); const sleep = ms => new Promise(r => setTimeout(r, ms));
+const NL = String.fromCharCode(10);
+const rows = () => c.ev(`JSON.stringify([...document.querySelectorAll('.sess')].map(b=>(b.hasAttribute('aria-current')?'*':'')+b.querySelector('.name').textContent))`);
+console.log(await rows());
+const r = JSON.parse(await c.ev(`(()=>{const b=[...document.querySelectorAll('.sess')].find(e=>e.querySelector('.name').textContent.trim()==='stall');const r=b.getBoundingClientRect();return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()`));
+await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+await sleep(1000);
+console.log(await rows());
+console.log(await c.ev(`JSON.stringify([...document.querySelectorAll('.graph li')].map(li=>li.innerText.split(String.fromCharCode(10)).join(' | ')))`));
+c.close();

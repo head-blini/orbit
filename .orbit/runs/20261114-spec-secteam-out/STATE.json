@@ -1,0 +1,25 @@
+{
+  "run": "20261114-spec-secteam-out",
+  "track": "quick",
+  "request": ".orbit/decisions.md 11번: 보안점검팀 템플릿을 제품 범위에서 뺀다. SPEC.md의 13행 \"2단계(설계·자동화, 보안 점검용)\", 82행 2단계 제목의 \"(보안 점검용)\", 86행 예시 \"정기 보안 점검\", 88행 \"보안 점검 템플릿: HARNESS.md 11절 참조\" 줄. 사용자 원문: \"보안점검은 아예 뺴버려라 개발팀 하네스만드는데 왜자꾸 보안점검이 들어가있냐\" → \"c를빼라는말임\". 시작 지시: \"순서대로 진행해\"(Lead가 권한 순서: 이 문서 run → 마일스톤 ⑤).",
+  "stage": "done",
+  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "designer": "off: 문서 수정",
+    "data": "off: DB 없음",
+    "devops": "off: 배포 변경 없음",
+    "security-deep": "off: SPEC.md 한 파일"
+  },
+  "team": "team.yaml 없음 → 전부 기본값.",
+  "approvals": [],
+  "tasks": { "T1": "done(e4bc787)" },
+  "history": [
+    { "stage": "plan", "result": "started", "at": "2026-11-14", "note": "quick: SPEC.md 한 파일 네 군데. 마일스톤 ④ 머지(f394f60) 뒤 main에서 시작. HARNESS.md(7·142·165~167행)는 사용자가 직접 고치기로 한 파일이라 범위 밖. 89행 '보안 원칙' 줄은 자동화 전반의 원칙으로 읽혀 남긴다(Lead 기본안, 머지 전에 사용자에게 보임). 앞서 취소한 run 20261114-spec-no-secteam의 빈 브랜치가 남아 있어 다른 id를 쓴다." },
+    { "stage": "plan", "result": "done", "at": "2026-11-14", "note": "PLAN.md: T1 하나(SPEC.md 13·82·86·88행). quick이라 plan 승인 없음. 86행 새 예시 '기능 구현 → 리뷰 → 검증'은 architect가 고른 문구 — 머지 전에 사용자에게 보인다." },
+    { "stage": "build", "result": "started", "at": "2026-11-14", "note": "T1 → engineer" },
+    { "stage": "build", "result": "done", "at": "2026-11-14", "note": "T1 e4bc787 (SPEC.md만, +3 -4). 검증 명령은 engineer 보고." },
+    { "stage": "verify", "result": "started", "at": "2026-11-14", "note": "qa 호출" },
+    { "stage": "verify", "result": "PASS", "at": "2026-11-14", "note": "VERIFY.md(COMMIT e4bc787). 기준 1~5 통과. check ship = PASS verify, PASS commit e4bc787. Lead가 git diff main...HEAD 본문 확인(SPEC.md 네 군데, +3 -4). quick이라 머지 여부는 사용자에게 물음 — 대기." },
+    { "stage": "release", "result": "done", "at": "2026-11-14", "note": "사용자 답(채팅 '머지하고 ⑤ 시작'). Lead가 git switch main, git merge --no-ff orbit/20261114-spec-secteam-out 실행(SPEC.md 1파일, +3 -4). push 없음. 남은 것: HARNESS.md 7·142·165~167행의 보안점검팀 표현은 사용자가 직접 고친다(그때까지 SPEC과 어긋남). '보안 원칙' 줄은 남김." }
+  ]
+}

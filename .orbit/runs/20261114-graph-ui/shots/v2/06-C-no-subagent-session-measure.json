@@ -1,0 +1,93 @@
+{
+ "info": {
+  "vp": [
+   1400,
+   900
+  ],
+  "docScroll": [
+   1400,
+   900,
+   0
+  ],
+  "graph": [
+   735,
+   735,
+   480,
+   480,
+   0
+  ],
+  "sessions": [
+   480,
+   480,
+   0
+  ],
+  "detail": [
+   480,
+   480,
+   0
+  ],
+  "chat": [
+   318,
+   318
+  ]
+ },
+ "m": {
+  "vp": [
+   1400,
+   900
+  ],
+  "graph": {
+   "x": 301,
+   "y": 74,
+   "w": 741,
+   "h": 486
+  },
+  "graphCls": "panel graph",
+  "canvas": {
+   "x": 328,
+   "y": 115,
+   "w": 416,
+   "h": 60
+  },
+  "svg": {
+   "x": 328,
+   "y": 115,
+   "w": 416,
+   "h": 60
+  },
+  "nodes": [
+   {
+    "text": "Lead | 대기",
+    "li": {
+     "x": 328,
+     "y": 115,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 328,
+     "y": 115,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(180, 184, 164)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node is-wait",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": null
+   }
+  ],
+  "edges": []
+ }
+}

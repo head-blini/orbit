@@ -1,0 +1,273 @@
+{
+ "a": {
+  "label": "1 six columns, step6 running",
+  "gscrollLeft": 769,
+  "gscrollTop": 0,
+  "scrollWidth": 1472,
+  "clientWidth": 703,
+  "gscrollRight": 1023,
+  "h2": {
+   "x": 320,
+   "y": 89,
+   "w": 703,
+   "h": 18,
+   "right": 1023
+  },
+  "targetLi": [
+   "step6",
+   851,
+   1019
+  ],
+  "panelGraphScroll": [
+   0,
+   0
+  ],
+  "docScroll": [
+   0,
+   0
+  ],
+  "others": {
+   ".sessions": [
+    0,
+    0
+   ],
+   ".detail": [
+    0,
+    0
+   ],
+   ".chat": [
+    0,
+    0
+   ],
+   ".console": [
+    0,
+    0
+   ]
+  }
+ },
+ "b": {
+  "label": "2 after user wheel to left",
+  "gscrollLeft": 0,
+  "gscrollTop": 0,
+  "scrollWidth": 1472,
+  "clientWidth": 703,
+  "gscrollRight": 1023,
+  "h2": {
+   "x": 320,
+   "y": 89,
+   "w": 703,
+   "h": 18,
+   "right": 1023
+  },
+  "targetLi": [
+   "step6",
+   1620,
+   1788
+  ],
+  "panelGraphScroll": [
+   0,
+   0
+  ],
+  "docScroll": [
+   0,
+   0
+  ],
+  "others": {
+   ".sessions": [
+    0,
+    0
+   ],
+   ".detail": [
+    0,
+    0
+   ],
+   ".chat": [
+    0,
+    0
+   ],
+   ".console": [
+    0,
+    0
+   ]
+  }
+ },
+ "d40": {
+  "label": "3 after 40s idle",
+  "gscrollLeft": 0,
+  "gscrollTop": 0,
+  "scrollWidth": 1472,
+  "clientWidth": 703,
+  "gscrollRight": 1023,
+  "h2": {
+   "x": 320,
+   "y": 89,
+   "w": 703,
+   "h": 18,
+   "right": 1023
+  },
+  "targetLi": [
+   "step6",
+   1620,
+   1788
+  ],
+  "panelGraphScroll": [
+   0,
+   0
+  ],
+  "docScroll": [
+   0,
+   0
+  ],
+  "others": {
+   ".sessions": [
+    0,
+    0
+   ],
+   ".detail": [
+    0,
+    0
+   ],
+   ".chat": [
+    0,
+    0
+   ],
+   ".console": [
+    0,
+    0
+   ]
+  }
+ },
+ "e": {
+  "label": "4 step6 done (state change, user manual)",
+  "gscrollLeft": 0,
+  "gscrollTop": 0,
+  "scrollWidth": 1472,
+  "clientWidth": 703,
+  "gscrollRight": 1023,
+  "h2": {
+   "x": 320,
+   "y": 89,
+   "w": 703,
+   "h": 18,
+   "right": 1023
+  },
+  "panelGraphScroll": [
+   0,
+   0
+  ],
+  "docScroll": [
+   0,
+   0
+  ],
+  "others": {
+   ".sessions": [
+    0,
+    0
+   ],
+   ".detail": [
+    0,
+    0
+   ],
+   ".chat": [
+    0,
+    0
+   ],
+   ".console": [
+    0,
+    0
+   ]
+  }
+ },
+ "f": {
+  "label": "5 new column step7 running",
+  "gscrollLeft": 985,
+  "gscrollTop": 0,
+  "scrollWidth": 1688,
+  "clientWidth": 703,
+  "gscrollRight": 1023,
+  "h2": {
+   "x": 320,
+   "y": 89,
+   "w": 703,
+   "h": 18,
+   "right": 1023
+  },
+  "targetLi": [
+   "step7",
+   851,
+   1019
+  ],
+  "panelGraphScroll": [
+   0,
+   0
+  ],
+  "docScroll": [
+   0,
+   0
+  ],
+  "others": {
+   ".sessions": [
+    0,
+    0
+   ],
+   ".detail": [
+    0,
+    0
+   ],
+   ".chat": [
+    0,
+    0
+   ],
+   ".console": [
+    0,
+    0
+   ]
+  }
+ },
+ "g": {
+  "label": "6 back to qa-wide (manual reset)",
+  "gscrollLeft": 985,
+  "gscrollTop": 0,
+  "scrollWidth": 1688,
+  "clientWidth": 703,
+  "gscrollRight": 1023,
+  "h2": {
+   "x": 320,
+   "y": 89,
+   "w": 703,
+   "h": 18,
+   "right": 1023
+  },
+  "targetLi": [
+   "step7",
+   851,
+   1019
+  ],
+  "panelGraphScroll": [
+   0,
+   0
+  ],
+  "docScroll": [
+   0,
+   0
+  ],
+  "others": {
+   ".sessions": [
+    0,
+    0
+   ],
+   ".detail": [
+    0,
+    0
+   ],
+   ".chat": [
+    0,
+    0
+   ],
+   ".console": [
+    0,
+    0
+   ]
+  }
+ }
+}

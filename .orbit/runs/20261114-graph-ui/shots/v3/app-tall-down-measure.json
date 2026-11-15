@@ -1,0 +1,399 @@
+{
+ "vp": [
+  1400,
+  900
+ ],
+ "page": {
+  "docScroll": [
+   0,
+   0,
+   1400,
+   900
+  ],
+  "bodyScroll": [
+   0,
+   0
+  ]
+ },
+ "graph": {
+  "x": 301,
+  "y": 74,
+  "w": 741,
+  "h": 486,
+  "right": 1042
+ },
+ "graphScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 735,
+  "clientWidth": 735,
+  "scrollHeight": 480,
+  "clientHeight": 480
+ },
+ "h2": {
+  "x": 320,
+  "y": 89,
+  "w": 703,
+  "h": 18,
+  "right": 1023
+ },
+ "gscroll": {
+  "x": 320,
+  "y": 115,
+  "w": 703,
+  "h": 430,
+  "right": 1023
+ },
+ "gscrollScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 142,
+  "scrollWidth": 688,
+  "clientWidth": 688,
+  "scrollHeight": 572,
+  "clientHeight": 430
+ },
+ "gscrollPad": "4px",
+ "canvas": {
+  "x": 324,
+  "y": -23,
+  "w": 384,
+  "h": 564,
+  "right": 708
+ },
+ "svg": {
+  "x": 324,
+  "y": -23,
+  "w": 384,
+  "h": 564,
+  "right": 708
+ },
+ "others": {
+  ".sessions": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 279,
+   "clientWidth": 279,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".detail": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".chat": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 1028,
+   "clientWidth": 1028,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  },
+  ".console": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  }
+ },
+ "nodes": [
+  {
+   "text": "Lead | 실행 중",
+   "li": {
+    "x": 324,
+    "y": 229,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "left": "0px",
+   "top": "252px",
+   "btn": {
+    "x": 324,
+    "y": 229,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker1 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": -23,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "0px",
+   "btn": {
+    "x": 540,
+    "y": -23,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker2 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 49,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "72px",
+   "btn": {
+    "x": 540,
+    "y": 49,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker3 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 121,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "144px",
+   "btn": {
+    "x": 540,
+    "y": 121,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker4 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 193,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "216px",
+   "btn": {
+    "x": 540,
+    "y": 193,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker5 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 265,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "288px",
+   "btn": {
+    "x": 540,
+    "y": 265,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker6 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 337,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "360px",
+   "btn": {
+    "x": 540,
+    "y": 337,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker7 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 409,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "432px",
+   "btn": {
+    "x": 540,
+    "y": 409,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "worker8 | 실행 중",
+   "li": {
+    "x": 540,
+    "y": 481,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "504px",
+   "btn": {
+    "x": 540,
+    "y": 481,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  }
+ ],
+ "edges": [
+  "M168 282 H192 M192 30 V534",
+  "M192 30 H216 M192 102 H216 M192 174 H216 M192 246 H216 M192 318 H216 M192 390 H216 M192 462 H216 M192 534 H216 [flow]"
+ ],
+ "sideNote": null
+}

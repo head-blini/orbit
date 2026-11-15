@@ -1,0 +1,3 @@
+﻿10:25:07 [{"cls":"node","t":"Lead | 끝남"},{"cls":"node","t":"Explore | 끝남 | 8초 · 20k 토큰"}]
+10:25:08 [{"cls":"node is-run","t":"Lead | 실행 중"}]
+10:25:15 [{"cls":"node","t":"Lead | 끝남"}]

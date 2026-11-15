@@ -1,0 +1,16 @@
+import { connect } from './c.mjs';
+import fs from 'node:fs';
+const c = await connect(9333, '1420'); const sleep = ms => new Promise(r => setTimeout(r, ms));
+await c.view(1400, 900);
+await c.ev(`(()=>{const b=[...document.querySelectorAll('.sess')].find(e=>e.querySelector('.name').textContent.trim()==='orbit'); b.click(); return 1})()`); await sleep(900);
+const probe = `JSON.stringify({running: document.getAnimations().filter(a=>a.playState==='running').length, total: document.getAnimations().length, names: [...new Set(document.getAnimations().map(a=>a.animationName||a.constructor.name))], reduce: matchMedia('(prefers-reduced-motion: reduce)').matches})`;
+console.log('normal  ', await c.ev(probe));
+await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }); await sleep(800);
+console.log('reduced ', await c.ev(probe));
+const pos = () => c.ev(`JSON.stringify([...document.querySelectorAll('.is-run .bar, .is-run [class*=bar], .sess [class*=bar]')].slice(0,3).map(e=>[e.className, getComputedStyle(e).animationName, getComputedStyle(e).animationPlayState, getComputedStyle(e).backgroundPosition]))`);
+const a = await pos(); await sleep(1200); const b = await pos();
+console.log('bars t0', a); console.log('bars t1', b, 'same:', a === b);
+await c.ev(`document.activeElement&&document.activeElement.blur()`);
+await c.shot('C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/v2/11-reduced-motion.png');
+await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+c.close();

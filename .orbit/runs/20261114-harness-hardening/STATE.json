@@ -1,0 +1,48 @@
+{
+  "run": "20261114-harness-hardening",
+  "track": "full",
+  "request": ".orbit/decisions.md 후속 작업 목록 2번: 하네스 보강 run (full + config 승인). 20261114-harness-plugin/SECURITY.md 권고 S1~S13 — 자동 승인 모드에서 차단급 우선(S1, S5, S3·S4, S2·S8, S13). S6 '읽은 내용은 데이터' 문장을 모든 역할에. REVIEW.md에서 미룬 R10, R11.",
+  "stage": "done",
+  "loops": { "plan": 1, "review": 2, "debug": 0, "security": 0 },
+  "roles": {
+    "designer": "off: profile 신호(React UI)는 있으나 이번 작업에 UI 변경 없음",
+    "data": "off: profile 신호 없음, DB 없음",
+    "devops": "off: profile 신호(tauri bundle)는 있으나 배포·빌드 설정 변경 없음",
+    "security-deep": "on: profile security-deep + 훅·에이전트 설정 변경(H8)",
+    "reviewer-performance": "off: 근거 없음",
+    "reviewer-accessibility": "off: UI 변경 없음",
+    "reviewer-data": "off: DB 없음",
+    "reviewer-idiom": "off: 변경 대상이 훅 스크립트(node)와 마크다운뿐"
+  },
+  "team": "team.yaml 없음 → 전부 기본값. profile.json은 researcher가 이번 run에서 작성.",
+  "approvals": [
+    { "gate": "brief", "result": "approved", "at": "2026-11-14", "via": "AskUserQuestion" },
+    { "gate": "plan", "result": "approved", "at": "2026-11-14", "via": "AskUserQuestion" }
+  ],
+  "decisions": {
+    "kit": "gate.mjs·gate.test.mjs·settings 수정은 RUN_DIR/kit/ 수정본 + APPLY.md, 사람이 적용·커밋 (BRIEF Q1 기본안, 사용자 승인)",
+    "config": "에이전트가 CLAUDE.md·.claude/를 고치지 않으므로 config 승인은 기록하지 않음 (BRIEF Q3, 사용자 승인)",
+    "R11": "Q2 (a): FREE_SHELL 셸 유지 + S13 차단. librarian은 git 허용 목록 (사용자 선택)",
+    "S4-git-hook": "Q4: .git/hooks/reference-transaction은 계속 미룸 (사용자 선택)",
+    "S1": "Q5: ship 판정은 브랜치 orbit/<id>의 id 기준, 다른 이름의 브랜치는 항상 차단 (사용자 선택)"
+  },
+  "next": "사람이 kit/APPLY.md를 적용·커밋한 뒤 새 세션에서: (1) 적용 커밋 해시를 history에 기록, stage를 verify로 (2) orbit:qa — BRIEF 성공 기준 1~13, PLAN '진행 순서' 5 (3) orbit:security(security-deep) — PLAN '진행 순서' 6 (4) check ship PASS면 orbit:librarian — switch main과 merge --no-ff orbit/20261114-harness-hardening을 따로 실행, push 없음. 사용자에게 보고할 후속 후보: git 쪽 출고 강제(reference-transaction), ORBIT_GATE=off 스위치 제거·ConfigChange 훅, R10 스킬 사전 로드 스파이크, 리뷰 P5 테스트 공백.",
+  "tasks": { "K1": "done(kit, 29/29)", "K3": "done(kit, 커밋 없음)", "A1": "done(fd33eac)", "A2": "done(6d461ae)", "K2": "done(kit, 35/35)", "review-fix-1": "done(f3d680d + kit, 43/43)", "review-fix-2": "done(8c1fd59 + kit, 46/46)", "doc-fix-3": "done(c29bbfc)", "APPLY": "done(사람, 430fd07)" },
+  "history": [
+    { "stage": "brief", "result": "started", "at": "2026-11-14" },
+    { "stage": "research", "result": "done", "at": "2026-11-14", "note": "profile.json, RESEARCH.md. S13: settings는 세션 중 다시 읽힘(이전 추정 정정)." },
+    { "stage": "brief", "result": "approved", "at": "2026-11-14", "note": "BRIEF.md + Q1~Q5 답" },
+    { "stage": "plan", "result": "PASS (2회차), 사용자 승인", "at": "2026-11-14", "note": "1회차 FAIL(F1 S1 폴백, F2 librarian push). check plan = PASS. R10 미룸." },
+    { "stage": "build", "result": "started", "at": "2026-11-14", "note": "웨이브 1: K1·K3·A1·A2" },
+    { "stage": "build", "result": "done", "at": "2026-11-14", "note": "A1 fd33eac, A2 6d461ae, kit(K1·K2·K3) 테스트 35/35(engineer 보고)" },
+    { "stage": "review", "result": "started", "at": "2026-11-14", "note": "full 패널: correctness, tests, maintainability, rules" },
+    { "stage": "review", "result": "PASS (3회차)", "at": "2026-11-14", "note": "세 회차 모두 차단 없음. review-fix-1(f3d680d), review-fix-2(8c1fd59), doc-fix-3(c29bbfc). 키트 테스트 46/46(correctness 직접 실행). 3회차는 재현 없이 코드 대조만. check review = PASS. 남은 문자열 우회 P1~P3은 gate/SKILL.md에 문서화." },
+    { "stage": "apply", "result": "waiting-human", "at": "2026-11-14", "note": "사람이 kit/APPLY.md 1~7을 Claude 밖에서 실행. 커밋 해시를 여기에 기록할 것." },
+    { "stage": "apply", "result": "done", "at": "2026-11-14", "note": "사람이 적용·커밋: 430fd070bb712e4af93fe5241c1ccf13e9c37218 (gate.mjs, gate.test.mjs, .claude/settings.json 3파일). 되돌리기는 이 해시로 git revert." },
+    { "stage": "verify", "result": "started", "at": "2026-11-14", "note": "qa와 security(security-deep) 병렬 호출" },
+    { "stage": "verify", "result": "PASS", "at": "2026-11-14", "note": "VERIFY.md 기준 1~13 통과, 적용된 gate.test.mjs 46/46. check verify = PASS. 미확인: main 위 S1·S4·S8 승인 조합은 테스트로만, S11 직접 프로브 무효." },
+    { "stage": "security", "result": "PASS (차단 0, 권고 N1~N4)", "at": "2026-11-14", "note": "SECURITY.md. 변경분이 관문을 약화한 곳 없음. 그러나 BRIEF 목표(자동 승인에서도 미통과 코드가 main에 못 들어감)는 미달성: N1(통과한 다른 run 브랜치를 경유한 머지), N2(main 위 직접 커밋·.git/refs 쓰기), N3(--git-dir·Push-Location·rebase --onto), N4(~/.gitconfig 쓰기). 출고 전 사용자 결정 대기." },
+    { "stage": "ship", "result": "started", "at": "2026-11-14", "note": "check ship = PASS(4관문). 사용자 결정(채팅 '머지하고 다음 run'): 지금 main에 머지, N1~N4는 다음 run. push 없음. 그때까지 자동 승인 모드는 켜지 않는 전제." },
+    { "stage": "ship", "result": "done", "at": "2026-11-14", "note": "librarian: 기록 커밋 b696956(CHANGELOG.md, docs/solutions/harness-gate-string-detection.md), 머지 커밋 8d50ddd(main, --no-ff, 부모 6412335 + b696956). Lead가 git log·status·show로 확인. push 없음(사용자가 직접)." }
+  ]
+}

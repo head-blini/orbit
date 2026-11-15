@@ -1,0 +1,7 @@
+feat(ui): screen frame from layout_v4 (F1)
+
+Session list, detail/settings, chat frame and console box laid out per the
+approved layout_v4; Graph and Screen are stubs for F2/F3. Single 30s timer
+refreshes now and get_sessions; sessions held in a Map.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

@@ -1,0 +1,225 @@
+{
+ "vp": [
+  1400,
+  900
+ ],
+ "page": {
+  "docScroll": [
+   0,
+   0,
+   1400,
+   900
+  ],
+  "bodyScroll": [
+   0,
+   0
+  ]
+ },
+ "graph": {
+  "x": 301,
+  "y": 74,
+  "w": 741,
+  "h": 486,
+  "right": 1042
+ },
+ "graphScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 735,
+  "clientWidth": 735,
+  "scrollHeight": 480,
+  "clientHeight": 480
+ },
+ "h2": {
+  "x": 320,
+  "y": 89,
+  "w": 703,
+  "h": 18,
+  "right": 1023
+ },
+ "gscroll": {
+  "x": 320,
+  "y": 115,
+  "w": 703,
+  "h": 430,
+  "right": 1023
+ },
+ "gscrollScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 824,
+  "clientWidth": 703,
+  "scrollHeight": 415,
+  "clientHeight": 415
+ },
+ "gscrollPad": "4px",
+ "canvas": {
+  "x": 324,
+  "y": 119,
+  "w": 816,
+  "h": 60,
+  "right": 1140
+ },
+ "svg": {
+  "x": 324,
+  "y": 119,
+  "w": 816,
+  "h": 60,
+  "right": 1140
+ },
+ "others": {
+  ".sessions": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 279,
+   "clientWidth": 279,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".detail": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".chat": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 1028,
+   "clientWidth": 1028,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  },
+  ".console": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  }
+ },
+ "nodes": [
+  {
+   "text": "Lead | 실행 중",
+   "li": {
+    "x": 324,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "left": "0px",
+   "top": "0px",
+   "btn": {
+    "x": 324,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "architect | 끝남 | 2분 10초 · 41k 토큰",
+   "li": {
+    "x": 540,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "0px",
+   "btn": {
+    "x": 540,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  },
+  {
+   "text": "qa | 실패 | ✕ | — · —",
+   "li": {
+    "x": 756,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 924
+   },
+   "left": "432px",
+   "top": "0px",
+   "btn": {
+    "x": 756,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 924
+   },
+   "cls": "node is-fail",
+   "border": "2px dashed rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "none",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  },
+  {
+   "text": "librarian | 알 수 없음 | — | — · —",
+   "li": {
+    "x": 972,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "left": "648px",
+   "top": "0px",
+   "btn": {
+    "x": 972,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "cls": "node",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  }
+ ],
+ "edges": [
+  "M168 30 H216",
+  "M384 30 H432",
+  "M600 30 H648"
+ ],
+ "sideNote": null
+}

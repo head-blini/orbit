@@ -1,0 +1,21 @@
+{
+  "run": "20261114-chat-sidecar",
+  "track": "full",
+  "request": "마일스톤 ⑥: 프롬프트 입력창 + Agent SDK 사이드카 + UI 권한 승인. 원문은 SPEC.md '화면'의 채팅 패널 항목, '실행 엔진 (프롬프트 입력창 뒤에서 도는 것)' 절, '1단계 완료 기준' 마지막 줄.",
+  "stage": "done",
+  "loops": { "plan": 0, "review": 1, "debug": 0, "security": 0 },
+  "roles": {
+    "track": "full: 권한 승인·인증 정보·외부 프로세스(사이드카) 실행, 새 의존성, capability 변경",
+    "researcher": "on: Agent SDK 최신 문서와 Tauri 2 사이드카 방식 조사 필요(SPEC: 옵션 이름은 최신 문서로 확인)",
+    "designer": "on: profile designer(package.json: react 19) + 채팅 패널 세부 설계(DESIGN 승인 필요)",
+    "reviewer-accessibility": "on: UI 변경",
+    "security-deep": "on: 사이드카 프로세스·권한 승인 콜백·인증 정보 경계",
+    "reviewer-idiom": "on: 새 Node 사이드카 + Rust 프로세스 관리",
+    "data": "off: DB 변경 없음(채팅 기록 보존은 BRIEF에서 결정)",
+    "devops": "auto: 사이드카 동반 방식이 번들 설정을 바꾸면 PLAN 단계에서 켬",
+    "reviewer-performance": "off: 신호 없음"
+  },
+  "approvals": [{ "gate": "brief", "result": "approved", "at": "2026-11-14T07:00:00Z", "via": "AskUserQuestion" }, { "gate": "design", "result": "approved", "at": "2026-11-15T00:30:00Z", "via": "AskUserQuestion" }, { "gate": "plan", "result": "approved", "at": "2026-11-15T01:30:00Z", "via": "AskUserQuestion" }],
+  "tasks": { "D1": "done b34aa7c", "N1": "done 58fecb4", "S1": "done b551bd0", "R1": "done 7930f45", "F1": "done b3ee55c", "S2": "done abeb7da", "R2": "done a982e8f", "F2": "done bbc34ad", "L1": "done 3c8348c", "V1": "done PASS @ed57684", "V2": "done 차이 2개 → RV3 6007f52", "RV1": "done 8a92087 8558f23 197eab6", "RV2": "done ed57684", "RV3": "done 6007f52 f816135", "merge": "main 7fdda46 (push 안 함)" },
+  "history": [{ "stage": "brief", "result": "started", "at": "2026-11-14T06:00:00Z" }]
+}

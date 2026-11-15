@@ -1,0 +1,8 @@
+docs(spec): replace harness card milestone with roadmap panel
+
+SPEC stage 1: hook install/remove move to the top bar, node click only
+marks selection, screen item 4 becomes the ROADMAP.md panel, and
+milestone 5 becomes "roadmap panel + node names". Harness card and team
+roster view are deferred past milestone 6.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>

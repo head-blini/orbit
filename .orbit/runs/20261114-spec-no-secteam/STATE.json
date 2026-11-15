@@ -1,0 +1,20 @@
+{
+  "run": "20261114-spec-no-secteam",
+  "track": "quick",
+  "request": ".orbit/decisions.md 11번: 보안점검팀 템플릿을 제품 범위에서 뺀다. SPEC.md 13행 \"2단계(설계·자동화, 보안 점검용)\", 81행 2단계 제목의 \"(보안 점검용)\", 85행 예시 \"정기 보안 점검\", 87행 \"보안 점검 템플릿: HARNESS.md 11절 참조\" 줄. 사용자 원문: \"보안점검은 아예 뺴버려라 개발팀 하네스만드는데 왜자꾸 보안점검이 들어가있냐\" → \"c를빼라는말임\".",
+  "stage": "plan",
+  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "designer": "off: 문서 수정",
+    "data": "off: DB 없음",
+    "devops": "off: 배포 변경 없음",
+    "security-deep": "off: SPEC.md 한 파일"
+  },
+  "team": "team.yaml 없음 → 전부 기본값.",
+  "approvals": [],
+  "tasks": {},
+  "history": [
+    { "stage": "plan", "result": "started", "at": "2026-11-14", "note": "quick: SPEC.md 한 파일 네 군데. 마일스톤 ② 머지(67be479) 뒤 main에서 시작. HARNESS.md(7·142·165~167행)는 사용자가 직접 고치기로 한 파일이라 범위 밖. 88행 '보안 원칙' 줄은 자동화 전반의 원칙으로 읽혀 남긴다(Lead 기본안, 머지 전에 사용자에게 보임)." },
+    { "stage": "plan", "result": "cancelled", "at": "2026-11-14", "note": "사용자가 상태만 물었는데 Lead가 묻지 않고 시작한 run. 사용자 지적('아니 물어만봤는데 갑자기 뭘 실행하냐')으로 architect를 중단하고 main과 .orbit/current(20261114-hook-server)를 되돌림. 코드·문서 변경과 커밋 없음. 빈 브랜치 orbit/20261114-spec-no-secteam만 남음. 사용자가 시작하라고 할 때 새로 한다." }
+  ]
+}

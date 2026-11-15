@@ -1,0 +1,135 @@
+{
+ "vp": [
+  1400,
+  900
+ ],
+ "page": {
+  "docScroll": [
+   0,
+   0,
+   1400,
+   900
+  ],
+  "bodyScroll": [
+   0,
+   0
+  ]
+ },
+ "graph": {
+  "x": 301,
+  "y": 74,
+  "w": 741,
+  "h": 486,
+  "right": 1042
+ },
+ "graphScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 735,
+  "clientWidth": 735,
+  "scrollHeight": 480,
+  "clientHeight": 480
+ },
+ "h2": {
+  "x": 320,
+  "y": 89,
+  "w": 703,
+  "h": 18,
+  "right": 1023
+ },
+ "gscroll": {
+  "x": 320,
+  "y": 115,
+  "w": 703,
+  "h": 430,
+  "right": 1023
+ },
+ "gscrollScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 703,
+  "clientWidth": 703,
+  "scrollHeight": 430,
+  "clientHeight": 430
+ },
+ "gscrollPad": "4px",
+ "canvas": {
+  "x": 324,
+  "y": 119,
+  "w": 384,
+  "h": 60,
+  "right": 708
+ },
+ "svg": {
+  "x": 324,
+  "y": 119,
+  "w": 384,
+  "h": 60,
+  "right": 708
+ },
+ "others": {
+  ".sessions": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 279,
+   "clientWidth": 279,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".detail": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".chat": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 1028,
+   "clientWidth": 1028,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  },
+  ".console": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  }
+ },
+ "nodes": [
+  {
+   "text": "Lead | 대기 | !",
+   "li": {
+    "x": 324,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "left": "0px",
+   "top": "0px",
+   "btn": {
+    "x": 324,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "cls": "node is-wait",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(180, 184, 164) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(180, 184, 164)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  }
+ ],
+ "edges": [],
+ "sideNote": "서브에이전트 없음"
+}

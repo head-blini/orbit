@@ -1,0 +1,6 @@
+docs(harness): gate skill lists commit-message and switch -c over-blocks (RF2)
+
+The kit applies the location check to the whole command and keeps the
+old rebase pattern, so the skill now says to write messages with -F.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

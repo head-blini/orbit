@@ -1,0 +1,6 @@
+﻿feat(ui): horizontal agent graph (F2)
+
+Lead on the left, subagents stacked in the right column, orthogonal dashed
+edges, chips at 6+ agents. Share fmtDur/fmtTokens via types.ts.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

@@ -1,0 +1,7 @@
+docs(harness): gate skill documents COMMIT binding and read-only main (A2)
+
+Adds the COMMIT section, the rebase target and location-change rules,
+main read-only, protected git paths, and the updated residual list to the
+gate skill. Router step 8 notes the COMMIT check on ship.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

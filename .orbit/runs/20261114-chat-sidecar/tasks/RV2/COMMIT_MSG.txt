@@ -1,0 +1,3 @@
+fix(chat): restore focus after send/reset, avoid card id clash after sidecar restart
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

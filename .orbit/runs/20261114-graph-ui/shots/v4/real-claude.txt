@@ -1,0 +1,2 @@
+﻿The Explore agent ran `sleep 5` once. It completed with no output and no errors.
+exit=0 secs=17

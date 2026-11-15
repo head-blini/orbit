@@ -1,0 +1,16 @@
+import { hook, H, sleep } from './d.mjs';
+import { connect } from './c.mjs';
+const c = await connect(9333, '1420');
+const NL = String.fromCharCode(10);
+await hook(H('Stop', 'qa-s1', { cwd: 'C:' + String.fromCharCode(92) + 'qa' + String.fromCharCode(92) + 's1' }));
+await hook(H('SubagentStart', 'qa-err', { cwd: 'C:' + String.fromCharCode(92) + 'qa' + String.fromCharCode(92) + 'api-server', agent_id: 'qa1', agent_type: '<b>x</b>' }));
+await hook(H('UserPromptSubmit', 'qa-xss', { cwd: '<img src=x>' }));
+await sleep(1500);
+console.log(await c.ev(`JSON.stringify([...document.querySelectorAll('.sess')].map(b=>b.innerText.split(String.fromCharCode(10)).join('|')))`));
+const clickName = n => c.ev(`(()=>{const b=[...document.querySelectorAll('.sess')].find(e=>e.querySelector('.name').textContent.trim()===${JSON.stringify(n)}); b.click(); return 1})()`);
+await clickName('api-server'); await sleep(900);
+console.log('graph', await c.ev(`JSON.stringify([...document.querySelectorAll('.graph li')].map(li=>li.innerText.split(String.fromCharCode(10)).join(' | ')))`));
+console.log('b-elements in app:', await c.ev(`document.querySelectorAll('.graph b, .sessions b, .detail b, img[src="x"], .sessions img').length`), 'status of s1 row after stop above');
+await clickName('<img src=x>'); await sleep(900);
+console.log('xss-session detail:', (await c.ev(`document.querySelector('.detail').innerText`)).split(NL).slice(0,10).join(' | '), '| img els:', await c.ev(`document.querySelectorAll('img[src="x"]').length`));
+c.close();

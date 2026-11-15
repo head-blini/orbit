@@ -1,0 +1,313 @@
+{
+ "vp": [
+  1400,
+  900
+ ],
+ "page": {
+  "docScroll": [
+   0,
+   0,
+   1400,
+   900
+  ],
+  "bodyScroll": [
+   0,
+   0
+  ]
+ },
+ "graph": {
+  "x": 301,
+  "y": 74,
+  "w": 741,
+  "h": 486,
+  "right": 1042
+ },
+ "graphScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 735,
+  "clientWidth": 735,
+  "scrollHeight": 480,
+  "clientHeight": 480
+ },
+ "h2": {
+  "x": 320,
+  "y": 89,
+  "w": 703,
+  "h": 18,
+  "right": 1023
+ },
+ "gscroll": {
+  "x": 320,
+  "y": 115,
+  "w": 703,
+  "h": 430,
+  "right": 1023
+ },
+ "gscrollScroll": {
+  "scrollLeft": 0,
+  "scrollTop": 0,
+  "scrollWidth": 1040,
+  "clientWidth": 703,
+  "scrollHeight": 415,
+  "clientHeight": 415
+ },
+ "gscrollPad": "4px",
+ "canvas": {
+  "x": 324,
+  "y": 119,
+  "w": 1032,
+  "h": 204,
+  "right": 1356
+ },
+ "svg": {
+  "x": 324,
+  "y": 119,
+  "w": 1032,
+  "h": 204,
+  "right": 1356
+ },
+ "others": {
+  ".sessions": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 279,
+   "clientWidth": 279,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".detail": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 480,
+   "clientHeight": 480
+  },
+  ".chat": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 1028,
+   "clientWidth": 1028,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  },
+  ".console": {
+   "scrollLeft": 0,
+   "scrollTop": 0,
+   "scrollWidth": 336,
+   "clientWidth": 336,
+   "scrollHeight": 318,
+   "clientHeight": 318
+  }
+ },
+ "nodes": [
+  {
+   "text": "Lead | 실행 중",
+   "li": {
+    "x": 324,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "left": "0px",
+   "top": "72px",
+   "btn": {
+    "x": 324,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 492
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "architect | 끝남 | 2분 10초 · 41k 토큰",
+   "li": {
+    "x": 540,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "left": "216px",
+   "top": "72px",
+   "btn": {
+    "x": 540,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 708
+   },
+   "cls": "node",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  },
+  {
+   "text": "plan-checker | 끝남 | 40초 · 12k 토큰",
+   "li": {
+    "x": 756,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 924
+   },
+   "left": "432px",
+   "top": "72px",
+   "btn": {
+    "x": 756,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 924
+   },
+   "cls": "node",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  },
+  {
+   "text": "engineer | 끝남 | 5분 2초 · 88k 토큰",
+   "li": {
+    "x": 972,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "left": "648px",
+   "top": "0px",
+   "btn": {
+    "x": 972,
+    "y": 119,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "cls": "node",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  },
+  {
+   "text": "engineer | 끝남 | 4분 31초 · 70k 토큰",
+   "li": {
+    "x": 972,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "left": "648px",
+   "top": "72px",
+   "btn": {
+    "x": 972,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "cls": "node",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  },
+  {
+   "text": "engineer | 실행 중",
+   "li": {
+    "x": 972,
+    "y": 263,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "left": "648px",
+   "top": "144px",
+   "btn": {
+    "x": 972,
+    "y": 263,
+    "w": 168,
+    "h": 60,
+    "right": 1140
+   },
+   "cls": "node is-run",
+   "border": "3px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(248, 248, 236) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 4px inset",
+   "bg": "rgb(248, 248, 236)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "3px 9px",
+   "pbar": {
+    "radius": "4px",
+    "fillRadius": "2px",
+    "h": "8px",
+    "border": "1px"
+   }
+  },
+  {
+   "text": "reviewer | 대기 | ! | 권한 요청",
+   "li": {
+    "x": 1188,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 1356
+   },
+   "left": "864px",
+   "top": "72px",
+   "btn": {
+    "x": 1188,
+    "y": 191,
+    "w": 168,
+    "h": 60,
+    "right": 1356
+   },
+   "cls": "node is-wait",
+   "border": "2px solid rgb(28, 30, 24)",
+   "radius": "6px",
+   "shadow": "rgb(180, 184, 164) 0px 0px 0px 2px inset, rgb(28, 30, 24) 0px 0px 0px 3px inset",
+   "bg": "rgb(180, 184, 164)",
+   "color": "rgb(28, 30, 24)",
+   "padding": "4px 10px",
+   "pbar": null
+  }
+ ],
+ "edges": [
+  "M168 102 H216",
+  "M384 102 H432",
+  "M600 102 H624 M624 30 V174 M624 30 H648 M624 102 H648",
+  "M624 174 H648 [flow]",
+  "M816 30 H840 M816 102 H840 M816 174 H840 M840 30 V174 M840 102 H864"
+ ],
+ "sideNote": null
+}

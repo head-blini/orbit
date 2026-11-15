@@ -1,0 +1,41 @@
+import { connect } from './c.mjs';
+import { hook, H, sleep } from './d.mjs';
+const S = 'C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/v4/';
+const SID1 = '3f2a9c1e-5b7d-4e08-9a61-0c4d2b8e7f15', cwd = 'C:\\qa\\orbit';
+const c = await connect(9333, '1420');
+await c.view(1400, 900);
+await c.ev(`[...document.querySelectorAll('.sess')].find(e=>e.querySelector('.name').textContent.trim()==='my-blog').click()`);
+await sleep(600);
+await c.ev(`[...document.querySelectorAll('.sess')].find(e=>e.querySelector('.name').textContent.trim()==='orbit').click()`);
+await sleep(1500);
+const st = () => c.ev(`(() => { const g=document.querySelector('.gscroll'), a=document.activeElement, gb=g.getBoundingClientRect(), ab=a.getBoundingClientRect(); return JSON.stringify({scrollLeft:g.scrollLeft, scrollTop:g.scrollTop, active:(a.innerText||a.tagName).split(String.fromCharCode(10)).join('/'), inGraph:g.contains(a), focusVisible:a.matches(':focus-visible'), outline:getComputedStyle(a).outline, activeRect:[ab.x,ab.right,ab.y,ab.bottom].map(Math.round), gscrollRect:[gb.x,gb.right,gb.y,gb.bottom].map(Math.round), fullyVisible: ab.x>=gb.x && ab.right<=gb.right && ab.y>=gb.y && ab.bottom<=gb.bottom}); })()`);
+await c.ev(`document.querySelector('.gscroll').scrollTo({left:0,behavior:'auto'})`);
+await sleep(500);
+await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Shift', code: 'ShiftLeft' });
+await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft' });
+// 왼쪽 열의 노드(architect)에 키보드 포커스
+await c.ev(`[...document.querySelectorAll('.graph button')].find(b=>b.innerText.includes('architect')).focus()`);
+await sleep(500);
+console.log('before   ', await st());
+await c.shot(S + 'r3-focus-before.png');
+// 다른 서브에이전트(engineer a-5)를 끝내고, 새 열에 실행 중 노드를 추가(자동 스크롤이 일어날 조건)
+await hook(H('SubagentStop', SID1, { cwd, agent_id: 'a-5', agent_type: 'engineer' }));
+await hook(H('PostToolUse', SID1, { cwd, tool_name: 'Agent', tool_use_id: 't-5', tool_response: { status: 'completed', agentId: 'a-5', totalTokens: 1000, totalDurationMs: 5000 } }));
+await sleep(1500);
+console.log('after stop', await st());
+await hook(H('PreToolUse', SID1, { cwd, tool_name: 'Agent', tool_use_id: 't-9', tool_input: { subagent_type: 'late-runner', description: 'd' } }));
+await hook(H('SubagentStart', SID1, { cwd, agent_id: 'a-9', agent_type: 'late-runner' }));
+await sleep(2500);
+console.log('after new running node', await st());
+console.log('nodes', await c.ev(`JSON.stringify([...document.querySelectorAll('.nodes li')].map(li=>[li.innerText.split(String.fromCharCode(10))[0], li.style.left]))`));
+await c.shot(S + 'r3-focus-after.png');
+const g = JSON.parse(await c.ev(`JSON.stringify(document.querySelector('section.graph').getBoundingClientRect())`));
+await c.shot(S + 'r3-focus-after-graph.png', { x: g.x, y: g.y, width: g.width, height: g.height, scale: 2 });
+// 대조: 포커스를 풀면(blur) 자동 스크롤이 다시 일어나는지
+await c.ev(`document.activeElement.blur()`);
+await sleep(500);
+await hook(H('PreToolUse', SID1, { cwd, tool_name: 'Agent', tool_use_id: 't-10', tool_input: { subagent_type: 'late-runner2', description: 'd' } }));
+await hook(H('SubagentStart', SID1, { cwd, agent_id: 'a-10', agent_type: 'late-runner2' }));
+await sleep(2500);
+console.log('control, no focus, new running node', await st());
+c.close();

@@ -1,0 +1,6 @@
+docs(harness): review-fix-2 gate skill notes shell-wide block, over-block limits, rebase exemption
+
+Shell common rules say disableAllHooks/ORBIT_GATE are blocked even in read forms.
+Known residuals list over-blocking of value options and the untested rebase exemption list.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

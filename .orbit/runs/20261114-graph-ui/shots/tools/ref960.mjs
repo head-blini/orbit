@@ -1,0 +1,11 @@
+import { connect, MEASURE } from './c.mjs';
+import fs from 'node:fs';
+const S = 'C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/';
+const c = await connect(9334, 'layout_v4');
+await c.view(960, 640);
+await new Promise(r => setTimeout(r, 800));
+await c.shot(S + 'ref-960.png');
+const m = JSON.parse(await c.ev(MEASURE));
+fs.writeFileSync(S + 'ref-960-measure.json', JSON.stringify({ m }, null, 1));
+console.log(JSON.stringify({ graph: m.graph, canvas: m.canvas }));
+c.close();

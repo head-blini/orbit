@@ -1,0 +1,7 @@
+feat(chat): wire Chat panel into App and rename top bar button
+
+Replace placeholder chat section with <Chat session={cur} />, rename the
+screens button to the Gameboy screen label, hide the hook button when
+installed, and drop the old chat CSS rules.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

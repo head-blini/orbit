@@ -1,0 +1,136 @@
+{
+ "m": {
+  "vp": [
+   1400,
+   900
+  ],
+  "graph": {
+   "x": 301,
+   "y": 74,
+   "w": 741,
+   "h": 486
+  },
+  "graphCls": "panel graph",
+  "canvas": {
+   "x": 328,
+   "y": 115,
+   "w": 416,
+   "h": 60
+  },
+  "svg": {
+   "x": 328,
+   "y": 115,
+   "w": 416,
+   "h": 60
+  },
+  "nodes": [
+   {
+    "text": "Lead | 대기 | !",
+    "li": {
+     "x": 328,
+     "y": 115,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 328,
+     "y": 115,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(180, 184, 164)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node is-wait",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": null
+   }
+  ],
+  "edges": []
+ },
+ "extra": {
+  ".sessions": {
+   "x": 8,
+   "y": 74,
+   "w": 285,
+   "h": 486,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".graph": {
+   "x": 301,
+   "y": 74,
+   "w": 741,
+   "h": 486,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".detail": {
+   "x": 1050,
+   "y": 74,
+   "w": 342,
+   "h": 486,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".chat": {
+   "x": 8,
+   "y": 568,
+   "w": 1034,
+   "h": 324,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".console": {
+   "x": 1050,
+   "y": 568,
+   "w": 342,
+   "h": 324,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".topbar": {
+   "x": 8,
+   "y": 8,
+   "w": 1384,
+   "h": 58,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".sess": {
+   "x": 27,
+   "y": 115,
+   "w": 247,
+   "h": 46.5,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "13px"
+  },
+  ".sess .name": {
+   "x": 53,
+   "y": 121,
+   "w": 187,
+   "h": 18,
+   "ff": "Galmuri11, monospace",
+   "fs": "12px"
+  },
+  ".sess .time": {
+   "x": 53,
+   "y": 139,
+   "w": 211,
+   "h": 16.5,
+   "ff": "\"Segoe UI\", system-ui, sans-serif",
+   "fs": "11px"
+  }
+ },
+ "scrollbars": "{\"graphScroll\":[735,735,480,480]}"
+}

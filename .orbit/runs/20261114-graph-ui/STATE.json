@@ -1,0 +1,51 @@
+{
+  "run": "20261114-graph-ui",
+  "track": "full",
+  "request": "마일스톤 ④(화면): SPEC.md '작업 방식 요청'의 ④ 그래프/타임라인 UI를 사용자가 이미 확정한 디자인 그대로 만든다(.orbit/decisions.md '화면 디자인 방향 확정' 절의 최종·확정 줄, 기준 시안 orbit_gameboy_rpg_layout_v4). 디자인은 다시 정하지 않는다. Designer가 DESIGN.md·design/tokens.json·기준 시안 HTML 파일을 남긴다. 게임기 액정(screens/ 폴더 그림 무작위 표시) 포함. SPEC.md의 타임라인 문구도 확정 디자인에 맞춘다. 검증은 실제 ~/.claude 대신 임시 사본으로. main 머지까지, push 없음.",
+  "stage": "done",
+  "loops": { "plan": 2, "review": 1, "debug": 0, "security": 0 },
+  "roles": {
+    "researcher": "on: 그래프에 필요한 서브에이전트 시작·종료·부모-자식 정보가 훅 페이로드·세션 로그 어디에 있는지, Tauri 2 asset 프로토콜·CSP 설정을 최신 문서와 실제 구조로 확인 필요",
+    "designer": "on: 사용자 지시(UI가 크게 바뀜) + profile designer(react 19, App.tsx·App.css)",
+    "security-deep": "auto: profile security-deep + Tauri capability·asset 프로토콜·CSP 변경, 로그·페이로드 문자열을 화면에 표시, 파일명→경로",
+    "reviewer-accessibility": "auto: profile(react 19) + 화면 전체 변경",
+    "reviewer-idiom": "auto: profile stack rust·react — 새 Rust 명령과 React 컴포넌트",
+    "reviewer-performance": "off: 신호 없음(그래프 노드 수는 작다)",
+    "data": "off: 신호 없음 — DB 도입 여부는 BRIEF 질문 3, 넣기로 하면 켠다",
+    "devops": "off: 배포·패키징 변경 없음",
+    "qa-mobile": "off: 신호 없음"
+  },
+  "approvals": [
+    { "gate": "brief", "result": "approved (범위 질문 4개와 열린 질문 1~6 전부 권고안 — DECISIONS.md 1~9)", "at": "2026-11-14T11:00:00Z", "via": "AskUserQuestion" },
+    { "gate": "design", "result": "approved (DESIGN.md + design/reference/layout_v4.html, Designer가 새로 정한 것 7절 1~16 포함)", "at": "2026-11-14T11:30:00Z", "via": "AskUserQuestion" },
+    { "gate": "plan", "result": "approved (새 의존성 2건: tauri feature protocol-asset(+http-range), Galmuri11.woff2 v2.40.3 OFL 1.1. 검증은 임시 폴더, 릴리스 exe 미실행, QA 인증 파일 복사 후 삭제·screens 시험 그림 허용)", "at": "2026-11-14T12:30:00Z", "via": "AskUserQuestion" }
+  ],
+  "tasks": { "T1": "done f2260c4", "T2": "done 69e2890", "T3": "done 996dd6c", "T4": "done e1de060", "T5": "done 0223f53", "T6": "done 72b66d0", "F1": "done d863e2f", "T7": "done ee45817", "F2": "done b9a7f68", "F3": "done 9605dc6", "T8": "done (변경 없음, tasks/T8/SUMMARY.md)", "R1": "done c5a10c5", "R2": "done eebe961", "A1": "done 7376272", "A2": "done 16a66a1", "A3": "done 7e93767", "A4": "done 4165fd4", "R3": "done 37f3ecc", "R4": "done 803e28f" },
+  "history": [
+    { "stage": "brief", "result": "started (team.yaml 없음 → 기본값, 트랙 full: 큰 기능 + capability·CSP·외부 입력 표시)", "at": "2026-11-14T10:30:00Z" },
+    { "stage": "brief", "result": "RESEARCH.md·BRIEF.md 작성, 사용자 승인(결정은 DECISIONS.md)", "at": "2026-11-14T11:00:00Z" },
+    { "stage": "brief", "result": "designer 호출 (DESIGN.md, design/tokens.json, 기준 시안 HTML)", "at": "2026-11-14T11:00:00Z" },
+    { "stage": "brief", "result": "DESIGN 사용자 승인 (Lead가 시안 스크린샷으로 배치 확인)", "at": "2026-11-14T11:30:00Z" },
+    { "stage": "plan", "result": "started", "at": "2026-11-14T11:30:00Z" },
+    { "stage": "plan", "result": "PLAN_CHECK 1차 FAIL(B1 멈춤 판정 테스트 없음, B2 릴리스 실행이 실제 ~/.claude 읽음) → architect 수정 → 2차 PASS, check plan PASS, 사용자 승인", "at": "2026-11-14T12:30:00Z" },
+    { "stage": "build", "result": "started — 웨이브 1 (T1~T5)", "at": "2026-11-14T12:30:00Z" },
+    { "stage": "build", "result": "T1~T8·F1~F3 done, head ee45817 (cargo test 74 passed, npm run build 0, tauri build --debug 0 — engineer 보고; T8: asset·CSP·그래프 실행 확인, 탐색기 창·빈 폴더 재시작은 못 봄)", "at": "2026-11-14T14:00:00Z" },
+    { "stage": "review", "result": "started (패널 6: correctness, tests, maintainability, rules, accessibility, idiom + designer 시각 리뷰)", "at": "2026-11-14T14:00:00Z" },
+    { "stage": "review", "result": "check review PASS (차단 0, 수정 권고 W1~W10 수정 c5a10c5, 2차 리뷰 해소 확인)", "at": "2026-11-14T15:00:00Z" },
+    { "stage": "review", "result": "사용자 피드백 '그래프가 시안이랑 다르게 못생겼음' → 실제 앱을 시안 데이터로 띄워 대조(shots/) → 사용자 결정 '항상 시안의 큰 상자'(DECISIONS 10) → R2 eebe961", "at": "2026-11-14T16:00:00Z" },
+    { "stage": "verify", "result": "started @eebe9617032a18c13b5fc72b4f4ce9cc65b76cee (qa와 security 병렬)", "at": "2026-11-14T16:00:00Z" },
+    { "stage": "verify", "result": "@eebe961 SECURITY PASS(권고 G1~G7 → decisions.md 14번), VERIFY FAIL(실패 기준 없음, 미검증: 빈 액정·탐색기 창·오프라인 글꼴·시각 리뷰)", "at": "2026-11-14T16:40:00Z" },
+    { "stage": "plan", "result": "사용자 피드백 2·3(시커멓고 딱딱함 / 한 열 나열은 원래 의도가 아님) → graph_variants.html로 선택: 노드 모양 E, 배치 단계 열, 열 규칙 '다음 열로'(DECISIONS 11~13). 계획 추가(PLAN 부록) 시작 — 단계 되돌림, 트랙은 full 그대로", "at": "2026-11-14T17:00:00Z" },
+    { "stage": "plan", "result": "부록 A: PLAN_CHECK 3차 FAIL(B3 패널 구조·자동 스크롤, B4 시안 대조 기준) → architect 수정 → 4차 PASS, check plan PASS. 사용자 승인은 DECISIONS 11~13의 선택(AskUserQuestion), 새 의존성 없음", "at": "2026-11-14T18:00:00Z" },
+    { "stage": "build", "result": "부록 A 웨이브 1 (A1, A2)", "at": "2026-11-14T18:00:00Z" },
+    { "stage": "build", "result": "A1 7376272, A2 16a66a1, A3 7e93767, A4 4165fd4 (cargo test 87 passed, npm run build 0)", "at": "2026-11-14T19:00:00Z" },
+    { "stage": "review", "result": "3차: correctness spec PASS·차단 0, accessibility 수정 권고 W11·W12 → R3 37f3ecc. QA 측정 대조(shots/v3): 실제 앱의 그래프가 갱신된 기준 시안과 좌표·크기·테두리·간선 일치. check review PASS", "at": "2026-11-14T19:30:00Z" },
+    { "stage": "verify", "result": "started @37f3ecc87ffedb084c013b63a26f84e05c49ce05 (qa, security, designer 시각 리뷰 병렬)", "at": "2026-11-14T19:30:00Z" },
+    { "stage": "verify", "result": "@37f3ecc designer 2차 시각 리뷰 '기준 시안과 같다'(수정 권고 W13), SECURITY PASS(G8·G9), VERIFY FAIL(실패 기준 없음, 미검증: 빈 액정·오프라인 글꼴·시각 리뷰). 사용자 결정: 미검증 2건은 머지 후 사용자 확인, W13은 이번에 고침(DECISIONS 15·16) → R4 803e28f", "at": "2026-11-14T20:30:00Z" },
+    { "stage": "verify", "result": "PASS @803e28f467eaa8b3cb351cd5413862969d4f1db6 (cargo test 87, npm run build, gate.test 71 재실행; 기준 8 빈 액정·기준 15 오프라인 글꼴은 사용자 확인 대기)", "at": "2026-11-14T21:00:00Z" },
+    { "stage": "security", "result": "PASS @803e28f (차단 0, 권고 G1~G9는 .orbit/decisions.md 14번)", "at": "2026-11-14T21:00:00Z" },
+    { "stage": "release", "result": "check ship 전부 PASS (commit 803e28f), librarian 호출", "at": "2026-11-14T21:00:00Z" },
+    { "stage": "release", "result": "기록 커밋 276e043(CHANGELOG.md, docs/solutions/ui-reference-fidelity.md), main 머지 f394f60, push 없음 — Lead가 git log·status·diff --stat로 확인", "at": "2026-11-14T21:30:00Z" },
+    { "stage": "done", "result": "사용자 확인 대기: 기준 8 빈 액정 화면, 기준 15 네트워크 없는 실행의 픽셀 글꼴(DECISIONS 15). 후속은 .orbit/decisions.md 14번", "at": "2026-11-14T21:30:00Z" }
+  ]
+}

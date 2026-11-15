@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import { connect, sleep, P } from './d.mjs';
+const c = await connect(9333, '1420');
+fs.writeFileSync(P + '/ROADMAP.md', '## <b>h</b> 제목\n- [ ] <b>x</b>\n- [x] <img src=x onerror=alert(1)>\n- [ ] <script>alert(2)</script>\n', 'utf8');
+await c.ev(`window.__al = []; window.alert = (m) => window.__al.push(String(m)); undefined`);
+const clickSess = n => c.ev(`[...document.querySelectorAll('.sess')].find(e=>e.querySelector('.name').textContent.trim()===${JSON.stringify(n)}).click()`);
+await clickSess('gp'); await sleep(600); await clickSess('proj'); await sleep(1500);
+console.log('items', await c.ev(`JSON.stringify([...document.querySelectorAll('.detail li, .detail h3')].map(e=>e.innerText.split('\\n').join(' ')))`));
+console.log('child elements in .detail that are b/img/script:', await c.ev(`document.querySelectorAll('.detail b, .detail img, .detail script').length`));
+console.log('alerts fired:', await c.ev(`JSON.stringify(window.__al)`));
+await c.shot('C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-roadmap-panel/shots/s6-xss.png');
+c.close();

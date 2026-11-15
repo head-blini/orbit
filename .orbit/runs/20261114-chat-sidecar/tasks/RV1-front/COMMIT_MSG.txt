@@ -1,0 +1,5 @@
+fix(chat): close dead-sidecar cards, keep focus, finish F2 cleanup
+
+B1 run type/message and CSS comment, B3 exit closes open cards, B4 chat_send failure restores open, W2-W5 a11y (aria-live off, focus, repeat notes, per-question group).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

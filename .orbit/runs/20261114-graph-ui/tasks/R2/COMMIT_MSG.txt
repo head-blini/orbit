@@ -1,0 +1,5 @@
+fix(ui): always draw graph nodes as the full 168x60 box, waiting meta shows permission request (R2)
+
+Remove the chip mode from the agent graph; overflow scrolls inside the graph panel.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

@@ -1,0 +1,39 @@
+{
+  "run": "20261115-terminal",
+  "track": "full",
+  "request": "채팅 패널을 앱 내장 터미널로 교체하고 ⑥ 사이드카를 삭제(.orbit/decisions.md 19번 갱신 줄, 디자인 절 '채팅 → 터미널'). 화면 @xterm/xterm + Rust portable-pty(ConPTY, 새 의존성 2개 사용자 승인). 터미널은 고른 폴더(폴더 열기 run의 Rust 선택·검증 재사용, 또는 왼쪽에서 고른 세션의 cwd)에서 claude CLI 실행. 이어 가기 claude --resume <id>: id는 UUID 검증 후 인자 배열로만, 실행 파일·인자는 Rust가 정함, 웹뷰가 임의 명령·경로를 보낼 커맨드 금지. 그래프는 기존 로그 감시(③)·훅(②). 사이드카 삭제(BRIEF에서 다시 묻지 않음): sidecar/, chat.rs, Chat.tsx, 관련 Tauri 커맨드·capability, Agent SDK npm 의존성, dev·빌드 스크립트의 사이드카 준비 단계 — 남은 호출부 없음을 plan-checker가 확인. ROADMAP.md: 폴더 열기 줄 [x], 터미널 줄 추가(머지 때 체크). 디자인: layout_v4 위치·크기·패널 테두리 그대로, 터미널 글자 고정폭 일반 글꼴, 색은 design/tokens.json 4명암, 새 색 없음. 첫 태스크는 검증용 최소 터미널: 실제 앱에서 claude TUI 깨짐 여부와 한글 IME 조합 입력 확인, 안 되면 사이드카 삭제 전에 멈추고 사용자에게 묻기. push 없음, QA 실제 모델 호출 최소(상한 BRIEF), 머지 전 사용자에게 한 번 묻기.",
+  "stage": "plan",
+  "loops": { "plan": 1, "review": 0, "debug": 0, "security": 0 },
+  "roles": {
+    "researcher": "on: xterm.js·portable-pty 최신 버전, ConPTY·IME 알려진 문제, Tauri 스트리밍 방식 조사(profile.json은 있음)",
+    "designer": "on: profile designer(react 19) + 채팅 칸 안쪽을 터미널로 교체(4명암 터미널 테마)",
+    "data": "off: profile signals 비어 있음, DB 없음",
+    "devops": "off: 배포 없음, dev·빌드 스크립트의 사이드카 단계 삭제는 engineer 태스크로 plan-checker가 확인",
+    "security-deep": "on: PTY 프로세스 실행·capability·로그에서 온 resume id(외부 입력)",
+    "reviewer-accessibility": "on: UI 변경",
+    "reviewer-idiom": "on: stack rust/tauri/react",
+    "reviewer-performance": "on: PTY 출력 스트리밍이 핫패스",
+    "reviewer-data": "off: DB 없음",
+    "qa-mobile": "off"
+  },
+  "approvals": [
+    { "gate": "brief", "result": "approved (+ 쟁점 4개 권고안, DECISIONS.md)", "at": "2026-11-15T03:20:00Z", "via": "AskUserQuestion" },
+    { "gate": "design", "result": "approved (24비트 색은 사용자 /theme 변경, DECISIONS 7)", "at": "2026-11-15T03:50:00Z", "via": "AskUserQuestion" }
+  ],
+  "tasks": { "D0": "done 7461457 (design files)", "T1a": "pending", "T1b": "pending", "T1c": "pending (맥 실측 멈춤 지점)", "T1d": "pending (조건부)", "T2": "pending", "T3": "pending", "T4": "pending (librarian)" },
+  "handoff": {
+    "to": "맥 Lead",
+    "note": "build부터 맥에서 이어 감, 맥 Lead가 이 파일과 PLAN.md로 이어 받음",
+    "first": "PLAN 승인(approvals gate=plan)을 아직 받지 않았다 — 맥 Lead가 PLAN.md를 보여 주고 AskUserQuestion으로 plan 승인을 받은 뒤 W1(T1a·T1b)을 시작한다.",
+    "read": ["DECISIONS.md 1~8", "PLAN.md 변경 이력·태스크 표·맥 실측 항목 M1~M15·위험 R1~R15", "PLAN_CHECK.md 2회차(비차단 권고: StrictMode 이중 마운트 cancelled 플래그)", "DESIGN.md 6절 열린 질문(F6 충돌, lineHeight 1 한글 잘림, dark 위 ink 대비 2.6:1)"],
+    "mac_checks_first": "T1c 사전 조건: ~/.local/bin/claude 존재, claude 로그인, claude /theme을 'Light mode (ANSI colors only)'로. 판정: M3 TUI 깨짐·M5 한글 IME(사용자가 직접 침) 실패면 사이드카 삭제 전에 멈추고 사용자에게 선택지. 운영 CSP는 T1d로. QA는 env -u CLAUDECODE로 앱을 띄움. 모델 호출 QA 최대 3회, run 합계 4회·$0.45.",
+    "transfer": "run 브랜치 orbit/20261115-terminal(7461457)는 push하지 않았다. .orbit/(이 run 폴더, decisions.md 수정분)은 git 밖이라 맥으로 따로 옮겨야 한다."
+  },
+  "history": [
+    { "stage": "brief", "result": "started (branch orbit/20261115-terminal from main 25b1b22)", "at": "2026-11-15T03:00:00Z" },
+    { "stage": "brief", "result": "RESEARCH done; BRIEF approved + 4 issues (DECISIONS 1-4)", "at": "2026-11-15T03:20:00Z" },
+    { "stage": "plan", "result": "주 플랫폼 macOS 전달(DECISIONS 5·6); DESIGN approved (DECISIONS 7), design files committed 7461457", "at": "2026-11-15T03:50:00Z" },
+    { "stage": "plan", "result": "PLAN_CHECK FAIL (B1: 새로고침 뒤 claude 잔존), loop 1; DECISIONS 8", "at": "2026-11-15T04:20:00Z" },
+    { "stage": "plan", "result": "PLAN_CHECK PASS (2회차), check plan PASS. plan 승인 전 멈춤: build부터 맥에서 이어 감, 맥 Lead가 이 파일과 PLAN.md로 이어 받음 (handoff 참고)", "at": "2026-11-15T04:40:00Z" }
+  ]
+}

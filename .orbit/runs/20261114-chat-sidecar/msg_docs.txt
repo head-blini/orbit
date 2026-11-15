@@ -1,0 +1,3 @@
+docs: milestone 6 changelog and chat-sidecar lessons
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

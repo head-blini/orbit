@@ -1,0 +1,7 @@
+docs(harness): gate skill notes option-value over-block and tail-ref rule (RF3)
+
+Drop the stale rebase --continue over-block note, document the rebase
+option-value over-block with the passing order, and describe how refs
+with trailing characters after the run id are judged.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

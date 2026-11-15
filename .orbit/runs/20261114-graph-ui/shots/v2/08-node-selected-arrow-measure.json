@@ -1,0 +1,386 @@
+{
+ "info": {
+  "vp": [
+   1400,
+   900
+  ],
+  "docScroll": [
+   1400,
+   900,
+   0
+  ],
+  "graph": [
+   720,
+   720,
+   600,
+   480,
+   0
+  ],
+  "sessions": [
+   480,
+   480,
+   0
+  ],
+  "detail": [
+   608,
+   480,
+   0
+  ],
+  "chat": [
+   318,
+   318
+  ]
+ },
+ "m": {
+  "vp": [
+   1400,
+   900
+  ],
+  "graph": {
+   "x": 301,
+   "y": 74,
+   "w": 741,
+   "h": 486
+  },
+  "graphCls": "panel graph",
+  "canvas": {
+   "x": 328,
+   "y": 115,
+   "w": 416,
+   "h": 550
+  },
+  "svg": {
+   "x": 328,
+   "y": 115,
+   "w": 416,
+   "h": 550
+  },
+  "nodes": [
+   {
+    "text": "Lead | 실행 중",
+    "li": {
+     "x": 328,
+     "y": 360,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 328,
+     "y": 360,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(28, 30, 24)",
+     "color": "rgb(248, 248, 236)"
+    },
+    "cls": "node is-run",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(248, 248, 236)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(248, 248, 236)"
+    },
+    "metaCss": null
+   },
+   {
+    "text": "architect | 끝남 | 2분 10초 · 41k 토큰",
+    "li": {
+     "x": 576,
+     "y": 115,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 115,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(248, 248, 236)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "11px",
+     "border": "0px none rgb(92, 96, 82)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(92, 96, 82)"
+    }
+   },
+   {
+    "text": "▶ engineer | 실행 중",
+    "li": {
+     "x": 576,
+     "y": 185,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 185,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(28, 30, 24)",
+     "color": "rgb(248, 248, 236)"
+    },
+    "cls": "node is-run",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(248, 248, 236)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(248, 248, 236)"
+    },
+    "metaCss": null
+   },
+   {
+    "text": "qa | 실패 | ✕ | 48초 · —",
+    "li": {
+     "x": 576,
+     "y": 255,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 255,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px dashed rgb(28, 30, 24)",
+     "bg": "rgb(248, 248, 236)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node is-fail",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "11px",
+     "border": "0px none rgb(92, 96, 82)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(92, 96, 82)"
+    }
+   },
+   {
+    "text": "reviewer | 대기 | 권한 요청",
+    "li": {
+     "x": 576,
+     "y": 325,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 325,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(180, 184, 164)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node is-wait",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "11px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    }
+   },
+   {
+    "text": "librarian | 알 수 없음 | — | — · —",
+    "li": {
+     "x": 576,
+     "y": 395,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 395,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(248, 248, 236)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "11px",
+     "border": "0px none rgb(92, 96, 82)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(92, 96, 82)"
+    }
+   },
+   {
+    "text": "designer | 끝남 | 1분 35초 · 22k 토큰",
+    "li": {
+     "x": 576,
+     "y": 465,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 465,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(248, 248, 236)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "11px",
+     "border": "0px none rgb(92, 96, 82)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(92, 96, 82)"
+    }
+   },
+   {
+    "text": "security | 실행 중",
+    "li": {
+     "x": 576,
+     "y": 535,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 535,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(28, 30, 24)",
+     "color": "rgb(248, 248, 236)"
+    },
+    "cls": "node is-run",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(248, 248, 236)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(248, 248, 236)"
+    },
+    "metaCss": null
+   },
+   {
+    "text": "debugger | 끝남 | 1분 1초 · 10k 토큰",
+    "li": {
+     "x": 576,
+     "y": 605,
+     "w": 168,
+     "h": 60
+    },
+    "btn": {
+     "x": 576,
+     "y": 605,
+     "w": 168,
+     "h": 60
+    },
+    "css": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "13px",
+     "border": "2px solid rgb(28, 30, 24)",
+     "bg": "rgb(248, 248, 236)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "cls": "node",
+    "nameCss": {
+     "ff": "Galmuri11, monospace",
+     "fs": "12px",
+     "border": "0px none rgb(28, 30, 24)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(28, 30, 24)"
+    },
+    "metaCss": {
+     "ff": "\"Segoe UI\", system-ui, sans-serif",
+     "fs": "11px",
+     "border": "0px none rgb(92, 96, 82)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "color": "rgb(92, 96, 82)"
+    }
+   }
+  ],
+  "edges": [
+   "M168 275 H208 V30 H248 edge",
+   "M168 275 H208 V100 H248 edge flow",
+   "M168 275 H208 V170 H248 edge",
+   "M168 275 H208 V240 H248 edge",
+   "M168 275 H208 V310 H248 edge",
+   "M168 275 H208 V380 H248 edge",
+   "M168 275 H208 V450 H248 edge flow",
+   "M168 275 H208 V520 H248 edge"
+  ]
+ }
+}

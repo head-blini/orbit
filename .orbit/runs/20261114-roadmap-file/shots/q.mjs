@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import { connect } from 'file:///C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/tools/c.mjs';
+const cfg = JSON.parse(fs.readFileSync(process.env.APPDATA + '/dev.orbit.app/hook-server.json', 'utf8'));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const post = (o) => fetch(`http://127.0.0.1:${cfg.port}/events`, { method: 'POST', headers: { 'X-Orbit-Token': cfg.token, 'Content-Type': 'application/json' }, body: JSON.stringify(o) }).then(r => r.status);
+const c = await connect(9333, '1420');
+const txt = () => c.ev(`document.body.innerText`);
+console.log('before session:', JSON.stringify(await txt()));
+console.log('hook', await post({ hook_event_name: 'UserPromptSubmit', session_id: 'aaaa1111-0000-4000-8000-000000000001', cwd: 'C:\\Users\\lclk1\\Projects\\orbit', prompt: 'x' }));
+await sleep(1500);
+console.log('sess click', await c.ev(`(()=>{const b=document.querySelector('.sess'); if(!b) return 'none'; b.click(); return b.innerText})()`));
+await sleep(2000);
+console.log('PANEL>>', await c.ev(`(()=>{const d=document.querySelector('.detail'); const b=d.querySelector('.rm-bar'); return JSON.stringify({text:d.innerText, prog:b&&[b.getAttribute('aria-valuenow'),b.getAttribute('aria-valuemax'),b.getAttribute('aria-valuetext')], h3:[...d.querySelectorAll('h3')].map(e=>e.innerText), marks:[...d.querySelectorAll('.mk')].map(e=>e.textContent).join('')})})()`));
+await c.shot(process.argv[2]);
+c.close();

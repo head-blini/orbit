@@ -1,0 +1,18 @@
+import { connect } from './c.mjs';
+const list = await (await fetch('http://127.0.0.1:9333/json')).json();
+const t = list.find(x => x.type === 'page' && x.url.includes('1420'));
+const ws = new WebSocket(t.webSocketDebuggerUrl);
+await new Promise(r => ws.onopen = r);
+const reqs = []; const t0 = Date.now();
+ws.onmessage = e => { const m = JSON.parse(e.data); if (m.method === 'Network.requestWillBeSent') reqs.push([Math.round((Date.now() - t0) / 1000), m.params.request.url.replace(/[?#].*/, '')]); };
+ws.send(JSON.stringify({ id: 1, method: 'Network.enable' }));
+const c = await connect(9333, '1420');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const gb = JSON.parse(await c.ev(`JSON.stringify(document.querySelector('.gscroll').getBoundingClientRect())`));
+await c.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: gb.x + 200, y: gb.y + 100, deltaX: -5000, deltaY: 0 });
+await sleep(1000);
+console.log('scrollLeft after wheel', await c.ev(`document.querySelector('.gscroll').scrollLeft`));
+await sleep(70000);
+console.log('scrollLeft after 70s', await c.ev(`document.querySelector('.gscroll').scrollLeft`));
+console.log('requests', JSON.stringify(reqs));
+c.close(); ws.close();

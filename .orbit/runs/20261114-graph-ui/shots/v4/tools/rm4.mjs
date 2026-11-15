@@ -1,0 +1,15 @@
+import { connect } from './c.mjs';
+const S = 'C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/v4/';
+const c = await connect(9333, '1420');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const info = () => c.ev(`JSON.stringify({anims: document.getAnimations().length, names: [...new Set(document.getAnimations().map(a=>a.animationName||a.constructor.name))], bar: [...document.querySelectorAll('.pbar i')].map(i=>Math.round(i.getBoundingClientRect().x))})`);
+console.log('normal  ', await info());
+await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+await sleep(500);
+const a = await info(); await sleep(1500); const b = await info();
+console.log('reduce  ', a); console.log('reduce+1.5s', b);
+await c.shot(S + 'reduced-motion.png');
+await c.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+await sleep(500);
+console.log('restored', await info());
+c.close();

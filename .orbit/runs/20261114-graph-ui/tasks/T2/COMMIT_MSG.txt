@@ -1,0 +1,3 @@
+feat(screens): list picture files in the screens dir (T2)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

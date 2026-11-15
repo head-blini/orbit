@@ -1,0 +1,15 @@
+import { connect } from './c.mjs';
+const c = await connect(9333, '1420');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+await c.ev(`(() => { const t = window.__TAURI_INTERNALS__; if (!t.__orig) { t.__orig = t.invoke; window.__cnt = []; t.invoke = function (cmd, ...a) { window.__cnt.push([Date.now(), cmd]); return t.__orig.call(this, cmd, ...a); }; } return 'wrapped'; })()`);
+const gb = JSON.parse(await c.ev(`JSON.stringify(document.querySelector('.gscroll').getBoundingClientRect())`));
+await c.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: gb.x + 200, y: gb.y + 100, deltaX: -5000, deltaY: 0 });
+await sleep(1000);
+const sl0 = await c.ev(`document.querySelector('.gscroll').scrollLeft`);
+const t0 = Date.now();
+console.log('scrollLeft after user wheel', sl0);
+await c.ev("window.__TAURI_INTERNALS__.invoke('get_status').then(()=>1)"); console.log('manual probe cnt', await c.ev('window.__cnt.length')); await sleep(65000);
+const sl1 = await c.ev(`document.querySelector('.gscroll').scrollLeft`);
+const calls = JSON.parse(await c.ev(`JSON.stringify(window.__cnt.filter(x => x[1] === 'get_sessions'))`));
+console.log('scrollLeft after 65s', sl1, '| get_sessions calls in window since wrap:', calls.length, calls.map(x => Math.round((x[0] - t0) / 1000) + 's'));
+c.close();

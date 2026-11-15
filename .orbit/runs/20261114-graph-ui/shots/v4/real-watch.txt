@@ -1,0 +1,5 @@
+﻿10:23:17 []
+10:23:19 [{"cls":"node is-run","t":"Lead | 실행 중"}]
+10:23:21 [{"cls":"node is-run","t":"Lead | 실행 중"},{"cls":"node is-run","t":"Explore | 실행 중"}]
+10:23:30 [{"cls":"node is-run","t":"Lead | 실행 중"},{"cls":"node","t":"Explore | 끝남 | 8초 · 20k 토큰"}]
+10:23:33 [{"cls":"node","t":"Lead | 끝남"},{"cls":"node","t":"Explore | 끝남 | 8초 · 20k 토큰"}]

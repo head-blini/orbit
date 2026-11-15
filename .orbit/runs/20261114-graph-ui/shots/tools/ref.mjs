@@ -1,0 +1,14 @@
+import { connect, MEASURE } from './c.mjs';
+import fs from 'node:fs';
+const S = 'C:/Users/lclk1/Projects/orbit/.orbit/runs/20261114-graph-ui/shots/';
+const c = await connect(9334, 'layout_v4');
+await c.view(1400, 900);
+await new Promise(r => setTimeout(r, 800));
+await c.shot(S + 'ref-1400.png');
+const m = JSON.parse(await c.ev(MEASURE));
+const extra = JSON.parse(await c.ev(`JSON.stringify(Object.fromEntries(['.sessions','.detail','.chat','.console','.topbar','.sess','.sess .name','.sess .time','.node','.n-name','.n-state','.n-meta'].map(s=>{const e=document.querySelector(s);const b=e.getBoundingClientRect();const c=getComputedStyle(e);return [s,{x:b.x,y:b.y,w:b.width,h:b.height,ff:c.fontFamily,fs:c.fontSize}]})))`));
+fs.writeFileSync(S + 'ref-measure.json', JSON.stringify({ m, extra }, null, 1));
+const g = m.graph;
+await c.shot(S + 'ref-graph.png', { x: g.x, y: g.y, width: g.w, height: g.h });
+console.log(JSON.stringify({ graph: m.graph, canvas: m.canvas }));
+c.close();

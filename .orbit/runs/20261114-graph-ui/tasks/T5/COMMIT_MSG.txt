@@ -1,0 +1,6 @@
+docs(spec): align screen section with confirmed design (T5)
+
+Graph is Lead -> subagent horizontal nodes, symbol states without color;
+no tool-call list or timeline, game console screen instead.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
