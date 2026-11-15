@@ -5,6 +5,7 @@ import { Terminal as Xterm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { folderName, type Session } from "./types";
+import { HangulIme } from "./hangulIme";
 import "./Terminal.css";
 
 type TermOut = { t: "data"; d: string } | { t: "exit" };
@@ -37,6 +38,7 @@ export default function Terminal({ session }: { session: Session | null }) {
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const refocus = useRef(false);
   const noteTimer = useRef<number | undefined>(undefined);
+  const ime = useRef(new HangulIme()); // 맥 WKWebView 한글 조합 보정 (hangulIme.ts)
 
   // 같은 문구도 다시 낭독되게 비웠다가 넣는다
   const say = (s: string) => { clearTimeout(noteTimer.current); setNote(""); noteTimer.current = window.setTimeout(() => setNote(s), 50); };
@@ -73,7 +75,41 @@ export default function Terminal({ session }: { session: Session | null }) {
     t.loadAddon(fit);
     t.open(box);
     t.textarea?.setAttribute("aria-label", "claude 터미널. F6: 버튼으로 나가기");
+    const send = (data: string) => {
+      if (!data || t.options.disableStdin) return;
+      chain.current = chain.current.then(() => invoke("term_write", { data })).catch(() => {});
+    };
+    // 조합 중인 음절 미리보기: xterm의 composition-view를 커서 칸에 띄운다(WKWebView는 compositionstart가 없어 xterm이 안 띄움)
+    const preview = () => {
+      const v = box.querySelector<HTMLElement>(".composition-view"), scr = box.querySelector<HTMLElement>(".xterm-screen");
+      if (!v || !scr) return;
+      const s = ime.current.pending;
+      v.textContent = s;
+      v.classList.toggle("active", s !== "");
+      if (!s) return;
+      const b = t.buffer.active, w = scr.clientWidth / t.cols, h = scr.clientHeight / t.rows;
+      Object.assign(v.style, {
+        left: `${Math.min(b.cursorX, t.cols - 1) * w}px`, top: `${b.cursorY * h}px`, height: `${h}px`, lineHeight: `${h}px`,
+        fontFamily: t.options.fontFamily ?? "", fontSize: `${t.options.fontSize}px`,
+      });
+    };
+    // xterm 6.0.0은 insertReplacementText를 버린다. textarea보다 먼저(상위 요소 capture) 받아 한글이면 xterm에 넘기지 않는다
+    box.addEventListener("input", (e) => {
+      const ev = e as InputEvent;
+      if (ev.target !== t.textarea || t.options.disableStdin) return;
+      const r = ime.current.input(ev.inputType, ev.data);
+      send(r.send);
+      preview();
+      if (r.handled) ev.stopPropagation();
+    }, true);
+    t.textarea?.addEventListener("blur", () => { send(ime.current.flush()); preview(); });
+    t.onRender(() => { if (ime.current.active) preview(); }); // 앞 음절 에코로 커서가 옮겨 가면 따라간다
     t.attachCustomKeyEventHandler((e) => {
+      if (e.type === "keydown" && ime.current.active) {
+        // 229 = IME가 처리 중인 키: xterm의 textarea 비교 전송(CompositionHelper._handleAnyTextareaChanges)이 자모를 보내지 않게 막는다
+        if (e.keyCode === 229) return false;
+        send(ime.current.flush()); preview(); // Enter·방향키·F6 등: 조합 중인 음절을 먼저 보낸다
+      }
       if (e.key !== "F6") return true;
       if (e.type === "keydown") {
         const h = headRef.current;
@@ -81,7 +117,7 @@ export default function Terminal({ session }: { session: Session | null }) {
       }
       return false;
     });
-    t.onData((data) => { chain.current = chain.current.then(() => invoke("term_write", { data })).catch(() => {}); });
+    t.onData(send);
     t.onResize(({ cols, rows }) => { invoke("term_resize", { cols, rows }).catch(() => {}); });
     new ResizeObserver(() => { try { fit.fit(); } catch { /* 숨김 상태 */ } }).observe(box);
     termRef.current = t; fitRef.current = fit;
@@ -110,7 +146,7 @@ export default function Terminal({ session }: { session: Session | null }) {
           say("claude가 종료되었습니다");
         }
       };
-      t.reset(); t.options.disableStdin = false;
+      t.reset(); t.options.disableStdin = false; ime.current.flush(); // 이전 실행에서 남은 조합은 버린다
       const name = await invoke<string | null>("term_open_folder", { onOut: ch });
       if (g !== gen.current) return;
       if (name === null) { setShown(!!ranRef.current); setPhase(ranRef.current ? "ended" : "idle"); return; }
