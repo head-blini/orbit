@@ -140,18 +140,19 @@ export type Layout = {
 
 export function layout(g: DesignGraph): Layout {
   // 열 = 들어오는 간선 기준 최장 경로 깊이 (그래프는 비순환)
-  const depth: Record<string, number> = {};
+  const depth = new Map<string, number>();
   const incoming: Record<string, string[]> = {};
   for (const n of g.nodes) incoming[n.id] = [];
   for (const e of g.edges) if (incoming[e.to]) incoming[e.to].push(e.from);
   const calc = (id: string, guard: Set<string>): number => {
-    if (id in depth) return depth[id];
+    const memo = depth.get(id);
+    if (memo !== undefined) return memo;
     if (guard.has(id)) return 0; // 방어: 순환이면 끊는다
     guard.add(id);
     let d = 0;
     for (const p of incoming[id] ?? []) d = Math.max(d, calc(p, guard) + 1);
     guard.delete(id);
-    depth[id] = d;
+    depth.set(id, d);
     return d;
   };
   const columns: string[][] = [];

@@ -285,3 +285,13 @@ test("step: arrows over columns", () => {
   assert.equal(step(c2, "e", "ArrowLeft"), "b");
   assert.equal(step(c2, "c", "ArrowRight"), "f");
 });
+
+test("layout: ids named like Object.prototype keys", () => {
+  const ids = ["constructor", "tostring", "valueof", "hasownproperty"];
+  const g = { nodes: ids.map((id) => ({ id, name: id, task: "", model: "inherit", retries: 0, schema: null })), edges: [{ from: "constructor", to: "tostring" }] };
+  const p = parseGraph({ version: 1, ...g });
+  assert.ok(p.ok, JSON.stringify(p));
+  const l = layout(p.value);
+  assert.equal(l.at["constructor"].col, 0);
+  assert.deepEqual(l.columns.map((c) => c.length), [3, 1]);
+});

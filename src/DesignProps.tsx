@@ -33,6 +33,8 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
   const [announce, setAnnounce] = useState("");
   const [focusAt, setFocusAt] = useState<number | null>(null);
   const linksRef = useRef<HTMLUListElement>(null);
+  const annTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(annTimer.current), []);
 
   // 끊기 뒤 포커스: 줄이 사라진 다음 렌더에서 다음 → 이전 끊기 → 이름
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function DesignProps({ graph, selected, onChange, say }: Props) {
 
   const setErr = (f: Field, e: string | undefined) => {
     setErrs((p) => ({ ...p, [f]: e }));
-    if (e && e !== errs[f]) { setAnnounce(""); window.setTimeout(() => setAnnounce(e), 50); } // 같은 오류도 다시 낭독되게 비웠다가 넣는다
+    if (e && e !== errs[f]) { setAnnounce(""); window.clearTimeout(annTimer.current); annTimer.current = window.setTimeout(() => setAnnounce(e), 50); } // 같은 오류도 다시 낭독되게 비웠다가 넣는다
   };
   const apply = (f: Field, r: { ok: true } | { ok: false; error: string }, patch: () => DesignGraph) => {
     if (r.ok) {

@@ -184,7 +184,7 @@ body {
   color: var(--c-ink); background: transparent;
   border: 2px solid transparent; border-radius: 0; cursor: pointer;
 }
-.mode::before { content: "▶ " / ""; visibility: hidden; }
+.mode::before { content: "▶ "; content: "▶ " / ""; visibility: hidden; }
 .mode[aria-pressed="true"]::before { visibility: visible; }
 .mode:hover { background: var(--c-ink); color: var(--c-paper); }
 /* 4명암: 선택 영역·오른쪽 칸 스크롤바 (DESIGN 5절) */
