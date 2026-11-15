@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
-import DesignView, { type Msg } from "./DesignView";
-import DesignProps from "./DesignProps";
-import { emptyGraph } from "./designGraph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
-import { CHIP_AT, fmtTime, folderName, shownState, type DesignGraph, type Roadmap, type RoadmapLine, type Session } from "./types";
+import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
 type Status = {
@@ -93,21 +90,6 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [node, setNode] = useState<string | null>(null);
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
-  // 설계 모드: 그래프·선택·알림은 App이 들고 세션과 무관하게 메모리에만 둔다.
-  const [mode, setMode] = useState<"observe" | "design">("observe");
-  const [design, setDesign] = useState<DesignGraph>(() => emptyGraph());
-  const [dsel, setDsel] = useState<string | null>(null);
-  const [msg, setMsg] = useState<Msg>(null);
-  const sayTimer = useRef<number | undefined>(undefined);
-  // 같은 문구도 다시 낭독되게 비웠다가 넣는다 (Terminal.tsx와 같은 방식)
-  const say = useCallback((text: string, err = false) => {
-    clearTimeout(sayTimer.current);
-    setMsg(null);
-    if (text) sayTimer.current = window.setTimeout(() => setMsg({ text, err }), 50);
-  }, []);
-  useEffect(() => () => clearTimeout(sayTimer.current), []);
-  // 모드를 실제로 바꿀 때만 알림을 비운다(연결 모드 안내가 언마운트 뒤에 남지 않게).
-  const switchMode = (m: "observe" | "design") => { if (m !== mode) { setMode(m); clearTimeout(sayTimer.current); setMsg(null); } };
 
   const refresh = useCallback(() => {
     invoke<Status>("get_status")
@@ -231,29 +213,14 @@ export default function App() {
       </section>
 
       <section className="panel graph" aria-labelledby="h-graph">
-        <div className="g-head">
-          <h2 id="h-graph" className="px">에이전트 그래프</h2>
-          <div className="modes" role="group" aria-label="그래프 모드">
-            <button type="button" className="mode" aria-pressed={mode === "observe"} onClick={() => switchMode("observe")}>관찰</button>
-            <button type="button" className="mode" aria-pressed={mode === "design"} onClick={() => switchMode("design")}>설계</button>
-          </div>
-        </div>
-        {mode === "observe"
-          ? <Graph session={cur} selected={node} onSelect={setNode} />
-          : <DesignView graph={design} selected={dsel} msg={msg} onSelect={setDsel} onChange={setDesign} say={say} />}
+        <h2 id="h-graph" className="px">에이전트 그래프</h2>
+        <Graph session={cur} selected={node} onSelect={setNode} />
       </section>
 
-      {mode === "observe" ? (
-        <section className="panel detail" aria-labelledby="h-roadmap">
-          <h2 id="h-roadmap" className="px">로드맵</h2>
-          {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
-        </section>
-      ) : (
-        <section className="panel detail" aria-labelledby="h-props">
-          <h2 id="h-props" className="px">노드 속성</h2>
-          <DesignProps key={dsel ?? ""} graph={design} selected={dsel} onChange={setDesign} say={say} />
-        </section>
-      )}
+      <section className="panel detail" aria-labelledby="h-roadmap">
+        <h2 id="h-roadmap" className="px">로드맵</h2>
+        {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
+      </section>
 
       <Terminal session={cur} />
 

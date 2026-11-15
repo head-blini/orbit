@@ -35,9 +35,3 @@ export const fmtTokens = (n: number | null) => (n == null ? "—" : n >= 1000 ? 
 // cwd 마지막 조각(/, \ 기준), 없으면 id 앞 8자
 export const folderName = (s: Session): string =>
   s.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? s.id.slice(0, 8);
-
-// 설계 그래프(버전 1, 메모리만). 관찰 그래프(Agent·Session)와 별도 모델.
-export type DesignModel = "inherit" | "sonnet" | "opus" | "haiku";
-export type DesignNode = { id: string; name: string; task: string; model: DesignModel; retries: number; schema: Record<string, unknown> | null };
-export type DesignEdge = { from: string; to: string };
-export type DesignGraph = { version: 1; nodes: DesignNode[]; edges: DesignEdge[] };
