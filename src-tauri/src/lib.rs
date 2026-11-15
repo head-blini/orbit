@@ -1,5 +1,4 @@
 mod config;
-mod graphs;
 mod hooks;
 mod roadmap;
 mod screens;
@@ -21,9 +20,8 @@ struct AppState {
     store: Arc<Mutex<sessions::Store>>,
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
-    graphs_dir: Result<PathBuf, String>,
-    graphs_lock: Mutex<()>,
     term: term::Term,
+    plugin_dir: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -102,34 +100,6 @@ fn open_screens_dir(app: tauri::AppHandle, state: State<AppState>) -> Result<(),
     app.opener().open_path(d.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
-fn graphs_dir(state: &AppState) -> Result<&PathBuf, String> {
-    state.graphs_dir.as_ref().map_err(|_| graphs::E_DIR.to_string())
-}
-
-#[tauri::command(async)]
-fn list_graphs(state: State<AppState>) -> Result<Vec<graphs::Entry>, String> {
-    graphs::list(graphs_dir(&state)?)
-}
-
-#[tauri::command(async)]
-fn load_graph(state: State<AppState>, id: String) -> Result<String, String> {
-    graphs::load(graphs_dir(&state)?, &id)
-}
-
-#[tauri::command(async)]
-fn save_graph(state: State<AppState>, id: Option<String>, name: String, graph: String) -> Result<graphs::Entry, String> {
-    let dir = graphs_dir(&state)?;
-    let _g = state.graphs_lock.lock().unwrap_or_else(|e| e.into_inner());
-    graphs::save(dir, id.as_deref(), &name, &graph)
-}
-
-#[tauri::command(async)]
-fn delete_graph(state: State<AppState>, id: String) -> Result<(), String> {
-    let dir = graphs_dir(&state)?;
-    let _g = state.graphs_lock.lock().unwrap_or_else(|e| e.into_inner());
-    graphs::delete(dir, &id)
-}
-
 #[tauri::command(async)]
 fn install_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     let cfg = state.cfg.as_ref().map_err(|e| e.clone())?;
@@ -159,7 +129,7 @@ fn term_open_folder(
     let s = path.to_str().ok_or("폴더 경로를 읽을 수 없습니다")?;
     let s = term::strip_verbatim_disk(s);
     term::check_cwd(s)?;
-    state.term.start(term::find_in(&term::claude_dirs()), s, &term::args(None), move |m| {
+    state.term.start(term::find_in(&term::claude_dirs()), s, &term::args(None, state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
     })?;
     let name = std::path::Path::new(s).file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned());
@@ -174,7 +144,7 @@ fn term_from_session(
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
     let cwd = term::session_cwd(&lock(&state.store), id)?;
-    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(resume.then_some(id)), move |m| {
+    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(resume.then_some(id), state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
     })
 }
@@ -272,18 +242,16 @@ pub fn run() {
                 });
             }
             let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
-            let graphs_dir = app.path().app_data_dir().map(|d| d.join("graphs")).map_err(|e| e.to_string());
-            app.manage(AppState {
-                cfg,
-                server,
-                settings_path,
-                store,
-                projects_dir,
-                screens_dir,
-                graphs_dir,
-                graphs_lock: Mutex::new(()),
-                term: term::Term::default(),
-            });
+            let plugin = if cfg!(debug_assertions) {
+                Ok(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../harness")))
+            } else {
+                app.path().resource_dir().map(|d| d.join("harness"))
+            };
+            let plugin_dir = plugin
+                .ok()
+                .filter(|p| p.is_dir())
+                .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default(), plugin_dir });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -292,10 +260,6 @@ pub fn run() {
             get_sessions,
             list_screens,
             open_screens_dir,
-            list_graphs,
-            load_graph,
-            save_graph,
-            delete_graph,
             install_hooks,
             uninstall_hooks,
             term_open_folder,

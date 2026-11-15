@@ -35,19 +35,3 @@ export const fmtTokens = (n: number | null) => (n == null ? "—" : n >= 1000 ? 
 // cwd 마지막 조각(/, \ 기준), 없으면 id 앞 8자
 export const folderName = (s: Session): string =>
   s.cwd?.split(/[\\/]/).filter(Boolean).pop() ?? s.id.slice(0, 8);
-
-// 설계 그래프(버전 1, 메모리만). 관찰 그래프(Agent·Session)와 별도 모델.
-export type DesignModel = "inherit" | "sonnet" | "opus" | "haiku";
-export type DesignNode = { id: string; name: string; task: string; model: DesignModel; retries: number; schema: Record<string, unknown> | null };
-export type DesignEdge = { from: string; to: string };
-export type DesignLoop = {
-  until: { node: string } | null; // null = 횟수만. node = 기존 노드 id
-  maxIterations: number; // 정수 1~50
-  budgetUsd: number | null; // null = 없음. 0.01~1000, 소수 둘째 자리까지
-  onFail: "screen" | "none";
-};
-export type DesignGraph = { version: 1; nodes: DesignNode[]; edges: DesignEdge[]; loop?: DesignLoop | null };
-
-// 저장된 설계 그래프(Rust graphs::Entry)와 열린 그래프 표식
-export type GraphEntry = { id: string; name: string | null; savedAt: number | null; readable: boolean };
-export type Opened = { id: string | null; name: string; base: string }; // id null = 열린 파일을 지움
