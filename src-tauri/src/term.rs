@@ -23,7 +23,8 @@ pub enum TermOut {
 
 struct Proc {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    /// 상태 lock과 분리: 블로킹 write 중에도 stop·resize·대기 스레드가 상태 lock을 잡을 수 있다.
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     pid: Option<u32>,
     epoch: u64,
@@ -164,6 +165,7 @@ impl Term {
         lk(&self.0).proc.is_some()
     }
 
+    #[cfg(test)]
     pub fn size(&self) -> (u16, u16) {
         lk(&self.0).size
     }
@@ -202,7 +204,7 @@ impl Term {
         };
         g.epoch += 1;
         let epoch = g.epoch;
-        g.proc = Some(Proc { master: pair.master, writer, killer: child.clone_killer(), pid: child.process_id(), epoch });
+        g.proc = Some(Proc { master: pair.master, writer: Arc::new(Mutex::new(writer)), killer: child.clone_killer(), pid: child.process_id(), epoch });
         drop(g);
 
         // 대기: 끝나면 자기 epoch의 Proc을 놓아 읽기 스레드가 EOF로 끝나게 한다
@@ -238,9 +240,9 @@ impl Term {
     }
 
     pub fn write(&self, data: &str) -> Result<(), String> {
-        let mut g = lk(&self.0);
-        let p = g.proc.as_mut().ok_or("실행 중인 터미널이 없습니다")?;
-        p.writer.write_all(data.as_bytes()).and_then(|_| p.writer.flush()).map_err(|e| format!("터미널에 쓰지 못했습니다: {}", e.kind()))
+        let w = Arc::clone(&lk(&self.0).proc.as_ref().ok_or("실행 중인 터미널이 없습니다")?.writer);
+        let mut w = w.lock().unwrap_or_else(|e| e.into_inner());
+        w.write_all(data.as_bytes()).and_then(|_| w.flush()).map_err(|e| format!("터미널에 쓰지 못했습니다: {}", e.kind()))
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
@@ -347,6 +349,49 @@ mod tests {
         assert_eq!(t.size(), (80, 24));
         assert!(t.resize(100, 30).is_ok());
         assert_eq!(t.size(), (100, 30));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn blocked_write_does_not_block_stop_or_running() {
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+        let t = Arc::new(Term::default());
+        let d = tmp("blockw");
+        let (otx, orx) = channel();
+        t.start(Some(PathBuf::from("/bin/sh")), d.to_str().unwrap(), &["-c", "stty raw -echo; echo READY; sleep 30"], move |m| {
+            let _ = otx.send(m);
+        })
+        .unwrap();
+        // raw 모드가 켜진 뒤에 쓴다(그 전 canonical 모드에선 넘치는 입력을 버려 write가 안 막힌다)
+        let mut seen = String::new();
+        while !seen.contains("READY") {
+            match orx.recv_timeout(Duration::from_secs(10)).unwrap() {
+                TermOut::Data { d } => seen.push_str(&d),
+                TermOut::Exit => panic!("셸이 먼저 끝났다"),
+            }
+        }
+        let t2 = Arc::clone(&t);
+        let (wtx, wrx) = channel();
+        std::thread::spawn(move || {
+            // raw 모드에서 stdin을 안 읽으면(claude처럼) PTY 입력 버퍼가 차서 write가 막힌다
+            let _ = wtx.send(t2.write(&"x".repeat(4 << 20)));
+        });
+        std::thread::sleep(Duration::from_millis(1000));
+        let early = wrx.try_recv();
+        assert!(early.is_err(), "write가 막혀 있어야 이 테스트가 의미 있다: {early:?}");
+        let (tx, rx) = channel();
+        let t3 = Arc::clone(&t);
+        std::thread::spawn(move || {
+            let _ = t3.resize(100, 30);
+            let _ = t3.running();
+            t3.stop();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(3)).expect("stop/resize가 막힌 write 때문에 멈췄다");
+        assert!(!t.running());
+        wrx.recv_timeout(Duration::from_secs(10)).expect("stop 뒤 막힌 write가 풀려야 한다").ok();
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     const ID: &str = "11111111-2222-3333-4444-555555555555";
