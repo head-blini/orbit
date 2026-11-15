@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./DesignProps.css";
 import type { DesignGraph, DesignLoop } from "./types";
-import { checkBudget, checkMaxIterations, defaultLoop, hasPassed, loopSummary, setLoop } from "./designGraph";
+import { LOOP_LIMITS, checkBudget, checkMaxIterations, defaultLoop, hasPassed, loopSummary, setLoop } from "./designGraph";
 
 type Props = { graph: DesignGraph; onChange: (g: DesignGraph) => void };
 type Field = "max" | "bud";
@@ -17,7 +17,7 @@ function ErrLine({ id, text }: { id: string; text: string }) {
 
 export default function GraphSettings({ graph, onChange }: Props) {
   const loop = graph.loop ?? null;
-  const [max, setMax] = useState(String(loop?.maxIterations ?? 3));
+  const [max, setMax] = useState(String(loop?.maxIterations ?? LOOP_LIMITS.iterDefault));
   const [bud, setBud] = useState(loop?.budgetUsd == null ? "" : String(loop.budgetUsd));
   const [errs, setErrs] = useState<Partial<Record<Field, string>>>({});
   const [announce, setAnnounce] = useState("");
@@ -35,7 +35,7 @@ export default function GraphSettings({ graph, onChange }: Props) {
   const turn = (on: boolean) => {
     if (on === (loop !== null)) return;
     if (on) {
-      setMax("3");
+      setMax(String(LOOP_LIMITS.iterDefault));
       setBud("");
       setErrs({});
       onChange(setLoop(graph, defaultLoop()));
@@ -59,7 +59,6 @@ export default function GraphSettings({ graph, onChange }: Props) {
 
   const untilNode = loop?.until ? graph.nodes.find((n) => n.id === loop.until?.node) : undefined;
   const warn = untilNode !== undefined && !hasPassed(untilNode.schema);
-  const pressed = (b: boolean) => (b ? "true" : "false");
 
   return (
     <div
@@ -75,8 +74,8 @@ export default function GraphSettings({ graph, onChange }: Props) {
       <div className="f">
         <span className="lb" id="gs-loop">반복</span>
         <div className="modes" role="group" aria-labelledby="gs-loop">
-          <button type="button" className="mode" aria-pressed={pressed(loop === null)} onClick={() => turn(false)}>끔</button>
-          <button type="button" className="mode" aria-pressed={pressed(loop !== null)} onClick={() => turn(true)}>켬</button>
+          <button type="button" className="mode" aria-pressed={loop === null} onClick={() => turn(false)}>끔</button>
+          <button type="button" className="mode" aria-pressed={loop !== null} onClick={() => turn(true)}>켬</button>
         </div>
       </div>
       {loop && (
@@ -104,7 +103,7 @@ export default function GraphSettings({ graph, onChange }: Props) {
           <div className="f-row num-first">
             <div className="f">
               <label htmlFor="gs-max">최대 반복</label>
-              <input id="gs-max" type="number" min={1} max={50} step={1} value={max}
+              <input id="gs-max" type="number" min={LOOP_LIMITS.iterMin} max={LOOP_LIMITS.iterMax} step={1} value={max}
                 onChange={(e) => onMax(e.target.value)}
                 aria-invalid={errs.max ? true : undefined}
                 aria-describedby={errs.max ? "gs-max-err" : undefined} />
@@ -127,8 +126,8 @@ export default function GraphSettings({ graph, onChange }: Props) {
           <div className="f">
             <span className="lb" id="gs-fail">실패 시</span>
             <div className="modes" role="group" aria-labelledby="gs-fail">
-              <button type="button" className="mode" aria-pressed={pressed(loop.onFail === "screen")} onClick={() => patch({ onFail: "screen" })}>화면에 표시</button>
-              <button type="button" className="mode" aria-pressed={pressed(loop.onFail === "none")} onClick={() => patch({ onFail: "none" })}>알리지 않음</button>
+              <button type="button" className="mode" aria-pressed={loop.onFail === "screen"} onClick={() => patch({ onFail: "screen" })}>화면에 표시</button>
+              <button type="button" className="mode" aria-pressed={loop.onFail === "none"} onClick={() => patch({ onFail: "none" })}>알리지 않음</button>
             </div>
           </div>
         </>

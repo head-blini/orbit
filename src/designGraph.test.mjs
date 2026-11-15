@@ -364,11 +364,12 @@ test("loop: parseGraph rejects bad values with exact reasons", () => {
     assert.equal(r.error, E(why));
   };
   for (const v of [0, 51, 2.5, "3", NaN, Infinity]) run((x) => { x.loop.maxIterations = v; }, "반복 최대 횟수가 올바르지 않습니다");
-  for (const v of [0, -1, 1000.01, 0.001, NaN, Infinity, "5"]) run((x) => { x.loop.budgetUsd = v; }, "반복 예산이 올바르지 않습니다");
+  for (const v of [0, -1, 1000.01, 0.001, 2.555, 1.005, NaN, Infinity, "5"]) run((x) => { x.loop.budgetUsd = v; }, "반복 예산이 올바르지 않습니다");
   run((x) => { delete x.loop.budgetUsd; }, "반복 예산이 올바르지 않습니다");
   for (const v of ["os", ""]) run((x) => { x.loop.onFail = v; }, "반복 실패 시 값이 올바르지 않습니다");
   run((x) => { x.loop.until.node = "node-9"; }, "반복 종료 조건 노드가 없습니다");
   for (const v of ["../x", "A:b", "a".repeat(65), 5]) run((x) => { x.loop.until.node = v; }, "반복 종료 조건 노드 id가 올바르지 않습니다");
+  run((x) => { delete x.loop.until; }, "반복 종료 조건이 올바르지 않습니다");
   for (const v of ["node-1", []]) run((x) => { x.loop.until = v; }, "반복 종료 조건이 올바르지 않습니다");
   for (const v of ["x", [], 3]) run((x) => { x.loop = v; }, "반복 설정이 객체가 아닙니다");
 });
@@ -514,6 +515,11 @@ test("layout: 500-node chain through parseGraph", () => {
   assert.ok(r.ok);
   assert.equal(m.layout(r.value).columns.length, 500);
 });
+test("layout: longest path when predecessor depth is not yet computed", () => {
+  // 노드 순서 [c,a,x,b]: c=node-1, a=node-2, x=node-3, b=node-4
+  const g = { version: 1, nodes: rawNodes(4), edges: [{ from: "node-3", to: "node-2" }, { from: "node-2", to: "node-1" }, { from: "node-4", to: "node-1" }] };
+  assert.equal(m.layout(g).at["node-1"].col, 2);
+});
 test("layout: cycle input does not throw", () => {
   const g = { version: 1, nodes: rawNodes(2), edges: [{ from: "node-1", to: "node-2" }, { from: "node-2", to: "node-1" }] };
   assert.doesNotThrow(() => m.layout(g));
@@ -558,4 +564,5 @@ test("josa", () => {
   assert.equal(m.josa("리뷰", "과", "와"), "리뷰와");
   assert.equal(m.josa("리뷰", "을", "를"), "리뷰를");
   assert.equal(m.josa("abc", "과", "와"), "abc와");
+  assert.equal(m.josa("검증😀", "과", "와"), "검증😀와"); // 이모지 끝 글자(U+D7A3 초과)는 받침 없음 쪽
 });
