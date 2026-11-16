@@ -17,6 +17,8 @@ export function isHangul(s: string): boolean {
   return cp !== undefined && RANGES.some(([a, b]) => cp >= a && cp <= b);
 }
 
+const MODIFIERS = new Set(["Shift", "Control", "Alt", "Meta"]);
+
 export type ImeStep = { handled: boolean; send: string };
 
 export class HangulIme {
@@ -31,6 +33,17 @@ export class HangulIme {
     this.pending = "";
     if (s) this.last = s;
     return s;
+  }
+
+  /** 조합 중 keydown 하나. block이면 xterm에 넘기지 않는다. send는 지금 PTY로 보낼 글 */
+  keydown(keyCode: number, key: string): { block: boolean; send: string } {
+    if (!this.active) return { block: false, send: "" };
+    // 수정키만 누른 keydown은 IME를 거치지 않아 229가 아니다. 2벌식 ㅆ·ㄲ·ㅒ·ㅖ 등은 Shift를 누르니
+    // 여기서 보내면 반쯤 된 음절("이")이 먼저 나가고 이어 오는 "있"이 또 나가 "이있"이 된다 (run 20261116-ime-dup)
+    if (MODIFIERS.has(key)) return { block: false, send: "" };
+    // 229 = IME가 처리 중인 키: xterm의 textarea 비교 전송(CompositionHelper._handleAnyTextareaChanges)이 자모를 보내지 않게 막는다
+    if (keyCode === 229) return { block: true, send: "" };
+    return { block: false, send: this.flush() }; // Enter·방향키·F6 등: 조합 중인 음절을 먼저 보낸다
   }
 
   /** input 이벤트 하나. handled면 xterm에 넘기지 않는다. send는 지금 PTY로 보낼 글 */
