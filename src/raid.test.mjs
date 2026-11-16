@@ -65,14 +65,9 @@ test("⑤ shields·healing", () => {
 });
 
 test("⑥ bubble", () => {
-  const t = { Read: "파일 읽는 중", NotebookRead: "파일 읽는 중", Grep: "찾는 중", Glob: "찾는 중", Edit: "고치는 중",
-    MultiEdit: "고치는 중", Write: "고치는 중", NotebookEdit: "고치는 중", Bash: "명령 실행 중", WebFetch: "웹 찾는 중",
-    WebSearch: "웹 찾는 중", Agent: "지시하는 중", Task: "지시하는 중", TodoWrite: "할 일 정리 중" };
+  const t = { commander: "지휘 중", wizard: "설계 중", warrior: "구현 중", archer: "리뷰 중", rogue: "보안 점검 중", healer: "디버깅 중", paladin: "검증 중" };
   for (const [k, v] of Object.entries(t)) assert.equal(bubble(k), v, k);
-  assert.equal(bubble("mcp__x"), "외부 도구 쓰는 중");
-  assert.equal(bubble("Whatever"), "일하는 중");
-  assert.equal(bubble("toString"), "일하는 중");
-  assert.equal(bubble(null), null);
+  assert.equal(bubble("nope"), "일하는 중");
 });
 
 test("⑦ heroAct·leadAct", () => {
@@ -81,12 +76,12 @@ test("⑦ heroAct·leadAct", () => {
 });
 
 test("⑧ heroLabel", () => {
-  assert.equal(heroLabel("warrior", "engineer", null, "실행 중", "attack", "Edit"), "전사(engineer) · 실행 중 · 지금 하는 일(추정): 고치는 중");
-  assert.equal(heroLabel("warrior", "engineer", null, "끝남", "idle", "Edit"), "전사(engineer) · 끝남");
-  assert.equal(heroLabel("warrior", "engineer", null, "실행 중", "attack", null), "전사(engineer) · 실행 중");
-  assert.equal(heroLabel("warrior", "<b>x</b>", null, "끝남", "idle", null), "전사(<b>x</b>) · 끝남");
-  assert.equal(heroLabel("warrior", null, "설명", "끝남", "idle", null), "전사(설명) · 끝남");
-  assert.equal(heroLabel("warrior", null, null, "끝남", "idle", null), "전사(—) · 끝남");
+  assert.equal(heroLabel("warrior", "engineer", null, "실행 중", "attack"), "전사(engineer) · 실행 중 · 지금 하는 일: 구현 중");
+  assert.equal(heroLabel("warrior", "engineer", null, "끝남", "idle"), "전사(engineer) · 끝남");
+  assert.equal(heroLabel("warrior", "engineer", null, "실행 중", "attack"), "전사(engineer) · 실행 중 · 지금 하는 일: 구현 중");
+  assert.equal(heroLabel("warrior", "<b>x</b>", null, "끝남", "idle"), "전사(<b>x</b>) · 끝남");
+  assert.equal(heroLabel("warrior", null, "설명", "끝남", "idle"), "전사(설명) · 끝남");
+  assert.equal(heroLabel("warrior", null, null, "끝남", "idle"), "전사(—) · 끝남");
 });
 
 test("⑨ summary", () => {
