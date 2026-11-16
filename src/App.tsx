@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
+import { MAC, MAX_TABS, liveRow, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
 import { createGate } from "./roadmapGate";
 import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
@@ -32,6 +33,16 @@ function Sym({ state }: { state: keyof typeof STATE_LABEL }) {
         : state === "error" ? <span aria-hidden="true">✕</span>
         : state === "stalled" ? <span aria-hidden="true">?</span> : null}
       <span className="sr">{STATE_LABEL[state]}</span>
+    </span>
+  );
+}
+
+function LiveSym({ sym }: { sym: NonNullable<ReturnType<typeof liveRow>["sym"]> }) {
+  return (
+    <span className="sym" aria-hidden="true">
+      {sym === "working" ? <span className="bar-mini"><i /></span>
+        : sym === "!" ? <span className="blink">!</span>
+        : sym === "error" ? "✕" : sym === "stalled" ? "?" : sym}
     </span>
   );
 }
@@ -178,6 +189,14 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null);
   const [node, setNode] = useState<string | null>(null);
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
+  const [live, setLive] = useState<{ tabs: LiveTab[]; active: number | null }>({ tabs: [], active: null });
+  const ctl = useRef<TermCtl | null>(null);
+  useEffect(() => { ctl.current?.settle(); }, [live]); // 줄 DOM이 바뀐 뒤 포커스·스크롤
+
+  // 화면이 쓰는 지금 세션: 터미널을 골랐으면 그 터미널의 세션(임시 줄이면 null), 아니면 마지막으로 고른 지난 세션
+  const pickId = live.active !== null
+    ? tabSid([...sessions.values()], live.active)
+    : selected;
 
   const refresh = useCallback(() => {
     invoke<Status>("get_status")
@@ -213,18 +232,18 @@ export default function App() {
   }, []);
 
   // 세션을 새로 고르면 비우고(불러오는 중…), 30초 타이머(now)마다 이전 내용을 둔 채 다시 읽는다. 세션 미선택이면 부르지 않는다.
-  useEffect(() => setRoadmap(null), [selected]);
+  useEffect(() => { setRoadmap(null); setNode(null); }, [pickId]);
   const gate = useRef(createGate());
-  const selRef = useRef(selected);
-  selRef.current = selected;
+  const selRef = useRef(pickId);
+  selRef.current = pickId;
   useEffect(() => {
-    if (!selected || !gate.current.begin(selected)) return;
-    const id = selected;
+    if (!pickId || !gate.current.begin(pickId)) return;
+    const id = pickId;
     invoke<Roadmap>("get_roadmap", { id })
       .then((r) => { if (selRef.current === id) setRoadmap(r); })
       .catch((e) => { if (selRef.current === id) setRoadmap({ kind: "error", reason: String(e) }); })
       .finally(() => gate.current.end(id));
-  }, [selected, now]);
+  }, [pickId, now]);
 
   // 성공 문구는 10초 뒤 같은 문구일 때만 비운다. "✕"와 "처리 중…"은 남긴다.
   useEffect(() => {
@@ -263,7 +282,9 @@ export default function App() {
     || (status?.node_missing ? NODE_MISSING : "");
 
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
-  const cur = selected ? sessions.get(selected) ?? null : null;
+  const { live: liveRows, past } = splitSessions(live.tabs, list);
+  const liveSids = new Set(liveRows.flatMap((x) => (x.sid ? [x.sid] : [])));
+  const cur = pickId ? sessions.get(pickId) ?? null : null;
 
   // 손잡이는 각 경계 근처에 둔다(Tab 순서가 화면 위치를 따르도록). 위치는 CSS grid가 정한다.
   const handle = (k: Kind) => {
@@ -293,23 +314,70 @@ export default function App() {
         </div>
       </header>
 
-      <section className="panel sessions" aria-labelledby="h-sessions">
+      <section className="panel sessions" aria-labelledby="h-sessions" onKeyDown={(e) => {
+        const n = tabKey(e, MAC);
+        if (n === null) return;
+        e.preventDefault();
+        ctl.current?.jump(n);
+      }}>
         <h2 id="h-sessions" className="px">세션</h2>
+        {liveRows.length > 0 && (
+          <>
+            <h3 id="h-live" className="px">실행 중 {liveRows.length}/{MAX_TABS}</h3>
+            <ul className="list live" aria-labelledby="h-live">
+              {liveRows.map(({ view: v, sid }, i) => {
+                const s = sid ? sessions.get(sid) ?? null : null;
+                const r = liveRow(v, s);
+                const hm = r.time && s ? fmtTime(s.last_ms, now) : "";
+                const st = r.sym === "working" || r.sym === "error" || r.sym === "stalled" ? ` ${STATE_LABEL[r.sym]}` : "";
+                const x = v.phase === "ended" ? "화면 닫기" : "터미널 닫기";
+                return (
+                  <li key={`t${v.id}`} className="row">
+                    <button type="button" id={rowId(v.id)} className="sess" data-phase={v.phase} title={r.title}
+                      aria-current={v.id === live.active ? "true" : undefined}
+                      aria-keyshortcuts={MAC && i < 8 ? `Meta+${i + 1} Delete` : "Delete"}
+                      onClick={() => ctl.current?.pick(v.id)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Delete" && e.key !== "Backspace") return;
+                        e.preventDefault();
+                        ctl.current?.close(v.id, "row");
+                      }}>
+                      <span className="cur px" aria-hidden="true">▶</span>
+                      <span className="name px">{v.name}</span>
+                      {r.sym ? <LiveSym sym={r.sym} /> : <span className="sym" />}
+                      <span className="sr">{st}{r.sr}{hm && `, ${hm}`}</span>
+                      <span className="time" aria-hidden="true">{hm ? `${r.status} · ${hm}` : r.status}</span>
+                    </button>
+                    <button type="button" className="btn sess-x" tabIndex={-1}
+                      aria-label={`${x}: ${v.name}`} title={v.phase === "ended" ? x : "터미널 닫기 — claude도 종료됩니다"}
+                      onClick={() => ctl.current?.close(v.id, "x")}>×</button>
+                  </li>
+                );
+              })}
+            </ul>
+            {liveRows.length >= MAX_TABS && <p className="note">터미널 8개까지 — 닫으면 새로 열 수 있습니다</p>}
+          </>
+        )}
+        {liveRows.length > 0 && (sessionsError || status?.projects_error || !loaded || past.length > 0) &&
+          <h3 id="h-past" className="px">지난 세션</h3>}
         {sessionsError || status?.projects_error ? <><p className="empty">✕ 로그 폴더를 읽지 못했습니다</p>{status?.projects_error && <p className="note">{status.projects_error}</p>}</>
           : !loaded ? <p className="empty">불러오는 중…</p>
-          : list.length === 0 ? <><p className="empty">아직 Orbit에서 시작한 세션이 없습니다</p><p className="note">아래 터미널의 [폴더 열기]로 시작하면 여기에 나옵니다. Orbit 밖에서 연 세션과 예전 기록은 지우지 않고 숨깁니다.</p></>
+          : list.length === 0 && liveRows.length === 0 ? <><p className="empty">아직 Orbit에서 시작한 세션이 없습니다</p><p className="note">아래 터미널의 [폴더 열기]로 시작하면 여기에 나옵니다. Orbit 밖에서 연 세션과 예전 기록은 지우지 않고 숨깁니다.</p></>
+          : past.length === 0 ? null
           : (
-            <ul className="list">
-              {list.map((x) => {
+            <ul className="list" aria-labelledby={liveRows.length > 0 ? "h-past" : undefined}>
+              {past.map((x) => {
+                const cu = live.active === null && x.id === selected;
+                const out = pushedOut(x, live.tabs, liveSids);
                 const st = shownState(x);
                 return (
                   <li key={x.id}>
-                    <button type="button" className={list.length >= CHIP_AT && x.id !== selected ? "sess chip" : "sess"}
-                      aria-current={x.id === selected ? "true" : undefined}
-                      onClick={() => { setSelected(x.id); setNode(null); }}>
+                    <button type="button" className={past.length >= CHIP_AT && !cu ? "sess chip" : "sess"}
+                      aria-current={cu ? "true" : undefined}
+                      onClick={() => { setSelected(x.id); setNode(null); ctl.current?.pick(null); }}>
                       <span className="cur px" aria-hidden="true">▶</span>
                       <span className="name px">{folderName(x)}</span>
-                      <Sym state={st} />
+                      {out ? <span className="sym"><span className="sr">, 끝남</span></span> : <Sym state={st} />}
                       <span className="time">{fmtTime(x.last_ms, now)}</span>
                     </button>
                   </li>
@@ -330,12 +398,12 @@ export default function App() {
 
       <section className="panel detail" aria-labelledby="h-roadmap">
         <h2 id="h-roadmap" className="px">로드맵</h2>
-        {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
+        {pickId ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
       {handle("b")}
 
-      <Terminal session={cur} sessions={list} onPick={(id) => { setSelected(id); setNode(null); }} />
+      <Terminal session={cur} sessions={list} onTabs={setLive} ctl={ctl} />
 
       <div className="console"><Screen /></div>
 
