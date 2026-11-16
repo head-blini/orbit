@@ -6,6 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { folderName, type Session } from "./types";
 import { HangulIme } from "./hangulIme"; // xterm#5704: 병합 후 삭제
+import { THEME, MIN_CONTRAST } from "./termTheme";
 import { fontStep, loadFont, saveFont, FONT } from "./layout";
 import "./Terminal.css";
 
@@ -13,16 +14,6 @@ type TermOut = { t: "data"; d: string } | { t: "exit" };
 type Phase = "idle" | "picking" | "running" | "stopping" | "ended";
 
 const END = "\r\n\x1b[90m── 종료됨 ──\x1b[0m\r\n"; // 프론트가 xterm에 쓰는 유일한 글(상수)
-// design/tokens.json terminal.theme 참조를 푼 4명암 hex (App.css --c-*와 같은 값)
-const PAPER = "#f8f8ec", LIGHT = "#b4b8a4", DARK = "#5c6052", INK = "#1c1e18";
-const THEME = {
-  background: PAPER, foreground: INK, cursor: INK, cursorAccent: PAPER,
-  selectionBackground: LIGHT, selectionForeground: INK, selectionInactiveBackground: LIGHT,
-  scrollbarSliderBackground: DARK, scrollbarSliderHoverBackground: INK, scrollbarSliderActiveBackground: INK,
-  black: INK, red: INK, green: DARK, yellow: DARK, blue: DARK, magenta: DARK, cyan: DARK, white: LIGHT,
-  brightBlack: DARK, brightRed: INK, brightGreen: DARK, brightYellow: DARK, brightBlue: DARK,
-  brightMagenta: DARK, brightCyan: DARK, brightWhite: PAPER,
-};
 
 // Cmd/Ctrl + = · + · - · 0 → 글자 크기 동작
 const fontKey = (e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }): "inc" | "dec" | "reset" | null => {
@@ -102,7 +93,7 @@ export default function Terminal({ session }: { session: Session | null }) {
     const t = new Xterm({
       fontFamily: 'Menlo, "Cascadia Mono", Consolas, monospace', fontSize: fontRef.current, lineHeight: 1,
       cursorStyle: "block", cursorBlink: false, drawBoldTextInBrightColors: false,
-      minimumContrastRatio: 1, allowTransparency: false, theme: THEME,
+      minimumContrastRatio: MIN_CONTRAST, allowTransparency: false, theme: THEME,
     });
     const fit = new FitAddon();
     t.loadAddon(fit);
