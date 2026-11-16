@@ -13,10 +13,8 @@ export type Raid = { kind: "none" }
   | { kind: "run"; track: Track | null; stage: string | null; loops: number; gates: Record<"plan" | "review" | "verify" | "security", Verdict> };
 
 export type RoadmapLine = { mark: "heading" | "done" | "todo"; text: string };
-export type RunInfo = { id: string; stage: string | null; request: string | null };
 export type Roadmap = { kind: "missing" } | { kind: "toobig"; max_bytes: number; max_entries: number }
-  | { kind: "error"; reason: string } | { kind: "found"; lines: RoadmapLine[]; skipped: boolean }
-  | { kind: "runs"; runs: RunInfo[]; file: boolean };
+  | { kind: "error"; reason: string } | { kind: "found"; lines: RoadmapLine[]; skipped: boolean };
 
 export const CHIP_AT = 6;
 export const NODE_LABEL: Record<NodeState, string> = { running: "실행 중", waiting: "대기", done: "끝남", failed: "실패", unknown: "알 수 없음" };

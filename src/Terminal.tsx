@@ -352,7 +352,21 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
     const t = tabsRef.current[n];
     if (t) { select(t.id, "xterm"); say(`${nameOf(t)} 터미널${waitOf(t) ? ", 답을 기다리는 중" : ""}`); }
   };
-  ctl.current = { pick: (id) => { if (id === null) go(null); else select(id, "xterm"); }, close: closeTab, jump, settle };
+  const sendAsk = (id: number, text: string): boolean => {
+    const rt = rts.current.get(id);
+    const t = rt?.t;
+    if (!rt || !t || t.options.disableStdin) return false;
+    if (tabsRef.current.find((x) => x.id === id)?.phase !== "running") return false;
+    // 텍스트와 Enter를 따로: 한 번에 넣으면 TUI가 붙여넣기로 보고 Enter를 줄바꿈으로 처리할 수 있다
+    rt.chain = rt.chain
+      .then(() => invoke("term_write", { tab: id, data: text }))
+      .then(() => new Promise((r) => setTimeout(r, 100)))
+      .then(() => invoke("term_write", { tab: id, data: "\r" }))
+      .catch(() => {});
+    select(id, "xterm");
+    return true;
+  };
+  ctl.current = { pick: (id) => { if (id === null) go(null); else select(id, "xterm"); }, close: closeTab, jump, settle, send: sendAsk };
 
   const actName = actTab ? nameOf(actTab) : "";
   const stateText = actTab ? (() => {

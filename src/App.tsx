@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import Raid from "./Raid.tsx"; // 확장자 필수: 대소문자 무시 파일시스템에서 "./Raid"가 raid.ts와 겹친다
 import Screen from "./Screen";
 import Terminal from "./Terminal";
-import { MAC, MAX_TABS, liveRow, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
+import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, liveRow, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
 import { createGate } from "./roadmapGate";
 import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
@@ -47,28 +47,22 @@ function LiveSym({ sym }: { sym: NonNullable<ReturnType<typeof liveRow>["sym"]> 
   );
 }
 
-function RoadmapView({ rm }: { rm: Roadmap | null }) {
+type Make = { off: string | null; onClick: () => void };
+
+function MakeBtn({ make }: { make: Make }) {
+  const { off } = make;
+  return (
+    <button type="button" className="btn" disabled={off !== null} title={off ?? undefined}
+      aria-label={off ? `로드맵 만들기 — ${off}` : "로드맵 만들기"} onClick={make.onClick}>로드맵 만들기</button>
+  );
+}
+
+function RoadmapView({ rm, make }: { rm: Roadmap | null; make: Make }) {
   if (!rm) return <p className="empty">불러오는 중…</p>;
-  if (rm.kind === "missing") return <><p className="empty">ROADMAP.md가 없습니다</p><p className="note">{HINT}</p></>;
+  if (rm.kind === "missing") return <><p className="empty">ROADMAP.md가 없습니다</p><p className="note">{HINT}</p><MakeBtn make={make} /></>;
   if (rm.kind === "toobig")
     return <><p className="empty">✕ ROADMAP.md가 너무 커서 읽지 않았습니다</p><p className="note">한도: {Math.round(rm.max_bytes / 1024)} KiB · {rm.max_entries}개</p></>;
   if (rm.kind === "error") return <><p className="empty">✕ 로드맵을 읽지 못했습니다</p><p className="note">{rm.reason}</p></>;
-  if (rm.kind === "runs")
-    return (
-      <>
-        <p className="empty">{rm.file ? "ROADMAP.md에 체크 항목이 없습니다" : "ROADMAP.md가 없습니다"}</p>
-        <p className="note">{HINT}</p>
-        <h3 className="px">최근 run</h3>
-        <ul className="rm">
-          {rm.runs.map((r) => (
-            <li key={r.id}>
-              <span className="mk" aria-hidden="true">·</span>
-              <span>{r.id} · {r.stage ?? "—"}{r.request && <span className="note">{r.request}</span>}</span>
-            </li>
-          ))}
-        </ul>
-      </>
-    );
   const items = rm.lines.filter((l) => l.mark !== "heading");
   const done = items.filter((l) => l.mark === "done").length;
   // 줄을 차례로 묶는다: 제목은 h3, 이어지는 항목은 ul
@@ -94,7 +88,7 @@ function RoadmapView({ rm }: { rm: Roadmap | null }) {
   flush(rm.lines.length);
   return (
     <>
-      {items.length === 0 ? <><p className="empty">ROADMAP.md에 체크 항목이 없습니다</p><p className="note">{HINT}</p></> : (
+      {items.length === 0 ? <><p className="empty">ROADMAP.md에 체크 항목이 없습니다</p><p className="note">{HINT}</p><MakeBtn make={make} /></> : (
         <>
           <div className="rm-sum">
             <span className="px" aria-hidden="true">{done} / {items.length}</span>
@@ -398,7 +392,7 @@ export default function App() {
 
       <section className="panel detail" aria-labelledby="h-roadmap">
         <h2 id="h-roadmap" className="px">로드맵</h2>
-        {pickId ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
+        {pickId ? <RoadmapView rm={roadmap} make={{ off: makeOff(live.tabs.find((t) => t.id === live.active)), onClick: () => { if (live.active !== null) ctl.current?.send(live.active, ASK_ROADMAP); } }} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
       {handle("b")}
