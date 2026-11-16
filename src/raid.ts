@@ -11,8 +11,6 @@ export type Shown = SessionState | "stalled";
 
 export const JOB_LABEL: Record<Job, string> = { commander: "기사단장", wizard: "마법사", warrior: "전사", archer: "궁수", rogue: "도적", healer: "힐러", paladin: "성기사" };
 export const MONSTER_LABEL: Record<Monster, string> = { slime: "슬라임", goblin: "고블린", orc: "오크", dragon: "드래곤" };
-export const STAGE_LABEL: Record<string, string> = { brief: "요구 정리", plan: "계획", build: "구현", review: "리뷰", verify: "검증", security: "보안", release: "머지", done: "끝" };
-export const GATE_LABEL: Record<GateName, string> = { plan: "계획 점검", review: "리뷰", verify: "검증", security: "보안" };
 
 const ORDER = ["brief", "plan", "build", "review", "verify", "security", "release", "done"];
 export const TRACK_STAGES: Record<Track, string[]> = {
@@ -99,13 +97,9 @@ export const heroLabel = (job: Job, kind: string | null, description: string | n
 export const summary = (raid: Raid | null, agents: Agent[], state: Shown): string => {
   const name = MONSTER_LABEL[monsterOf(raid)];
   if (fallen(raid, state)) return `${name} 쓰러짐`;
-  const track = trackOf(raid);
-  const parts = [`${track ? `${name}(${track})` : name} HP ${hp(raid, agents, state)}%`];
-  if (raid && raid.kind === "run" && track && raid.stage) parts.push(`${STAGE_LABEL[raid.stage] ?? raid.stage} 단계`);
+  const parts = [`${name} HP ${hp(raid, agents, state)}%`];
   const acting = (leadAct(state) === "attack" ? 1 : 0) + agents.filter((a) => heroAct(a.state) === "attack").length;
   parts.push(`용사 ${agents.length + 1}명 중 ${acting}명 공격 중`);
-  const sh = shields(raid);
-  if (sh.length) parts.push(`방어막 ${sh.length}개 중 ${sh.filter((s) => s.look === "broken").length}개 깨짐`);
   if (raid && raid.kind === "run" && raid.loops >= 1) parts.push(`되돌림 ${raid.loops}회`);
   if (healing(raid, state)) parts.push("몬스터 회복 중");
   return parts.join(", ");

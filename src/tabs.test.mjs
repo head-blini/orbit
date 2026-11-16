@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tabKey, tabSessions, tabSid, newTabId, nextActive, canResume, quickExit, MAX_TABS, QUICK_EXIT_MS,
-  rowId, SAME, splitSessions, pushedOut, folderTab, liveRow } from "./tabs.ts";
+  rowId, SAME, splitSessions, pushedOut, folderTab, liveRow, makeOff, ASK_ROADMAP } from "./tabs.ts";
 
 const k = (key, o = {}) => ({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...o });
 const s = (id, tab, last_ms, source = "hook") => ({ id, tab, last_ms, source });
@@ -122,4 +122,19 @@ test("liveRow", () => {
   r = liveRow(v(1, { phase: "ended" }), ss("done"));
   assert.deepEqual([r.sym, r.status, r.time, r.title], ["—", "종료됨", true, "t1 — 종료됨"]);
   assert.equal(liveRow(v(1, { phase: "ended" }), null).time, false);
+});
+
+test("makeOff", () => {
+  const t = (phase, wait = false) => ({ id: 1, name: "a", phase, wait, cwd: null });
+  assert.equal(typeof makeOff(undefined), "string");
+  for (const ph of ["starting", "stopping", "ended"]) assert.equal(makeOff(t(ph)), makeOff(undefined));
+  assert.equal(typeof makeOff(t("running", true)), "string");
+  assert.notEqual(makeOff(t("running", true)), makeOff(undefined));
+  assert.equal(makeOff(t("running", false)), null);
+});
+
+test("ASK_ROADMAP", () => {
+  assert.ok(ASK_ROADMAP.length > 0);
+  assert.ok(!/[\r\n]/.test(ASK_ROADMAP));
+  for (const w of ["ROADMAP.md", "- [ ]", "- [x]", "## "]) assert.ok(ASK_ROADMAP.includes(w), w);
 });

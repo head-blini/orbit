@@ -43,6 +43,7 @@ export type TermCtl = {
   pick: (id: number | null) => void;
   close: (id: number, from: "row" | "x") => void;
   jump: (n: number) => void;
+  send: (id: number, text: string) => boolean; // 실행 중 터미널의 claude 입력 줄에 text를 넣고 Enter. 보냈으면 true
   settle: () => void; // App이 줄을 다시 그린 뒤 부른다: 스크롤·포커스 이동
 };
 
@@ -111,4 +112,15 @@ export const liveRow = (
     sym, status, sr, title: `${v.name} — ${tt}`,
     time: s !== null && v.phase !== "starting" && v.phase !== "stopping",
   };
+};
+
+// 로드맵 만들기 버튼이 보내는 고정 문장(한 줄, 사용자·로그 문자열 없음)
+export const ASK_ROADMAP =
+  "이 프로젝트 폴더 맨 위에 ROADMAP.md를 만들어 줘. 형식은 '## 묶음 이름' 줄 아래에 '- [ ] 할 일', 끝난 일은 '- [x] 할 일'만 쓰고, 지금 코드와 문서를 보고 채워 줘.";
+
+// 로드맵 만들기 버튼: 켜면 null, 끄면 이유
+export const makeOff = (tab: LiveTab | undefined): string | null => {
+  if (!tab || tab.phase !== "running") return "실행 중인 터미널을 고르면 켜집니다";
+  if (tab.wait) return "claude가 답을 기다리는 중이라 보낼 수 없습니다";
+  return null;
 };

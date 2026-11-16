@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LEAD_LABEL, NODE_LABEL, nodeKey, shownState, type Raid as RaidData, type Session } from "./types";
-import { GATE_LABEL, JOB_LABEL, MONSTER_LABEL, STAGE_LABEL, bubble, fallen, healing, heroAct, heroLabel, hp, jobOf, leadAct, monsterOf, shields, summary, type Act, type Job } from "./raid";
+import { JOB_LABEL, MONSTER_LABEL, bubble, fallen, healing, heroAct, heroLabel, hp, jobOf, leadAct, monsterOf, summary, type Act, type Job } from "./raid";
 import { SPRITES, type Sprite } from "./sprites";
 import { createGate } from "./roadmapGate";
 import "./Raid.css";
@@ -109,10 +109,7 @@ export default function Raid({ session, selected, onSelect }: { session: Session
   const heal = healing(raid, st);
   const monAct = !down && st === "working";
   const mk = narrow ? 2 : 3;
-  const track = raid && raid.kind === "run" ? raid.track : null;
-  const stage = raid && raid.kind === "run" && track && raid.stage ? STAGE_LABEL[raid.stage] ?? null : null;
   const hpv = hp(raid, agents, st);
-  const sh = shields(raid);
   const loops = raid && raid.kind === "run" ? raid.loops : 0;
   const touch = () => { manual.current = true; };
 
@@ -152,30 +149,17 @@ export default function Raid({ session, selected, onSelect }: { session: Session
           {loading ? <p className="note">몬스터 확인 중</p> : (
             <>
               <Stack name={mon} frames={mon === "dragon" ? ["idle", "bite", "fire"] : ["idle", "attack"]} k={mk} act={monAct} flip={down} />
-              <figcaption className="px">{down ? `${name} · 쓰러짐` : track ? `${name} · ${track}` : name}</figcaption>
+              <figcaption className="px">{down ? `${name} · 쓰러짐` : name}</figcaption>
               {raid ? (
                 <>
                   <div className="hp">
                     <span className="px">HP</span>
-                    <div className="rm-bar" role="progressbar" aria-label={`${name} HP`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={hpv}
-                      aria-valuetext={`HP ${hpv}%${stage ? ` · ${stage} 단계` : ""}`}>
+                    <div className="rm-bar" role="progressbar" aria-label={`${name} HP`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={hpv}>
                       <i style={{ width: `${hpv}%` }} />
                     </div>
                     <span className="px">{hpv}</span>
                     <span className="loops">{loops >= 1 ? `되돌림 ${loops}` : ""}</span>
                   </div>
-                  {stage && <p className="note stage">{stage} 단계</p>}
-                  {sh.length > 0 && (
-                    <ul className="shields" aria-label="방어막">
-                      {sh.map((s) => (
-                        <li key={s.gate} className={s.look === "failed" ? "fail" : undefined}>
-                          <Icon name={s.look === "broken" ? "shieldBroken" : "shieldClosed"} />
-                          <span className="gl" aria-hidden="true">{GATE_LABEL[s.gate]}{s.look === "failed" ? " ✕" : ""}</span>
-                          <span className="sr">{GATE_LABEL[s.gate]} {s.look === "broken" ? "깨짐" : s.look === "failed" ? "실패" : "닫힘"}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </>
               ) : <p className="note">작업 정보를 읽지 못함</p>}
             </>
