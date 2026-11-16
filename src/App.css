@@ -106,13 +106,20 @@ body {
 .sess[aria-current="true"] .cur { visibility: visible; }
 .sess .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sess .sym { justify-self: end; }
-.sess .time { grid-column: 2 / 4; color: var(--c-dark); font-size: var(--fs-meta); }
+.sess .time { grid-column: 2 / 4; color: var(--c-dark); font-size: var(--fs-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sess:hover { background: var(--c-light); }
 .sess:hover .time { color: var(--c-ink); }
 /* 6개 이상이면 선택하지 않은 줄은 한 줄 칩 (decisions.md 44) */
 .sess.chip { grid-template-columns: 12px 1fr auto auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); }
 .sess.chip .cur { grid-row: 1; }
 .sess.chip .time { grid-column: 4; grid-row: 1; margin-left: var(--s-2); }
+
+/* 실행 중 묶음 줄: 줄 버튼 + 닫기 칸 */
+.row { display: grid; grid-template-columns: 1fr auto; align-items: start; }
+.sess-x { min-width: 24px; min-height: 24px; padding: 0; margin-left: -2px; }
+.sess[data-phase="ended"] { border-style: dashed; }
+.sess[data-phase="ended"] .name { color: var(--c-dark); }
+.sess[data-phase="ended"]:hover .name { color: var(--c-ink); }
 
 /* 상태 기호 */
 .sym { font-family: var(--f-pixel); font-size: var(--fs-pixel); display: inline-flex; align-items: center; min-width: 20px; justify-content: flex-end; }
@@ -127,8 +134,8 @@ body {
 @keyframes bar { from { left: -35%; } to { left: 100%; } }
 
 /* 로드맵 (오른쪽 위, 칸은 .detail 그대로). 묶음 제목 = 기존 h3(픽셀 + 1px 밑줄), 항목 본문 = 일반 글꼴 */
-.detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; overflow-wrap: anywhere; }
-.detail h3:first-of-type { margin-top: 0; }
+.sessions h3, .detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; overflow-wrap: anywhere; }
+.sessions h3:first-of-type, .detail h3:first-of-type { margin-top: 0; }
 .rm-sum { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
 .rm-bar { flex: 1; position: relative; height: 8px; border: var(--b-chip); border-radius: var(--r-pbar); overflow: hidden; }
 .rm-bar i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--c-ink); border-radius: var(--r-pbar-fill); } /* 폭 = 완료 비율, 움직이지 않음 */
