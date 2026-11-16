@@ -173,13 +173,13 @@ fn id_str(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str).filter(|s| s.len() <= MAX_ID)
 }
 
-/// 표시용 문자열. 문자 경계에서 MAX_TEXT자로 자른다.
 /// 도구 이름 검사: 1~64바이트, ASCII 영숫자와 `_ - .`만. 아니면 None.
 fn tool_name(v: Option<&Value>) -> Option<String> {
     let s = v?.as_str()?;
     (!s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))).then(|| s.to_string())
 }
 
+/// 표시용 문자열. 문자 경계에서 MAX_TEXT자로 자른다.
 fn text(v: Option<&Value>) -> Option<String> {
     v.and_then(Value::as_str).map(|s| s.chars().take(MAX_TEXT).collect())
 }

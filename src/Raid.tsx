@@ -78,7 +78,7 @@ export default function Raid({ session, selected, onSelect }: { session: Session
         label: heroLabel(job, a.kind, a.description, NODE_LABEL[a.state] ?? "알 수 없음", act, a.tool) });
     });
   }
-  const targetId = heroes.find((h) => h.act === "attack" || h.act === "wait")?.id;
+  const targetId = heroes.find((h) => h.id !== "lead" && (h.act === "attack" || h.act === "wait"))?.id;
   const moveKey = session ? `${id}|${heroes.map((h) => h.act).join(",")}` : "";
 
   const follow = (behavior: ScrollBehavior) => {
@@ -118,7 +118,7 @@ export default function Raid({ session, selected, onSelect }: { session: Session
 
   return (
     <>
-      <p className="sr">{loading ? "몬스터 확인 중" : summary(raid, agents, st)}</p>
+      <p className="sr">{loading ? "몬스터 확인 중" : !raid && session && run ? "작업 정보를 읽지 못함" : summary(raid, agents, st)}</p>
       {session.run && <p className="note">run {session.run}</p>}
       <div className={`field${narrow ? " narrow" : ""}`} ref={scrollRef} onWheel={touch} onPointerDown={touch} onKeyDown={touch}>
         <div className="partywrap">

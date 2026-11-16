@@ -64,7 +64,7 @@ svg { display: block; }
 .slot { height: 36px; display: flex; align-items: flex-end; justify-content: center; position: relative; }
 .bub {
   position: relative;
-  max-width: 88px; max-height: 32px; overflow: hidden;
+  box-sizing: border-box; max-width: 86px; max-height: 34px; overflow: hidden;
   padding: 2px var(--s-1);
   border: var(--b-chip);
   background: var(--c-paper); color: var(--c-ink);
