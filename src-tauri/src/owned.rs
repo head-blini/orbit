@@ -95,6 +95,15 @@ impl Owned {
         self.cur.insert(tab, id.to_string());
     }
 
+    /// 탭이 닫혔을 때 그 탭의 지금 세션 기록을 지운다(`tab_of`는 그대로).
+    pub fn unlink(&mut self, tab: u32) {
+        self.cur.remove(&tab);
+    }
+
+    pub fn unlink_all(&mut self) {
+        self.cur.clear();
+    }
+
     pub fn tab_of(&self, id: &str) -> Option<u32> {
         self.tabs.get(id).copied()
     }
@@ -371,5 +380,15 @@ mod tests {
         o.link(B, 3);
         assert_eq!(o.current(3), Some(B));
         assert_eq!(o.tab_of(A), Some(3));
+    }
+
+    #[test]
+    fn unlink_clears_current_only() {
+        let mut o = Owned::load(None);
+        o.link(A, 3);
+        o.unlink(3);
+        assert_eq!(o.current(3), None);
+        assert_eq!(o.tab_of(A), Some(3));
+        o.unlink(9);
     }
 }

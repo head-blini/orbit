@@ -28,6 +28,26 @@ struct AppState {
     observer: Option<PathBuf>,
     /// 마지막으로 고른 폴더. 경로는 웹뷰로 나가지 않는다.
     picked: Mutex<Option<String>>,
+    /// 이어 가기를 시작하는 중인 세션 id(같은 세션의 중복 시작 방지).
+    resuming: Mutex<std::collections::HashSet<String>>,
+}
+
+/// 시작 중 예약. drop하면 풀린다.
+struct Reserve<'a>(&'a Mutex<std::collections::HashSet<String>>, String);
+
+impl<'a> Reserve<'a> {
+    fn take(set: &'a Mutex<std::collections::HashSet<String>>, id: &str) -> Result<Reserve<'a>, String> {
+        if !set.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string()) {
+            return Err("이 세션은 이미 시작하는 중입니다".into());
+        }
+        Ok(Reserve(set, id.to_string()))
+    }
+}
+
+impl Drop for Reserve<'_> {
+    fn drop(&mut self) {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.1);
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -94,16 +114,23 @@ fn launch(
     start: impl FnOnce(&term::Term) -> Result<(), String>,
     cwd: String,
     t0: u64,
+    epoch: u64,
 ) -> Result<term::Term, String> {
     let (term, created) = tabs.open(tab)?;
     let r = term.resize(cols, rows).and_then(|_| start(&term));
     if let Err(e) = r {
         if created {
-            tabs.remove(tab);
+            tabs.remove_if(tab, &term);
         }
         return Err(e);
     }
     if !tabs.set_ran(tab, &term, cwd, t0) {
+        term.stop();
+        return Err("탭이 닫혔습니다".into());
+    }
+    // 명령이 시작된 뒤 term_stop_all이 돌았다: 웹뷰는 이 탭을 모른다(C1)
+    if tabs.epoch() != epoch {
+        tabs.remove_if(tab, &term);
         term.stop();
         return Err("탭이 닫혔습니다".into());
     }
@@ -227,10 +254,11 @@ fn term_open_folder(
     rows: u16,
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
+    let epoch = state.tabs.epoch();
     let picked = state.picked.lock().unwrap_or_else(|e| e.into_inner()).take();
     let s = picked.ok_or("폴더를 먼저 고르세요")?;
     term::check_cwd(&s)?;
-    start_new(&state, tab, cols, rows, s, on_out)
+    start_new(&state, tab, cols, rows, s, epoch, on_out)
 }
 
 /// 훅 설정 파일을 쓰고 `--settings`에 넘길 경로를 돌려준다. skip이거나 경로를 모르거나 쓰기에 실패하면 None(시작은 막지 않음).
@@ -248,6 +276,37 @@ fn observer_for(state: &AppState) -> Option<String> {
     observer_arg(state.observer.as_deref(), c.port, &c.token, skip)
 }
 
+/// 훅 설정을 붙여 claude를 시작하고, 성공하면 세션을 탭에 묶는다(실패한 시작은 cur를 남기지 않는다).
+fn run_claude(
+    state: &AppState,
+    tab: u32,
+    (cols, rows): (u16, u16),
+    cwd: String,
+    id: &str,
+    resume: bool,
+    epoch: u64,
+    on_out: tauri::ipc::Channel<term::TermOut>,
+) -> Result<(), String> {
+    let _ = lock_owned(&state.owned).add(id);
+    let t0 = sessions::now_ms();
+    let obs = observer_for(state);
+    let run_cwd = cwd.clone();
+    let linked = std::cell::Cell::new(false);
+    let (resume_id, new_id) = if resume { (Some(id), None) } else { (None, Some(id)) };
+    let r = launch(&state.tabs, tab, cols, rows, |t| {
+        t.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(resume_id, new_id, obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
+            let _ = on_out.send(m);
+        })?;
+        lock_owned(&state.owned).link(id, tab);
+        linked.set(true);
+        Ok(())
+    }, run_cwd, t0, epoch);
+    if r.is_err() && linked.get() {
+        lock_owned(&state.owned).unlink(tab);
+    }
+    r.map(|_| ())
+}
+
 /// 새 세션 id를 기록(실패는 무시)한 뒤 `--session-id`로 시작한다.
 fn start_new(
     state: &AppState,
@@ -255,20 +314,11 @@ fn start_new(
     cols: u16,
     rows: u16,
     cwd: String,
+    epoch: u64,
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
     let id = term::new_session_id()?;
-    let _ = lock_owned(&state.owned).add(&id);
-    lock_owned(&state.owned).link(&id, tab);
-    let t0 = sessions::now_ms();
-    let obs = observer_for(state);
-    let run_cwd = cwd.clone();
-    launch(&state.tabs, tab, cols, rows, |t| {
-        t.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(None, Some(&id), obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
-            let _ = on_out.send(m);
-        })
-    }, run_cwd, t0)
-    .map(|_| ())
+    run_claude(state, tab, (cols, rows), cwd, &id, false, epoch, on_out)
 }
 
 /// 세션 id의 폴더에서 claude 시작(`resume`이면 `--resume <id>`). 경로는 Rust 안에서만 쓴다.
@@ -281,10 +331,13 @@ fn term_from_session(
     resume: bool,
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
+    let epoch = state.tabs.epoch();
     let cwd = term::session_cwd(&lock(&state.store), id)?;
     if !resume {
-        return start_new(state, tab, cols, rows, cwd, on_out);
+        return start_new(state, tab, cols, rows, cwd, epoch, on_out);
     }
+    // 예약 → 검사 → 시작 → link 순서라서 같은 세션의 두 번째 호출은 예약이나 실행 중 검사에 걸린다(TOCTOU)
+    let _rsv = Reserve::take(&state.resuming, id)?;
     let source = lock(&state.store).get(id).map(|s| s.source);
     let transcript = state.projects_dir.as_ref().is_ok_and(|p| term::has_transcript(p, id));
     let cur: Vec<Option<String>> = {
@@ -294,17 +347,7 @@ fn term_from_session(
     };
     resume_check(source, transcript, &cur, id)?;
     term::check_cwd(&cwd)?;
-    let _ = lock_owned(&state.owned).add(id);
-    lock_owned(&state.owned).link(id, tab);
-    let t0 = sessions::now_ms();
-    let obs = observer_for(state);
-    let run_cwd = cwd.clone();
-    launch(&state.tabs, tab, cols, rows, |t| {
-        t.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(Some(id), None, obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
-            let _ = on_out.send(m);
-        })
-    }, run_cwd, t0)
-    .map(|_| ())
+    run_claude(state, tab, (cols, rows), cwd, id, true, epoch, on_out)
 }
 
 #[tauri::command(async)]
@@ -330,6 +373,7 @@ fn term_resize(state: State<AppState>, tab: u32, cols: u16, rows: u16) -> Result
 
 #[tauri::command(async)]
 fn term_stop(state: State<AppState>, tab: u32) {
+    lock_owned(&state.owned).unlink(tab);
     if let Some(t) = state.tabs.remove(tab) {
         t.stop();
     }
@@ -341,6 +385,7 @@ fn term_stop_all(state: State<AppState>) {
     for t in state.tabs.take_all() {
         t.stop();
     }
+    lock_owned(&state.owned).unlink_all();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -446,7 +491,7 @@ pub fn run() {
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
             let observer = app.path().app_data_dir().map(|d| d.join("orbit-hooks.json")).ok();
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None) });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None), resuming: Mutex::new(Default::default()) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -584,17 +629,53 @@ mod tests {
         for i in 0..7 {
             tabs.open(i).unwrap();
         }
-        let r = launch(&tabs, 100, 80, 24, |_| Err("x".to_string()), "/w".into(), 0);
+        let g = tabs.epoch();
+        let r = launch(&tabs, 100, 80, 24, |_| Err("x".to_string()), "/w".into(), 0, g);
         assert!(r.is_err());
         assert!(tabs.get(100).is_none());
         assert!(tabs.open(101).is_ok());
         // 이미 있던 id는 start Err여도 남는다
-        let r = launch(&tabs, 3, 80, 24, |_| Err("x".to_string()), "/w".into(), 0);
+        let r = launch(&tabs, 3, 80, 24, |_| Err("x".to_string()), "/w".into(), 0, g);
         assert!(r.is_err());
         assert!(tabs.get(3).is_some());
         // 성공하면 ran이 기록된다
-        assert!(launch(&tabs, 3, 80, 24, |_| Ok(()), "/w".into(), 0).is_ok());
+        assert!(launch(&tabs, 3, 80, 24, |_| Ok(()), "/w".into(), 0, g).is_ok());
         assert_eq!(tabs.cwds(), vec!["/w".to_string()]);
+    }
+
+    #[test]
+    fn launch_failure_keeps_new_term_with_same_id() {
+        // S-A1: start 도중 같은 id가 닫혔다 새로 열려도 새 Term은 지우지 않는다
+        let tabs = term::Tabs::default();
+        let r = launch(&tabs, 5, 80, 24, |_| {
+            tabs.remove(5);
+            tabs.open(5).unwrap();
+            Err("x".to_string())
+        }, "/w".into(), 0, tabs.epoch());
+        assert!(r.is_err());
+        assert!(tabs.get(5).is_some());
+    }
+
+    #[test]
+    fn launch_after_stop_all_is_rolled_back() {
+        // C1: 시작한 뒤 stop_all이 돌았으면 성공하지 않고 맵에도 남지 않는다
+        let tabs = term::Tabs::default();
+        let g = tabs.epoch();
+        tabs.take_all();
+        let r = launch(&tabs, 6, 80, 24, |_| Ok(()), "/w".into(), 0, g);
+        assert!(r.is_err());
+        assert!(tabs.get(6).is_none());
+        assert!(launch(&tabs, 6, 80, 24, |_| Ok(()), "/w".into(), 0, tabs.epoch()).is_ok());
+    }
+
+    #[test]
+    fn reserve_blocks_second_and_frees_on_drop() {
+        let set = Mutex::new(Default::default());
+        let a = Reserve::take(&set, "x").unwrap();
+        assert!(Reserve::take(&set, "x").is_err());
+        assert!(Reserve::take(&set, "y").is_ok());
+        drop(a);
+        assert!(Reserve::take(&set, "x").is_ok());
     }
 
     #[test]

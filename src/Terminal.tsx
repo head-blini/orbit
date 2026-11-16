@@ -50,6 +50,8 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
   const [note, setNote] = useState("");
   const [font, setFont] = useState(() => loadFont(() => localStorage));
   const [pickBusy, setPickBusy] = useState(false); // 폴더 선택 창이 떠 있는 동안
+  const [resumeBusy, setResumeBusy] = useState<string | null>(null); // 이어 가기를 시작하는 중인 세션 id(S-A3)
+  const resumeRef = useRef<string | null>(null);
   const tabsRef = useRef<TabView[]>([]);
   const activeRef = useRef<number | null>(null);
   const rts = useRef(new Map<number, Rt>());
@@ -206,6 +208,7 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
     !ready ? "터미널 준비 중"
     : pickBusy ? "폴더 선택 창이 열려 있습니다"
     : how !== "folder" && !session ? "세션을 먼저 고르세요"
+    : how === "resume" && session && resumeBusy === session.id ? "이 세션을 시작하는 중입니다"
     : how === "resume" && session && !canResume(session) ? "보낸 메시지가 없어 이어 갈 대화가 없습니다 — 새로 시작하세요"
     : tabs.length >= MAX_TABS && !(how === "resume" && swt) ? "탭은 8개까지 — 탭을 닫고 여세요"
     : "";
@@ -213,6 +216,7 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
   // 시작 세 가지(폴더 열기·새로 시작·이어 가기)는 모두 새 탭을 만든다. 웹뷰가 넘기는 값은 세션 id뿐이다.
   const begin = async (how: How) => {
     if (why(how)) return;
+    if (how === "resume" && session && resumeRef.current === session.id) return;
     if (how === "resume" && swt) { select(swt.id, "xterm"); return; }
     let picked = "";
     if (how === "folder") {
@@ -243,8 +247,10 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
     setErr("");
     flushSync(() => { upd((l) => [...l, view]); go(id); });
     const g = ++rt.gen;
+    const rid = how === "resume" ? session!.id : null;
+    if (rid) { resumeRef.current = rid; setResumeBusy(rid); }
     const box = boxes.current.get(id);
-    if (!box) { teardown(id); upd((l) => l.filter((t) => t.id !== id)); go(prev); return; }
+    if (!box) { if (rid) { resumeRef.current = null; setResumeBusy(null); } teardown(id); upd((l) => l.filter((t) => t.id !== id)); go(prev); return; }
     try {
       const t = ensureTerm(id, rt, box, name);
       try { rt.fit?.fit(); } catch { /* 기본 크기 */ }
@@ -284,6 +290,8 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
       upd((l) => l.filter((t) => t.id !== id));
       const back = prev !== null && tabsRef.current.some((t) => t.id === prev) ? prev : null;
       if (activeRef.current === id) { pend.current = back === null ? "head" : "xterm"; go(back); }
+    } finally {
+      if (rid) { resumeRef.current = null; setResumeBusy(null); }
     }
   };
 
@@ -309,7 +317,7 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
     boxes.current.delete(id);
     waited.current.delete(id);
     invoke("term_stop", { tab: id }).catch(() => {});
-    if (activeRef.current === id) pend.current = next === null ? "head" : to;
+    pend.current = activeRef.current === id ? (next === null ? "head" : to) : "tab"; // 고르지 않은 탭을 닫아도 포커스가 body로 가지 않게(A2)
     upd((x) => x.filter((t) => t.id !== id));
     go(next);
     say(`${name} 탭을 닫았습니다`);
@@ -378,7 +386,7 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
       if (n !== null) {
         e.preventDefault();
         const t = tabs[n];
-        if (t) { select(t.id, "xterm"); say(`${nameOf(t)} 탭`); }
+        if (t) { select(t.id, "xterm"); say(`${nameOf(t)} 탭${waitOf(t) ? ", 답을 기다리는 중" : ""}`); }
       }
     }}>
       <div className="term-head" ref={headRef}>
@@ -404,9 +412,9 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
         <div className="term-tabbar">
           <div className="term-tabs" role="tablist" aria-label={`터미널 탭 ${tabs.length}/${MAX_TABS}`}>
             {tabs.map((t, i) => {
-              const sel = t.id === active, nm = nameOf(t), w = !sel && waitOf(t);
+              const sel = t.id === active, nm = nameOf(t), wa = waitOf(t), w = !sel && wa;
               const sym = t.phase === "starting" || t.phase === "stopping" ? "…" : t.phase === "ended" ? "—" : w ? "!" : "";
-              const stTxt = t.phase === "starting" ? "시작하는 중" : t.phase === "stopping" ? "종료하는 중" : t.phase === "ended" ? "종료됨" : w ? "답을 기다리는 중" : "";
+              const stTxt = t.phase === "starting" ? "시작하는 중" : t.phase === "stopping" ? "종료하는 중" : t.phase === "ended" ? "종료됨" : wa ? "답을 기다리는 중" : "";
               const ttl = `${nm} — ${t.phase === "ended" ? "종료됨" : stTxt || "실행 중"}`;
               return (
                 <div className="ttab" role="presentation" key={t.id} data-phase={t.phase}>
@@ -416,7 +424,7 @@ export default function Terminal({ session, sessions, onPick }: { session: Sessi
                     onClick={() => select(t.id, "xterm")} onKeyDown={(e) => tabKeys(e, i)}>
                     <span className="nm-base">{t.base}</span>{t.no > 1 && <span className="nm-no"> {t.no}</span>}
                     {sym && <span className={w ? "sym blink" : "sym"} aria-hidden="true">{sym}</span>}
-                    {stTxt && !(sel && t.phase === "running") && <span className="sr">, {stTxt}</span>}
+                    {stTxt && !(sel && t.phase === "running" && !wa) && <span className="sr">, {stTxt}</span>}
                   </button>
                   <button type="button" className="ttab-x px" tabIndex={-1} aria-label={`탭 닫기: ${nm}`}
                     title={t.phase === "ended" ? "탭 닫기" : "탭 닫기 — claude도 종료됩니다"} onClick={() => closeTab(t.id, "xterm")}>×</button>

@@ -519,7 +519,7 @@ struct Tab {
 
 /// 탭 id → Term 맵. lock 안에서는 clone·복사만 하고, Term 메서드는 lock 밖에서 부른다.
 #[derive(Clone, Default)]
-pub struct Tabs(Arc<Mutex<std::collections::HashMap<u32, Tab>>>);
+pub struct Tabs(Arc<Mutex<std::collections::HashMap<u32, Tab>>>, Arc<std::sync::atomic::AtomicU64>);
 
 fn lk_tabs(m: &Mutex<std::collections::HashMap<u32, Tab>>) -> MutexGuard<'_, std::collections::HashMap<u32, Tab>> {
     m.lock().unwrap_or_else(|e| e.into_inner())
@@ -560,8 +560,25 @@ impl Tabs {
         lk_tabs(&self.0).remove(&tab).map(|t| t.term)
     }
 
+    /// 같은 Term일 때만 뺀다(그 사이 같은 id로 새로 열린 탭은 건드리지 않는다).
+    pub fn remove_if(&self, tab: u32, term: &Term) -> bool {
+        let mut g = lk_tabs(&self.0);
+        if g.get(&tab).is_some_and(|t| t.term.same(term)) {
+            g.remove(&tab);
+            return true;
+        }
+        false
+    }
+
+    /// 모두 꺼내고 세대를 올린다. 시작 전에 읽어 둔 세대와 다르면 그 시작은 stop_all보다 먼저 시작한 것이다.
     pub fn take_all(&self) -> Vec<Term> {
-        lk_tabs(&self.0).drain().map(|(_, t)| t.term).collect()
+        let mut g = lk_tabs(&self.0);
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        g.drain().map(|(_, t)| t.term).collect()
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.1.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// ran이 있는 항목의 (탭 id, Term, cwd, 시작 시각). running 판정은 호출자가 lock 밖에서 한다.
@@ -1089,6 +1106,26 @@ mod tests {
         assert!(!t.set_ran(1, &a, "/w/p".into(), 7), "같은 id의 새 Term");
         assert!(t.set_ran(1, &b, "/w/q".into(), 8));
         assert!(!t.set_ran(2, &b, "/w/q".into(), 9), "없는 탭");
+    }
+
+    #[test]
+    fn tabs_remove_if_only_same_term() {
+        let t = Tabs::default();
+        let (a, _) = t.open(1).unwrap();
+        t.remove(1);
+        let (b, _) = t.open(1).unwrap();
+        assert!(!t.remove_if(1, &a), "같은 id의 새 Term은 남는다");
+        assert!(t.get(1).is_some());
+        assert!(t.remove_if(1, &b));
+        assert!(t.get(1).is_none());
+    }
+
+    #[test]
+    fn tabs_take_all_bumps_gen() {
+        let t = Tabs::default();
+        let g = t.epoch();
+        t.take_all();
+        assert_ne!(t.epoch(), g);
     }
 
     #[test]
