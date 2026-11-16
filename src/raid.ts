@@ -11,7 +11,7 @@ export type Shown = SessionState | "stalled";
 
 export const JOB_LABEL: Record<Job, string> = { commander: "기사단장", wizard: "마법사", warrior: "전사", archer: "궁수", rogue: "도적", healer: "힐러", paladin: "성기사" };
 export const MONSTER_LABEL: Record<Monster, string> = { slime: "슬라임", goblin: "고블린", orc: "오크", dragon: "드래곤" };
-export const STAGE_LABEL: Record<string, string> = { brief: "기획", plan: "계획", build: "구현", review: "리뷰", verify: "검증", security: "보안", release: "릴리스", done: "완료" };
+export const STAGE_LABEL: Record<string, string> = { brief: "요구 정리", plan: "계획", build: "구현", review: "리뷰", verify: "검증", security: "보안", release: "머지", done: "끝" };
 export const GATE_LABEL: Record<GateName, string> = { plan: "계획 점검", review: "리뷰", verify: "검증", security: "보안" };
 
 const ORDER = ["brief", "plan", "build", "review", "verify", "security", "release", "done"];
@@ -114,6 +114,7 @@ export const summary = (raid: Raid | null, agents: Agent[], state: Shown): strin
   const sh = shields(raid);
   if (sh.length) parts.push(`방어막 ${sh.length}개 중 ${sh.filter((s) => s.look === "broken").length}개 깨짐`);
   if (raid && raid.kind === "run" && raid.loops >= 1) parts.push(`되돌림 ${raid.loops}회`);
+  if (healing(raid, state)) parts.push("몬스터 회복 중");
   return parts.join(", ");
 };
 
