@@ -97,11 +97,12 @@ body {
   text-align: left;
   color: var(--c-ink);
   background: var(--c-paper);
-  border: var(--b-box);
-  border-radius: 0;
+  border: 1px solid var(--c-dark);
+  border-radius: var(--r-node);
   cursor: pointer;
   font: inherit;
 }
+.sess[aria-current="true"] { border-color: var(--c-ink); box-shadow: inset 0 0 0 1px var(--c-ink); }
 .sess .cur { grid-row: 1 / 3; visibility: hidden; }
 .sess[aria-current="true"] .cur { visibility: visible; }
 .sess .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -110,14 +111,15 @@ body {
 .sess:hover { background: var(--c-light); }
 .sess:hover .time { color: var(--c-ink); }
 /* 6개 이상이면 선택하지 않은 줄은 한 줄 칩 (decisions.md 44) */
-.sess.chip { grid-template-columns: 12px 1fr auto auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); min-height: 24px; align-items: center; }
+.sess.chip { grid-template-columns: 12px 1fr auto auto; grid-template-rows: auto; border: 1px solid var(--c-dark); padding: 0 var(--s-2); min-height: 24px; align-items: center; }
 .list:has(> li > .chip) { gap: var(--s-1); }
 .sess.chip .cur { grid-row: 1; }
 .sess.chip .time { grid-column: 4; grid-row: 1; margin-left: var(--s-2); }
 
 /* 실행 중 묶음 줄: 줄 버튼 + 닫기 칸 */
 .row { display: grid; grid-template-columns: 1fr auto; align-items: stretch; }
-.row .sess-x { width: 24px; min-width: 24px; padding: 0; margin-left: -2px; display: grid; place-items: center; line-height: 1; }
+.row .sess-x { width: 24px; min-width: 24px; padding: 0; margin-left: -1px; border: 1px solid var(--c-dark); border-radius: 0 var(--r-node) var(--r-node) 0; display: grid; place-items: center; line-height: 1; }
+.row .sess { border-radius: var(--r-node) 0 0 var(--r-node); }
 .row .sess:focus-visible { position: relative; z-index: 1; }
 .sess[data-phase="ended"] { border-style: dashed; }
 .sess[data-phase="ended"] .name { color: var(--c-dark); }

@@ -52,7 +52,7 @@ svg { display: block; }
   cursor: pointer;
 }
 .hero .hname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hero .mark { visibility: hidden; }
+.hero .mark { position: absolute; transform: translateX(-100%); visibility: hidden; } /* 흐름에서 빼 이름을 가운데에 둔다. hname을 위치 기준으로 만들면 overflow에 잘린다 */
 .hero[aria-current="true"] .mark { visibility: visible; }
 .hero .role { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-meta); color: var(--c-dark); }
 /* 작업 중 = 굵은 이중 테두리, 대기 = 회색 바탕, 실패 = 점선 */

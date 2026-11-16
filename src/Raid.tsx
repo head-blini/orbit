@@ -130,7 +130,7 @@ export default function Raid({ session, selected, onSelect }: { session: Session
                 <li key={h.id} ref={h.id === targetId ? targetRef : undefined}>
                   <button type="button" className={`hero${cls}`} aria-label={h.label} aria-current={h.id === selected ? "true" : undefined} onClick={() => onSelect(h.id)}>
                     <span className="slot" aria-hidden="true">
-                      {b ? <span className="bub">아마 {b}</span>
+                      {b ? <span className="bub">{b}</span>
                         : h.act === "wait" ? <span className="blink"><Icon name="bang" /></span>
                         : h.act === "sleep" ? <Icon name="zz" />
                         : h.act === "ko" ? <Icon name="ko" /> : null}
