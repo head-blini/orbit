@@ -17,7 +17,7 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
   // 세션·열 수·상태가 안 바뀐 갱신에서는 effect가 돌지 않아 사용자가 옮긴 스크롤을 되돌리지 않는다.
   const moveKey = session ? `${session.id}|${nCols}|${agents.map((a) => a.state).join(",")}` : "";
 
-  useEffect(() => { manual.current = false; }, [session?.id]);
+  useEffect(() => { manual.current = false; }, [session?.id, session?.run]);
   const scrollRef = useRef<HTMLDivElement>(null);
   // 키보드 포커스가 그래프 안이면 포커스된 노드가 밀리지 않게 스크롤하지 않는다.
   const follow = (behavior: ScrollBehavior) => {
@@ -105,6 +105,8 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
   const cw = columns.length ? (columns.length + 1) * PX - (PX - W) : PX + W;
   const touch = () => { manual.current = true; };
   return (
+    <>
+    {session.run && <p className="note">run {session.run}</p>}
     <div className="gscroll" ref={scrollRef} onWheel={touch} onPointerDown={touch} onKeyDown={touch}>
       <div className="canvas" style={{ width: cw, height: ch }}>
         <svg className="edges" width={cw} height={ch} viewBox={`0 0 ${cw} ${ch}`} shapeRendering="crispEdges" aria-hidden="true">
@@ -117,5 +119,6 @@ export default function Graph({ session, selected, onSelect }: { session: Sessio
         {columns.length === 0 && <p className="side-note" style={{ left: PX, top: (ch - H) / 2 + H / 2 - 9 }}>서브에이전트 없음</p>}
       </div>
     </div>
+    </>
   );
 }

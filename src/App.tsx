@@ -5,6 +5,7 @@ import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
 import { createGate } from "./roadmapGate";
+import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
@@ -15,9 +16,11 @@ type Status = {
   settings_error: string | null;
   projects_error: string | null;
   node_missing: boolean;
+  hooks_disabled: boolean;
 };
 
-const NODE_MISSING = "✕ node를 찾지 못해 체크포인트가 꺼집니다 — node를 설치하거나 nvm·Homebrew 경로를 확인하세요";
+const NODE_MISSING = "✕ 쓸 수 있는 node(16.9 이상)가 없어 체크포인트가 꺼집니다 — node를 설치·업데이트하거나 nvm·Homebrew 경로를 확인하세요";
+const HOOKS_DISABLED = "✕ settings에 disableAllHooks가 켜져 있어 체크포인트가 꺼집니다 — 그 설정을 지우거나 false로 바꾸세요";
 const HINT = "프로젝트 폴더 맨 위에 두면 여기 보입니다 — ## 묶음, - [ ] 할 일, - [x] 끝난 일";
 const STATE_LABEL = { working: "작업 중", waiting: "대기", done: "완료", error: "에러", stalled: "멈춤(추정)" } as const;
 
@@ -39,6 +42,22 @@ function RoadmapView({ rm }: { rm: Roadmap | null }) {
   if (rm.kind === "toobig")
     return <><p className="empty">✕ ROADMAP.md가 너무 커서 읽지 않았습니다</p><p className="note">한도: {Math.round(rm.max_bytes / 1024)} KiB · {rm.max_entries}개</p></>;
   if (rm.kind === "error") return <><p className="empty">✕ 로드맵을 읽지 못했습니다</p><p className="note">{rm.reason}</p></>;
+  if (rm.kind === "runs")
+    return (
+      <>
+        <p className="empty">{rm.file ? "ROADMAP.md에 체크 항목이 없습니다" : "ROADMAP.md가 없습니다"}</p>
+        <p className="note">{HINT}</p>
+        <h3 className="px">최근 run</h3>
+        <ul className="rm">
+          {rm.runs.map((r) => (
+            <li key={r.id}>
+              <span className="mk" aria-hidden="true">·</span>
+              <span>{r.id} · {r.stage ?? "—"}{r.request && <span className="note">{r.request}</span>}</span>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
   const items = rm.lines.filter((l) => l.mark !== "heading");
   const done = items.filter((l) => l.mark === "done").length;
   // 줄을 차례로 묶는다: 제목은 h3, 이어지는 항목은 ul
@@ -81,7 +100,73 @@ function RoadmapView({ rm }: { rm: Roadmap | null }) {
   );
 }
 
+const HANDLES: { k: Kind; label: string; orient: "vertical" | "horizontal" }[] = [
+  { k: "l", label: "세션 목록 폭", orient: "vertical" },
+  { k: "r", label: "오른쪽 칸 폭", orient: "vertical" },
+  { k: "b", label: "터미널 높이", orient: "horizontal" },
+];
+const GAP = 8;
+
 export default function App() {
+  const [sizes, setSizes] = useState<Sizes>(() => loadSizes(() => localStorage));
+  const [meas, setMeas] = useState<Sizes>({ l: null, r: null, b: null });
+  const [dragging, setDragging] = useState<Kind | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ k: Kind; pos: number; start: number; avail: number } | null>(null);
+  const sizesRef = useRef(sizes);
+  sizesRef.current = sizes;
+
+  // 지금 칸 크기(px)와 늘릴 수 있는 한계. 반대편 칸·가운데 최소를 남긴다.
+  const measure = (k: Kind) => {
+    const shell = shellRef.current;
+    if (!shell) return null;
+    const q = (c: string) => shell.querySelector(c)?.getBoundingClientRect();
+    const cs = getComputedStyle(shell);
+    const w = shell.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const h = shell.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const sess = q(".sessions"), det = q(".detail"), term = q(".terminal"), top = q(".topbar");
+    if (!sess || !det || !term || !top) return null;
+    return k === "l" ? { cur: sess.width, avail: w - 2 * GAP - det.width - MID_MIN }
+      : k === "r" ? { cur: det.width, avail: w - 2 * GAP - sess.width - MID_MIN }
+      : { cur: term.height, avail: h - top.height - 2 * GAP - TOP_MIN };
+  };
+  const commit = (next: Sizes) => { setSizes(next); sizesRef.current = next; saveSizes(() => localStorage, next); };
+  const refreshMeas = (k: Kind) => { const m = measure(k); if (m) setMeas((p) => ({ ...p, [k]: Math.round(m.cur) })); };
+  const onDown = (k: Kind) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const m = measure(k);
+    if (!m) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { k, pos: k === "b" ? e.clientY : e.clientX, start: m.cur, avail: m.avail };
+    setDragging(k);
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const delta = d.k === "b" ? d.pos - e.clientY : d.k === "r" ? d.pos - e.clientX : e.clientX - d.pos;
+    const v = Math.round(clampSize(d.k, d.start + delta, d.avail));
+    setSizes((p) => { const n = { ...p, [d.k]: v }; sizesRef.current = n; return n; });
+  };
+  const onUp = () => {
+    if (!drag.current) return;
+    const k = drag.current.k;
+    drag.current = null;
+    setDragging(null);
+    saveSizes(() => localStorage, sizesRef.current);
+    refreshMeas(k);
+  };
+  const onKey = (k: Kind) => (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const m = measure(k);
+    if (!m) return;
+    const v = keyStep(k, e.key, sizes[k] ?? m.cur);
+    if (v === null) return;
+    e.preventDefault();
+    const n = Math.round(clampSize(k, v, m.avail));
+    commit({ ...sizes, [k]: n });
+    setMeas((p) => ({ ...p, [k]: n }));
+  };
+  const onReset = (k: Kind) => () => { commit({ ...sizes, [k]: null }); setTimeout(() => refreshMeas(k), 0); };
+
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
@@ -100,7 +185,7 @@ export default function App() {
       .catch((e) => setStatusError(String(e)));
   }, []);
 
-  useEffect(refresh, [refresh]);
+  useEffect(refresh, [refresh, now]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,13 +259,27 @@ export default function App() {
     : status.installed ? "훅 설치됨" : "훅 설치 안 됨";
   const shownResult = result
     || (status?.settings_error ? `✕ 확인 실패: ${status.settings_error}` : "")
+    || (status?.hooks_disabled ? HOOKS_DISABLED : "")
     || (status?.node_missing ? NODE_MISSING : "");
 
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
   const cur = selected ? sessions.get(selected) ?? null : null;
 
+  // 손잡이는 각 경계 근처에 둔다(Tab 순서가 화면 위치를 따르도록). 위치는 CSS grid가 정한다.
+  const handle = (k: Kind) => {
+    const { label, orient } = HANDLES.find((h) => h.k === k)!;
+    const px = sizes[k] ?? meas[k] ?? undefined;
+    return (
+      <div className={`resizer rz-${k}`} role="separator" tabIndex={0} aria-label={label} aria-orientation={orient}
+        aria-valuenow={px} aria-valuetext={px === undefined ? undefined : `${px}px`} aria-valuemin={LIMITS[k].min}
+        aria-valuemax={Number.isFinite(LIMITS[k].max) ? LIMITS[k].max : undefined}
+        onPointerDown={onDown(k)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+        onKeyDown={onKey(k)} onFocus={() => refreshMeas(k)} onDoubleClick={onReset(k)} />
+    );
+  };
+
   return (
-    <div className="shell">
+    <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}>
       <header className="panel topbar">
         <h1>ORBIT</h1>
         <span className="tb-result" role="status" title={shownResult}>{shownResult}</span>
@@ -198,7 +297,7 @@ export default function App() {
         <h2 id="h-sessions" className="px">세션</h2>
         {sessionsError || status?.projects_error ? <><p className="empty">✕ 로그 폴더를 읽지 못했습니다</p>{status?.projects_error && <p className="note">{status.projects_error}</p>}</>
           : !loaded ? <p className="empty">불러오는 중…</p>
-          : list.length === 0 ? <p className="empty">아직 세션이 없습니다</p>
+          : list.length === 0 ? <><p className="empty">아직 Orbit에서 시작한 세션이 없습니다</p><p className="note">아래 터미널의 [폴더 열기]로 시작하면 여기에 나옵니다. Orbit 밖에서 연 세션과 예전 기록은 지우지 않고 숨깁니다.</p></>
           : (
             <ul className="list">
               {list.map((x) => {
@@ -220,19 +319,26 @@ export default function App() {
           )}
       </section>
 
+      {handle("l")}
+
       <section className="panel graph" aria-labelledby="h-graph">
         <h2 id="h-graph" className="px">에이전트 그래프</h2>
         <Graph session={cur} selected={node} onSelect={setNode} />
       </section>
+
+      {handle("r")}
 
       <section className="panel detail" aria-labelledby="h-roadmap">
         <h2 id="h-roadmap" className="px">로드맵</h2>
         {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
-      <Terminal session={cur} />
+      {handle("b")}
+
+      <Terminal session={cur} sessions={list} />
 
       <div className="console"><Screen /></div>
+
     </div>
   );
 }

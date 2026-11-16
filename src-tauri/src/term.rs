@@ -4,7 +4,8 @@
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 pub const CLAUDE: &str = "claude.exe";
@@ -40,6 +41,7 @@ struct Inner {
     size: (u16, u16), // cols, rows
 }
 
+#[derive(Clone)]
 pub struct Term(Arc<Mutex<Inner>>);
 
 impl Default for Term {
@@ -52,8 +54,105 @@ fn lk(m: &Mutex<Inner>) -> MutexGuard<'_, Inner> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// 찾을 폴더: 앱 PATH 중 절대 경로만 → ~/.local/bin → (macOS) Homebrew.
+static BUNDLED: OnceLock<PathBuf> = OnceLock::new();
+static USER_NODE_OK: OnceLock<bool> = OnceLock::new();
+
+/// 내장 node 폴더를 등록한다. 한 번만 되고, 두 번째 호출은 무시한다.
+pub fn set_bundled_bin(dir: PathBuf) {
+    let _ = BUNDLED.set(dir);
+}
+
+/// 체크포인트 훅(`harness/hooks/gate.mjs`)이 도는 최소 node 버전.
+/// 근거(gate.mjs를 읽어 뽑은 값, 각 기능이 처음 들어간 버전은 기억에 기댄 것이라 미확인):
+/// `node:` 접두 import(14.13.1), `||=`(15.0), `Array.prototype.at`(16.6.0), `Object.hasOwn`(16.9.0).
+/// gate.mjs가 더 새 문법을 쓰면 이 값도 올릴 것.
+const MIN_NODE: (u64, u64, u64) = (16, 9, 0);
+
+/// `node -v` 출력이 최소 버전 이상인지. 판정을 못 하면(형식이 다르면) false.
+fn node_ok(out: &str) -> bool {
+    let t = out.trim();
+    let mut it = t.strip_prefix('v').unwrap_or(t).split('.');
+    let mut n = || it.next()?.parse::<u64>().ok();
+    let (Some(a), Some(b), Some(c)) = (n(), n(), n()) else { return false };
+    it.next().is_none() && (a, b, c) >= MIN_NODE
+}
+
+/// 셸 없이 `node -v`를 실행해 stdout 앞 64바이트를 돌려준다. 시간 초과·실패·0이 아닌 종료는 None.
+fn node_version_out(node: &Path, limit: Duration) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(node)
+        .arg("-v")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let out = child.stdout.take()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = out.take(64).read_to_end(&mut buf);
+        let _ = tx.send(buf);
+    });
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    // 자손이 stdout을 쥐고 남아 있으면 읽기가 안 끝난다. 남은 시간만 기다리고 포기한다.
+    let buf = rx.recv_timeout(limit.saturating_sub(start.elapsed()).max(Duration::from_millis(200))).ok()?;
+    status.success().then(|| String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// 우선순위: 쓸 만한 사용자 node가 있으면 그쪽이 먼저고 내장은 맨 뒤다(claude 안의 셸 `node`·npm이 사용자 node로 돈다).
+/// 없거나 낡았으면 체크포인트를 살리려고 내장을 맨 앞에 둔다.
+fn order_dirs(mut base: Vec<PathBuf>, bundled: Option<&Path>, user_ok: bool) -> Vec<PathBuf> {
+    if let Some(b) = bundled {
+        if user_ok {
+            base.push(b.to_path_buf());
+        } else {
+            base.insert(0, b.to_path_buf());
+        }
+    }
+    base
+}
+
+/// 내장 폴더를 뺀 기본 목록에서 찾은 사용자 node가 최소 버전 이상인지. 앱 실행 동안 캐시한다.
+fn user_node_ok() -> bool {
+    *USER_NODE_OK.get_or_init(|| {
+        find_named(&base_dirs(), NODE)
+            .and_then(|p| node_version_out(&p, Duration::from_secs(2)))
+            .is_some_and(|o| node_ok(&o))
+    })
+}
+
+/// 사용자 node 판정을 미리 데운다(첫 Term::start가 `node -v`를 기다리지 않게).
+pub fn warm() {
+    let _ = user_node_ok();
+}
+
+/// 쓸 수 있는 node(내장 또는 충분한 사용자 node)가 있는가.
+pub fn node_usable() -> bool {
+    BUNDLED.get().is_some() || user_node_ok()
+}
+
+/// claude에 줄 PATH 폴더. 내장 node가 없으면 `node -v`를 실행하지 않는다.
 pub fn claude_dirs() -> Vec<PathBuf> {
+    match BUNDLED.get() {
+        None => base_dirs(),
+        Some(b) => order_dirs(base_dirs(), Some(b), user_node_ok()),
+    }
+}
+
+/// 찾을 폴더(내장 node 제외): 앱 PATH 중 절대 경로만 → ~/.local/bin → (macOS) Homebrew → nvm.
+fn base_dirs() -> Vec<PathBuf> {
     let mut v: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).filter(|d| d.is_absolute()).collect())
         .unwrap_or_default();
@@ -160,14 +259,31 @@ pub fn valid_id(id: &str) -> bool {
         && id.bytes().enumerate().all(|(i, b)| if matches!(i, 8 | 13 | 18 | 23) { b == b'-' } else { b.is_ascii_hexdigit() })
 }
 
-/// claude 인자: 플러그인 경로가 있으면 `--plugin-dir <경로>`(앱이 정한 고정 값)와 메인 세션을 Lead로 하는 `--agent orbit:lead`, 이어 가기는 `--resume <id>`(id는 호출자가 검증).
-pub fn args<'a>(resume: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
+/// 새 세션 id: UUID v4(소문자).
+pub fn new_session_id() -> Result<String, String> {
+    let mut b = [0u8; 16];
+    getrandom::fill(&mut b).map_err(|e| format!("난수 생성 실패: {e}"))?;
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    Ok(format!("{}-{}-{}-{}-{}", &h[..8], &h[8..12], &h[12..16], &h[16..20], &h[20..]))
+}
+
+/// claude 인자: 플러그인 경로가 있으면 `--plugin-dir <경로>`(앱이 정한 고정 값)와 메인 세션을 Lead로 하는 `--agent orbit:lead`, 이어 가기는 `--resume <id>`, 새 세션은 `--session-id <id>`(id는 호출자가 검증, 둘은 동시에 주지 않음).
+pub fn args<'a>(resume: Option<&'a str>, session_id: Option<&'a str>, settings: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
+    debug_assert!(resume.is_none() || session_id.is_none());
     let mut v = Vec::new();
     if let Some(p) = plugin {
         v.extend(["--plugin-dir", p, "--agent", "orbit:lead"]);
     }
+    if let Some(s) = settings {
+        v.extend(["--settings", s]);
+    }
     if let Some(id) = resume {
         v.extend(["--resume", id]);
+    }
+    if let Some(id) = session_id {
+        v.extend(["--session-id", id]);
     }
     v
 }
@@ -268,7 +384,6 @@ fn kill_tree(pid: u32) {
 }
 
 impl Term {
-    #[cfg(test)]
     pub fn running(&self) -> bool {
         lk(&self.0).proc.is_some()
     }
@@ -301,6 +416,7 @@ impl Term {
         cmd.cwd(cwd);
         cmd.env("TERM", TERM_ENV);
         // Finder로 띄운 앱의 PATH에는 Homebrew가 없어 훅의 node를 못 찾는다.
+        // 내장 node는 쓸 만한 사용자 node가 있으면 맨 뒤, 없거나 낡았으면 맨 앞(claude_dirs).
         if let Ok(p) = std::env::join_paths(claude_dirs()) {
             cmd.env("PATH", p);
         }
@@ -581,6 +697,67 @@ mod tests {
     }
 
     #[test]
+    fn node_ok_compares_numerically() {
+        for s in ["v16.9.0\n", "v16.10.0", "v18.0.0", "v22.11.0", "  v17.0.0  "] {
+            assert!(node_ok(s), "{s:?}");
+        }
+        for s in ["v16.8.9", "v15.14.0", "v4.9.1", "v9.99.99", "", "v20", "v20.1", "v20.1.2.3", "20.x.0", "node"] {
+            assert!(!node_ok(s), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn order_dirs_places_bundled() {
+        let base = vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")];
+        assert_eq!(order_dirs(base.clone(), None, true), base);
+        assert_eq!(order_dirs(base.clone(), None, false), base);
+        let b = PathBuf::from("/bundle/bin");
+        let last = order_dirs(base.clone(), Some(&b), true);
+        assert_eq!(last.last(), Some(&b));
+        assert_eq!(last[..3], base[..]);
+        let first = order_dirs(base.clone(), Some(&b), false);
+        assert_eq!(first.first(), Some(&b));
+        assert_eq!(first[1..], base[..]);
+        assert_eq!(last.iter().filter(|p| **p == b).count(), 1);
+        assert_eq!(first.iter().filter(|p| **p == b).count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn node_version_out_reads_and_times_out() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::time::{Duration, Instant};
+        let d = tmp("nodev");
+        let mk = |name: &str, body: &str| {
+            let p = d.join(name);
+            std::fs::write(&p, body).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+            p
+        };
+        let lim = Duration::from_secs(2);
+        let ok = mk("ok", "#!/bin/sh\necho v18.0.0\n");
+        let out = node_version_out(&ok, lim).expect("some");
+        assert!(node_ok(&out));
+        assert_eq!(node_version_out(&mk("fail", "#!/bin/sh\nexit 1\n"), lim), None);
+        let slow = mk("slow", "#!/bin/sh\nsleep 5\n");
+        let t = Instant::now();
+        assert_eq!(node_version_out(&slow, Duration::from_millis(300)), None);
+        assert!(t.elapsed() < Duration::from_secs(2));
+        let held = mk("held", "#!/bin/sh\necho v18.0.0\nsleep 5 &\n");
+        let t = Instant::now();
+        assert_eq!(node_version_out(&held, Duration::from_millis(300)), None);
+        assert!(t.elapsed() < Duration::from_secs(2));
+        assert_eq!(node_version_out(&d.join("nope"), lim), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn warm_computes_user_node_check() {
+        warm();
+        assert!(USER_NODE_OK.get().is_some());
+    }
+
+    #[test]
     fn find_named_finds_node() {
         let d = tmp("node");
         assert_eq!(find_named(&[d.clone()], NODE), None);
@@ -690,11 +867,32 @@ mod tests {
     }
 
     #[test]
-    fn args_none_empty_some_resume() {
-        assert!(args(None, None).is_empty());
-        assert_eq!(args(Some(ID), None), vec!["--resume", ID]);
-        assert_eq!(args(None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
-        assert_eq!(args(Some(ID), Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
+    fn args_combinations() {
+        assert!(args(None, None, None, None).is_empty());
+        assert_eq!(args(Some(ID), None, None, None), vec!["--resume", ID]);
+        assert_eq!(args(None, Some(ID), None, None), vec!["--session-id", ID]);
+        assert_eq!(args(None, None, None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
+        assert_eq!(args(Some(ID), None, None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
+        assert_eq!(args(None, Some(ID), None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--session-id", ID]);
+        assert_eq!(
+            args(None, Some(ID), Some("/s.json"), Some("/p")),
+            vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--settings", "/s.json", "--session-id", ID]
+        );
+        assert_eq!(args(None, None, Some("/s.json"), None), vec!["--settings", "/s.json"]);
+        assert_eq!(args(Some(ID), None, Some("/s.json"), None), vec!["--settings", "/s.json", "--resume", ID]);
+    }
+
+    #[test]
+    fn new_session_id_is_v4_and_unique() {
+        let a = new_session_id().unwrap();
+        let b = new_session_id().unwrap();
+        assert_ne!(a, b);
+        for x in [&a, &b] {
+            assert!(valid_id(x));
+            assert_eq!(x.as_bytes()[14], b'4');
+            assert!(matches!(x.as_bytes()[19], b'8' | b'9' | b'a' | b'b'));
+            assert_eq!(x, &x.to_lowercase());
+        }
     }
 
     #[test]
