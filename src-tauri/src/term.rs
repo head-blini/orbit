@@ -41,6 +41,7 @@ struct Inner {
     size: (u16, u16), // cols, rows
 }
 
+#[derive(Clone)]
 pub struct Term(Arc<Mutex<Inner>>);
 
 impl Default for Term {
@@ -258,14 +259,28 @@ pub fn valid_id(id: &str) -> bool {
         && id.bytes().enumerate().all(|(i, b)| if matches!(i, 8 | 13 | 18 | 23) { b == b'-' } else { b.is_ascii_hexdigit() })
 }
 
-/// claude 인자: 플러그인 경로가 있으면 `--plugin-dir <경로>`(앱이 정한 고정 값)와 메인 세션을 Lead로 하는 `--agent orbit:lead`, 이어 가기는 `--resume <id>`(id는 호출자가 검증).
-pub fn args<'a>(resume: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
+/// 새 세션 id: UUID v4(소문자).
+pub fn new_session_id() -> Result<String, String> {
+    let mut b = [0u8; 16];
+    getrandom::fill(&mut b).map_err(|e| format!("난수 생성 실패: {e}"))?;
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    Ok(format!("{}-{}-{}-{}-{}", &h[..8], &h[8..12], &h[12..16], &h[16..20], &h[20..]))
+}
+
+/// claude 인자: 플러그인 경로가 있으면 `--plugin-dir <경로>`(앱이 정한 고정 값)와 메인 세션을 Lead로 하는 `--agent orbit:lead`, 이어 가기는 `--resume <id>`, 새 세션은 `--session-id <id>`(id는 호출자가 검증, 둘은 동시에 주지 않음).
+pub fn args<'a>(resume: Option<&'a str>, session_id: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
+    debug_assert!(resume.is_none() || session_id.is_none());
     let mut v = Vec::new();
     if let Some(p) = plugin {
         v.extend(["--plugin-dir", p, "--agent", "orbit:lead"]);
     }
     if let Some(id) = resume {
         v.extend(["--resume", id]);
+    }
+    if let Some(id) = session_id {
+        v.extend(["--session-id", id]);
     }
     v
 }
@@ -366,7 +381,6 @@ fn kill_tree(pid: u32) {
 }
 
 impl Term {
-    #[cfg(test)]
     pub fn running(&self) -> bool {
         lk(&self.0).proc.is_some()
     }
@@ -850,11 +864,26 @@ mod tests {
     }
 
     #[test]
-    fn args_none_empty_some_resume() {
-        assert!(args(None, None).is_empty());
-        assert_eq!(args(Some(ID), None), vec!["--resume", ID]);
-        assert_eq!(args(None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
-        assert_eq!(args(Some(ID), Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
+    fn args_combinations() {
+        assert!(args(None, None, None).is_empty());
+        assert_eq!(args(Some(ID), None, None), vec!["--resume", ID]);
+        assert_eq!(args(None, Some(ID), None), vec!["--session-id", ID]);
+        assert_eq!(args(None, None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
+        assert_eq!(args(Some(ID), None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
+        assert_eq!(args(None, Some(ID), Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--session-id", ID]);
+    }
+
+    #[test]
+    fn new_session_id_is_v4_and_unique() {
+        let a = new_session_id().unwrap();
+        let b = new_session_id().unwrap();
+        assert_ne!(a, b);
+        for x in [&a, &b] {
+            assert!(valid_id(x));
+            assert_eq!(x.as_bytes()[14], b'4');
+            assert!(matches!(x.as_bytes()[19], b'8' | b'9' | b'a' | b'b'));
+            assert_eq!(x, &x.to_lowercase());
+        }
     }
 
     #[test]

@@ -1,5 +1,6 @@
 mod config;
 mod hooks;
+mod owned;
 mod roadmap;
 mod screens;
 mod server;
@@ -21,11 +22,13 @@ struct AppState {
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
     term: term::Term,
+    owned: Arc<Mutex<owned::Owned>>,
     plugin_dir: Option<String>,
     /// 마지막으로 고른 폴더. 경로는 웹뷰로 나가지 않는다.
     picked: Mutex<Option<String>>,
     /// 마지막으로 start에 성공한 cwd. 훅 설정 점검에만 쓰고 웹뷰로 나가지 않는다.
-    ran: Mutex<Option<String>>,
+    /// (cwd, start 직전 now_ms). 채택 규칙에도 쓴다.
+    ran: Arc<Mutex<Option<(String, u64)>>>,
 }
 
 #[derive(serde::Serialize)]
@@ -56,6 +59,30 @@ fn poll_round(w: &mut watch::Watcher, store: &Mutex<sessions::Store>) -> Vec<ses
     changed.iter().filter_map(|id| st.get(id).map(|s| sessions::snapshot(s, now))).collect()
 }
 
+/// 지금 Orbit 터미널이 실행 중이면 (정규화한 cwd, 시작 시각). lock은 하나씩만 잡는다.
+fn current_run(term: &term::Term, ran: &Mutex<Option<(String, u64)>>) -> Option<(String, u64)> {
+    if !term.running() {
+        return None;
+    }
+    let r = ran.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    r.map(|(c, t)| (owned::norm_cwd(&c), t))
+}
+
+/// Orbit이 시작한 세션(채택 규칙 포함)만 남긴다. owned lock만 잡는다.
+fn visible(
+    owned: &mut owned::Owned,
+    v: Vec<sessions::Session>,
+    run: Option<(String, u64)>,
+    now: u64,
+) -> Vec<sessions::Session> {
+    let run = run.as_ref().map(|(c, t)| (c.as_str(), *t));
+    v.into_iter().filter(|s| owned.adopt(&s.id, s.cwd.as_deref(), s.started_ms, run, now)).collect()
+}
+
+fn lock_owned(o: &Mutex<owned::Owned>) -> std::sync::MutexGuard<'_, owned::Owned> {
+    o.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn settings_path(state: &AppState) -> Result<&PathBuf, String> {
     state.settings_path.as_ref().map_err(|e| e.clone())
 }
@@ -77,7 +104,8 @@ fn get_status(state: State<AppState>) -> Status {
     let projects_error = state.projects_dir.as_ref().err().cloned();
     let node_missing = state.plugin_dir.is_some() && !term::node_usable();
     let mut files: Vec<PathBuf> = state.settings_path.iter().cloned().collect();
-    if let Some(ran) = state.ran.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+    let ran = state.ran.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.0.clone());
+    if let Some(ran) = ran.as_ref() {
         let d = std::path::Path::new(ran).join(".claude");
         files.push(d.join("settings.json"));
         files.push(d.join("settings.local.json"));
@@ -94,8 +122,10 @@ fn get_roadmap(state: State<AppState>, id: String) -> roadmap::Roadmap {
 
 #[tauri::command(async)]
 fn get_sessions(state: State<AppState>) -> Vec<sessions::Session> {
+    let run = current_run(&state.term, &state.ran);
     let now = sessions::now_ms();
-    lock(&state.store).all().into_iter().map(|s| sessions::stalled(s, now)).collect()
+    let all: Vec<_> = lock(&state.store).all().into_iter().map(|s| sessions::stalled(s, now)).collect();
+    visible(&mut lock_owned(&state.owned), all, run, now)
 }
 
 #[tauri::command(async)]
@@ -153,11 +183,20 @@ fn term_open_folder(state: State<AppState>, on_out: tauri::ipc::Channel<term::Te
     let picked = state.picked.lock().unwrap_or_else(|e| e.into_inner()).take();
     let s = picked.ok_or("폴더를 먼저 고르세요")?;
     term::check_cwd(&s)?;
+    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = None;
     state.term.stop();
-    state.term.start(term::find_in(&term::claude_dirs()), &s, &term::args(None, state.plugin_dir.as_deref()), move |m| {
+    start_new(&state, s, on_out)
+}
+
+/// 새 세션 id를 기록(실패는 무시)한 뒤 `--session-id`로 시작한다.
+fn start_new(state: &AppState, cwd: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+    let id = term::new_session_id()?;
+    let _ = lock_owned(&state.owned).add(&id);
+    let t0 = sessions::now_ms();
+    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(None, Some(&id), state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
     })?;
-    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some((cwd, t0));
     Ok(())
 }
 
@@ -169,10 +208,15 @@ fn term_from_session(
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
     let cwd = term::session_cwd(&lock(&state.store), id)?;
-    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(resume.then_some(id), state.plugin_dir.as_deref()), move |m| {
+    if !resume {
+        return start_new(state, cwd, on_out);
+    }
+    let _ = lock_owned(&state.owned).add(id);
+    let t0 = sessions::now_ms();
+    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(Some(id), None, state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
     })?;
-    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some(cwd);
+    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some((cwd, t0));
     Ok(())
 }
 
@@ -226,18 +270,28 @@ pub fn run() {
                 .map_err(|e| e.to_string())
                 .and_then(|d| config::load_or_create(&d));
             let store = Arc::new(Mutex::new(sessions::Store::default()));
+            let term_h = term::Term::default();
+            let ran: Arc<Mutex<Option<(String, u64)>>> = Arc::new(Mutex::new(None));
+            let owned = Arc::new(Mutex::new(owned::Owned::load(
+                app.path().app_data_dir().ok().map(|d| d.join("orbit-sessions.json")),
+            )));
             let server = match &cfg {
                 Ok(c) => {
                     let handle = app.handle().clone();
                     let store = store.clone();
+                    let (term_h, ran, owned) = (term_h.clone(), ran.clone(), owned.clone());
                     server::start(c.port, c.token.clone(), move |v| {
+                        let run = current_run(&term_h, &ran);
                         let snap = {
                             let mut st = lock(&store);
                             let now = sessions::now_ms();
                             st.ingest_hook(&v, now).and_then(|id| st.get(&id).map(|s| sessions::snapshot(s, now)))
                         };
                         if let Some(s) = snap {
-                            let _ = handle.emit("session-update", vec![s]);
+                            let shown = visible(&mut lock_owned(&owned), vec![s], run, sessions::now_ms());
+                            if !shown.is_empty() {
+                                let _ = handle.emit("session-update", shown);
+                            }
                         }
                     })
                 }
@@ -270,10 +324,13 @@ pub fn run() {
                 let root = root.clone();
                 let store = store.clone();
                 let handle = app.handle().clone();
+                let (term_h, ran, owned) = (term_h.clone(), ran.clone(), owned.clone());
                 std::thread::spawn(move || {
                     let mut w = watch::Watcher::new(root);
                     loop {
+                        let run = current_run(&term_h, &ran);
                         let snaps = poll_round(&mut w, &store);
+                        let snaps = visible(&mut lock_owned(&owned), snaps, run, sessions::now_ms());
                         if !snaps.is_empty() {
                             let _ = handle.emit("session-update", snaps);
                         }
@@ -291,7 +348,7 @@ pub fn run() {
                 .ok()
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term::Term::default(), plugin_dir, picked: Mutex::new(None), ran: Mutex::new(None) });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term_h, owned, plugin_dir, picked: Mutex::new(None), ran });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -354,6 +411,23 @@ mod tests {
         std::fs::OpenOptions::new().append(true).open(&f).unwrap().write_all(line("t3").as_bytes()).unwrap();
         assert_eq!(count(&mut w), 3);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn visible_drops_unrecorded_unadopted_sessions() {
+        let id = |n: &str| format!("{n}1111111-2222-3333-4444-555555555555");
+        let mut st = sessions::Store::default();
+        for (i, cwd) in [(id("a"), "/x"), (id("b"), "/x"), (id("c"), "/w/p/")] {
+            st.ingest_hook(&serde_json::json!({"hook_event_name":"UserPromptSubmit","session_id":i,"cwd":cwd}), 1);
+        }
+        let mut v = st.all();
+        v.sort_by(|x, y| x.id.cmp(&y.id));
+        let mut o = owned::Owned::load(None);
+        o.add(&id("a")).unwrap();
+        let out = visible(&mut o, v, Some(("/w/p".to_string(), 0)), 10);
+        let ids: Vec<_> = out.iter().map(|s| s.id.clone()).collect();
+        assert_eq!(ids, vec![id("a"), id("c")]);
+        assert!(o.contains(&id("c")) && !o.contains(&id("b")));
     }
 
     #[test]
