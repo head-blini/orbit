@@ -30,7 +30,12 @@ struct AppState {
     picked: Mutex<Option<String>>,
     /// 이어 가기를 시작하는 중인 세션 id(같은 세션의 중복 시작 방지).
     resuming: Mutex<std::collections::HashSet<String>>,
+    /// 시작하는 중인 폴더(정규화 cwd). 같은 폴더의 동시 시작을 막는다.
+    launching: Mutex<std::collections::HashSet<String>>,
 }
+
+/// 같은 폴더에서 이미 실행 중인 터미널이 있을 때의 거부 문구(프론트 `SAME`과 같은 글).
+const SAME: &str = "이 폴더는 이미 터미널에서 실행 중입니다 — 실행 중 줄을 고르세요";
 
 /// 시작 중 예약. drop하면 풀린다.
 struct Reserve<'a>(&'a Mutex<std::collections::HashSet<String>>, String);
@@ -148,6 +153,12 @@ fn resume_check(source: Option<sessions::Source>, transcript: bool, running_cur:
     Ok(())
 }
 
+/// `cwd`와 같은 폴더에서 실행 중인 탭 id(`current_runs` 결과와 정규화 cwd를 비교).
+fn same_folder(runs: &[(String, u64, u32)], cwd: &str) -> Option<u32> {
+    let c = owned::norm_cwd(cwd);
+    runs.iter().find(|(r, _, _)| *r == c).map(|(_, _, k)| *k)
+}
+
 fn lock_owned(o: &Mutex<owned::Owned>) -> std::sync::MutexGuard<'_, owned::Owned> {
     o.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -228,9 +239,16 @@ fn uninstall_hooks(state: State<AppState>) -> Result<Option<String>, String> {
     Ok(backup.map(|p| p.display().to_string()))
 }
 
-/// 폴더 선택 창. 경로는 Rust에만 두고 폴더 이름만 돌려준다(취소는 None). 실행 중이어도 거부하지 않는다.
+#[derive(serde::Serialize)]
+struct Picked {
+    name: String,
+    tab: Option<u32>,
+}
+
+/// 폴더 선택 창. 경로는 Rust에만 두고 폴더 이름만 돌려준다(취소는 None).
+/// 그 폴더에서 이미 실행 중인 터미널이 있으면 고른 폴더를 남기지 않고 그 탭 id를 함께 돌려준다.
 #[tauri::command(async)]
-fn term_pick_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Option<String>, String> {
+fn term_pick_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Option<Picked>, String> {
     use tauri_plugin_dialog::DialogExt;
     let Some(fp) = app.dialog().file().blocking_pick_folder() else {
         *state.picked.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -241,8 +259,9 @@ fn term_pick_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Opt
     let s = term::strip_verbatim_disk(s);
     term::check_cwd(s)?;
     let name = std::path::Path::new(s).file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned());
-    *state.picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(s.to_string());
-    Ok(Some(name))
+    let tab = same_folder(&current_runs(&state.tabs), s);
+    *state.picked.lock().unwrap_or_else(|e| e.into_inner()) = if tab.is_some() { None } else { Some(s.to_string()) };
+    Ok(Some(Picked { name, tab }))
 }
 
 /// 고른 폴더에서 새 탭의 claude 시작. 다른 탭은 건드리지 않는다.
@@ -287,6 +306,11 @@ fn run_claude(
     epoch: u64,
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
+    // 예약 → 검사 → 시작 순서라서 같은 폴더의 동시 시작도 걸린다(예약은 launch가 끝난 뒤 풀린다)
+    let _rsv = Reserve::take(&state.launching, &owned::norm_cwd(&cwd)).map_err(|_| SAME.to_string())?;
+    if same_folder(&current_runs(&state.tabs), &cwd).is_some() {
+        return Err(SAME.into());
+    }
     let _ = lock_owned(&state.owned).add(id);
     let t0 = sessions::now_ms();
     let obs = observer_for(state);
@@ -491,7 +515,7 @@ pub fn run() {
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
             let observer = app.path().app_data_dir().map(|d| d.join("orbit-hooks.json")).ok();
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None), resuming: Mutex::new(Default::default()) });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None), resuming: Mutex::new(Default::default()), launching: Mutex::new(Default::default()) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -676,6 +700,43 @@ mod tests {
         assert!(Reserve::take(&set, "y").is_ok());
         drop(a);
         assert!(Reserve::take(&set, "x").is_ok());
+    }
+
+    #[test]
+    fn same_folder_cases() {
+        let runs = vec![("/w/p".to_string(), 0, 1), ("/w/q".to_string(), 0, 2)];
+        assert_eq!(same_folder(&runs, "/w/q/"), Some(2));
+        assert_eq!(same_folder(&runs, "/w/r"), None);
+        assert_eq!(same_folder(&[], "/w/p"), None);
+    }
+
+    #[test]
+    fn launching_reserve_blocks_same_folder() {
+        let set = Mutex::new(Default::default());
+        let a = Reserve::take(&set, "/w/p").unwrap();
+        assert!(Reserve::take(&set, "/w/p").is_err());
+        drop(a);
+        assert!(Reserve::take(&set, "/w/p").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn same_folder_sees_running_tab_until_stopped() {
+        let tabs = term::Tabs::default();
+        let d = std::env::temp_dir().join(format!("orbit-lib-same-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        std::fs::create_dir_all(&d).unwrap();
+        let g = tabs.epoch();
+        let t = launch(&tabs, 4, 80, 24, |t| {
+            t.start(Some(PathBuf::from("/bin/sh")), d.to_str().unwrap(), &["-c", "sleep 30"], |_| {})
+        }, "/w/p".into(), 0, g).unwrap();
+        assert_eq!(same_folder(&current_runs(&tabs), "/w/p"), Some(4));
+        t.stop();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while t.running() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert_eq!(same_folder(&current_runs(&tabs), "/w/p"), None);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
