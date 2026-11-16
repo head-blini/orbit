@@ -21,16 +21,13 @@ struct AppState {
     store: Arc<Mutex<sessions::Store>>,
     projects_dir: Result<PathBuf, String>,
     screens_dir: Result<PathBuf, String>,
-    term: term::Term,
+    tabs: term::Tabs,
     owned: Arc<Mutex<owned::Owned>>,
     plugin_dir: Option<String>,
     /// 터미널 claude에 붙일 훅 설정 파일 경로(`app_data_dir/orbit-hooks.json`).
     observer: Option<PathBuf>,
     /// 마지막으로 고른 폴더. 경로는 웹뷰로 나가지 않는다.
     picked: Mutex<Option<String>>,
-    /// 마지막으로 start에 성공한 cwd. 훅 설정 점검에만 쓰고 웹뷰로 나가지 않는다.
-    /// (cwd, start 직전 now_ms). 채택 규칙에도 쓴다.
-    ran: Arc<Mutex<Option<(String, u64)>>>,
 }
 
 #[derive(serde::Serialize)]
@@ -61,24 +58,67 @@ fn poll_round(w: &mut watch::Watcher, store: &Mutex<sessions::Store>) -> Vec<ses
     changed.iter().filter_map(|id| st.get(id).map(|s| sessions::snapshot(s, now))).collect()
 }
 
-/// 지금 Orbit 터미널이 실행 중이면 (정규화한 cwd, 시작 시각). lock은 하나씩만 잡는다.
-fn current_run(term: &term::Term, ran: &Mutex<Option<(String, u64)>>) -> Option<(String, u64)> {
-    if !term.running() {
-        return None;
-    }
-    let r = ran.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    r.map(|(c, t)| (owned::norm_cwd(&c), t))
+/// 실행 중인 탭의 (정규화한 cwd, 시작 시각, 탭 id). 맵 lock은 복사만 하고 놓은 뒤 running을 본다.
+fn current_runs(tabs: &term::Tabs) -> Vec<(String, u64, u32)> {
+    tabs.runs().into_iter().filter(|(_, t, _, _)| t.running()).map(|(k, _, c, t0)| (owned::norm_cwd(&c), t0, k)).collect()
 }
 
-/// Orbit이 시작한 세션(채택 규칙 포함)만 남긴다. owned lock만 잡는다.
+/// Orbit이 시작한 세션(채택 규칙 포함)만 남기고, 연결된 탭을 채운다. owned lock만 잡는다.
 fn visible(
     owned: &mut owned::Owned,
     v: Vec<sessions::Session>,
-    run: Option<(String, u64)>,
+    runs: &[(String, u64, u32)],
     now: u64,
 ) -> Vec<sessions::Session> {
-    let run = run.as_ref().map(|(c, t)| (c.as_str(), *t));
-    v.into_iter().filter(|s| owned.adopt(&s.id, s.cwd.as_deref(), s.started_ms, run, now)).collect()
+    let refs: Vec<(&str, u64)> = runs.iter().map(|(c, t, _)| (c.as_str(), *t)).collect();
+    let mut out = Vec::new();
+    for mut s in v {
+        match owned.adopt_in(&s.id, s.cwd.as_deref(), s.started_ms, &refs, now) {
+            None => continue,
+            Some(Some(i)) => owned.link(&s.id, runs[i].2),
+            Some(None) => {}
+        }
+        s.tab = owned.tab_of(&s.id);
+        out.push(s);
+    }
+    out
+}
+
+/// 시작 공통 흐름: open → resize → start → set_ran. open이 새로 만든 항목은 그 뒤 Err면 맵에서 뺀다.
+/// (resume_check·check_cwd처럼 맵을 건드리지 않고 끝낼 검사는 호출자가 먼저 한다.)
+fn launch(
+    tabs: &term::Tabs,
+    tab: u32,
+    cols: u16,
+    rows: u16,
+    start: impl FnOnce(&term::Term) -> Result<(), String>,
+    cwd: String,
+    t0: u64,
+) -> Result<term::Term, String> {
+    let (term, created) = tabs.open(tab)?;
+    let r = term.resize(cols, rows).and_then(|_| start(&term));
+    if let Err(e) = r {
+        if created {
+            tabs.remove(tab);
+        }
+        return Err(e);
+    }
+    if !tabs.set_ran(tab, &term, cwd, t0) {
+        term.stop();
+        return Err("탭이 닫혔습니다".into());
+    }
+    Ok(term)
+}
+
+/// 이어 가기 사전 검사. 기록 없는 hook 세션(C1)과 이미 실행 중인 탭이 쥔 세션(중복)은 거부한다.
+fn resume_check(source: Option<sessions::Source>, transcript: bool, running_cur: &[Option<String>], id: &str) -> Result<(), String> {
+    if source == Some(sessions::Source::Hook) && !transcript {
+        return Err("보낸 메시지가 없어 이어 갈 대화가 없습니다 — 새로 시작하세요".into());
+    }
+    if running_cur.iter().any(|c| c.as_deref() == Some(id)) {
+        return Err("이 세션은 이미 다른 탭에서 실행 중입니다".into());
+    }
+    Ok(())
 }
 
 fn lock_owned(o: &Mutex<owned::Owned>) -> std::sync::MutexGuard<'_, owned::Owned> {
@@ -106,9 +146,8 @@ fn get_status(state: State<AppState>) -> Status {
     let projects_error = state.projects_dir.as_ref().err().cloned();
     let node_missing = state.plugin_dir.is_some() && !term::node_usable();
     let mut files: Vec<PathBuf> = state.settings_path.iter().cloned().collect();
-    let ran = state.ran.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.0.clone());
-    if let Some(ran) = ran.as_ref() {
-        let d = std::path::Path::new(ran).join(".claude");
+    for ran in state.tabs.cwds() {
+        let d = std::path::Path::new(&ran).join(".claude");
         files.push(d.join("settings.json"));
         files.push(d.join("settings.local.json"));
     }
@@ -124,10 +163,10 @@ fn get_roadmap(state: State<AppState>, id: String) -> roadmap::Roadmap {
 
 #[tauri::command(async)]
 fn get_sessions(state: State<AppState>) -> Vec<sessions::Session> {
-    let run = current_run(&state.term, &state.ran);
+    let runs = current_runs(&state.tabs);
     let now = sessions::now_ms();
     let all: Vec<_> = lock(&state.store).all().into_iter().map(|s| sessions::stalled(s, now)).collect();
-    visible(&mut lock_owned(&state.owned), all, run, now)
+    visible(&mut lock_owned(&state.owned), all, &runs, now)
 }
 
 #[tauri::command(async)]
@@ -179,15 +218,19 @@ fn term_pick_folder(app: tauri::AppHandle, state: State<AppState>) -> Result<Opt
     Ok(Some(name))
 }
 
-/// 고른 폴더에서 claude 시작. 실행 중이면 먼저 정리한다.
+/// 고른 폴더에서 새 탭의 claude 시작. 다른 탭은 건드리지 않는다.
 #[tauri::command(async)]
-fn term_open_folder(state: State<AppState>, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+fn term_open_folder(
+    state: State<AppState>,
+    tab: u32,
+    cols: u16,
+    rows: u16,
+    on_out: tauri::ipc::Channel<term::TermOut>,
+) -> Result<(), String> {
     let picked = state.picked.lock().unwrap_or_else(|e| e.into_inner()).take();
     let s = picked.ok_or("폴더를 먼저 고르세요")?;
     term::check_cwd(&s)?;
-    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    state.term.stop();
-    start_new(&state, s, on_out)
+    start_new(&state, tab, cols, rows, s, on_out)
 }
 
 /// 훅 설정 파일을 쓰고 `--settings`에 넘길 경로를 돌려준다. skip이거나 경로를 모르거나 쓰기에 실패하면 None(시작은 막지 않음).
@@ -206,62 +249,98 @@ fn observer_for(state: &AppState) -> Option<String> {
 }
 
 /// 새 세션 id를 기록(실패는 무시)한 뒤 `--session-id`로 시작한다.
-fn start_new(state: &AppState, cwd: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+fn start_new(
+    state: &AppState,
+    tab: u32,
+    cols: u16,
+    rows: u16,
+    cwd: String,
+    on_out: tauri::ipc::Channel<term::TermOut>,
+) -> Result<(), String> {
     let id = term::new_session_id()?;
     let _ = lock_owned(&state.owned).add(&id);
+    lock_owned(&state.owned).link(&id, tab);
     let t0 = sessions::now_ms();
     let obs = observer_for(state);
-    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(None, Some(&id), obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
-        let _ = on_out.send(m);
-    })?;
-    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some((cwd, t0));
-    Ok(())
+    let run_cwd = cwd.clone();
+    launch(&state.tabs, tab, cols, rows, |t| {
+        t.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(None, Some(&id), obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
+            let _ = on_out.send(m);
+        })
+    }, run_cwd, t0)
+    .map(|_| ())
 }
 
 /// 세션 id의 폴더에서 claude 시작(`resume`이면 `--resume <id>`). 경로는 Rust 안에서만 쓴다.
 fn term_from_session(
     state: &AppState,
+    tab: u32,
+    cols: u16,
+    rows: u16,
     id: &str,
     resume: bool,
     on_out: tauri::ipc::Channel<term::TermOut>,
 ) -> Result<(), String> {
     let cwd = term::session_cwd(&lock(&state.store), id)?;
     if !resume {
-        return start_new(state, cwd, on_out);
+        return start_new(state, tab, cols, rows, cwd, on_out);
     }
+    let source = lock(&state.store).get(id).map(|s| s.source);
+    let transcript = state.projects_dir.as_ref().is_ok_and(|p| term::has_transcript(p, id));
+    let cur: Vec<Option<String>> = {
+        let running: Vec<u32> = state.tabs.runs().into_iter().filter(|(_, t, _, _)| t.running()).map(|(k, _, _, _)| k).collect();
+        let o = lock_owned(&state.owned);
+        running.into_iter().map(|k| o.current(k).map(str::to_string)).collect()
+    };
+    resume_check(source, transcript, &cur, id)?;
+    term::check_cwd(&cwd)?;
     let _ = lock_owned(&state.owned).add(id);
+    lock_owned(&state.owned).link(id, tab);
     let t0 = sessions::now_ms();
     let obs = observer_for(state);
-    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(Some(id), None, obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
-        let _ = on_out.send(m);
-    })?;
-    *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some((cwd, t0));
-    Ok(())
+    let run_cwd = cwd.clone();
+    launch(&state.tabs, tab, cols, rows, |t| {
+        t.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(Some(id), None, obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
+            let _ = on_out.send(m);
+        })
+    }, run_cwd, t0)
+    .map(|_| ())
 }
 
 #[tauri::command(async)]
-fn term_new(state: State<AppState>, id: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
-    term_from_session(&state, &id, false, on_out)
+fn term_new(state: State<AppState>, tab: u32, cols: u16, rows: u16, id: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+    term_from_session(&state, tab, cols, rows, &id, false, on_out)
 }
 
 #[tauri::command(async)]
-fn term_resume(state: State<AppState>, id: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
-    term_from_session(&state, &id, true, on_out)
+fn term_resume(state: State<AppState>, tab: u32, cols: u16, rows: u16, id: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
+    term_from_session(&state, tab, cols, rows, &id, true, on_out)
 }
 
 #[tauri::command(async)]
-fn term_write(state: State<AppState>, data: String) -> Result<(), String> {
-    state.term.write(&data)
+fn term_write(state: State<AppState>, tab: u32, data: String) -> Result<(), String> {
+    state.tabs.get(tab).ok_or("탭이 없습니다")?.write(&data)
+}
+
+/// 맵에 없는 탭이면 만들지 않고 Err(닫힌 탭에 늦게 온 resize가 항목을 되살리지 않게).
+#[tauri::command(async)]
+fn term_resize(state: State<AppState>, tab: u32, cols: u16, rows: u16) -> Result<(), String> {
+    state.tabs.get(tab).ok_or("탭이 없습니다")?.resize(cols, rows)
 }
 
 #[tauri::command(async)]
-fn term_resize(state: State<AppState>, cols: u16, rows: u16) -> Result<(), String> {
-    state.term.resize(cols, rows)
+fn term_stop(state: State<AppState>, tab: u32) {
+    if let Some(t) = state.tabs.remove(tab) {
+        t.stop();
+    }
 }
 
+/// 모든 탭의 claude를 끝내고 맵을 비운다(웹뷰 재로드·종료용).
 #[tauri::command(async)]
-fn term_stop(state: State<AppState>) {
-    state.term.stop();
+fn term_stop_all(state: State<AppState>) {
+    for t in state.tabs.take_all() {
+        t.stop();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -289,8 +368,7 @@ pub fn run() {
                 .map_err(|e| e.to_string())
                 .and_then(|d| config::load_or_create(&d));
             let store = Arc::new(Mutex::new(sessions::Store::default()));
-            let term_h = term::Term::default();
-            let ran: Arc<Mutex<Option<(String, u64)>>> = Arc::new(Mutex::new(None));
+            let tabs = term::Tabs::default();
             let owned = Arc::new(Mutex::new(owned::Owned::load(
                 app.path().app_data_dir().ok().map(|d| d.join("orbit-sessions.json")),
             )));
@@ -298,16 +376,16 @@ pub fn run() {
                 Ok(c) => {
                     let handle = app.handle().clone();
                     let store = store.clone();
-                    let (term_h, ran, owned) = (term_h.clone(), ran.clone(), owned.clone());
+                    let (tabs, owned) = (tabs.clone(), owned.clone());
                     server::start(c.port, c.token.clone(), move |v| {
-                        let run = current_run(&term_h, &ran);
+                        let runs = current_runs(&tabs);
                         let snap = {
                             let mut st = lock(&store);
                             let now = sessions::now_ms();
                             st.ingest_hook(&v, now).and_then(|id| st.get(&id).map(|s| sessions::snapshot(s, now)))
                         };
                         if let Some(s) = snap {
-                            let shown = visible(&mut lock_owned(&owned), vec![s], run, sessions::now_ms());
+                            let shown = visible(&mut lock_owned(&owned), vec![s], &runs, sessions::now_ms());
                             if !shown.is_empty() {
                                 let _ = handle.emit("session-update", shown);
                             }
@@ -343,13 +421,13 @@ pub fn run() {
                 let root = root.clone();
                 let store = store.clone();
                 let handle = app.handle().clone();
-                let (term_h, ran, owned) = (term_h.clone(), ran.clone(), owned.clone());
+                let (tabs, owned) = (tabs.clone(), owned.clone());
                 std::thread::spawn(move || {
                     let mut w = watch::Watcher::new(root);
                     loop {
-                        let run = current_run(&term_h, &ran);
+                        let runs = current_runs(&tabs);
                         let snaps = poll_round(&mut w, &store);
-                        let snaps = visible(&mut lock_owned(&owned), snaps, run, sessions::now_ms());
+                        let snaps = visible(&mut lock_owned(&owned), snaps, &runs, sessions::now_ms());
                         if !snaps.is_empty() {
                             let _ = handle.emit("session-update", snaps);
                         }
@@ -368,7 +446,7 @@ pub fn run() {
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
             let observer = app.path().app_data_dir().map(|d| d.join("orbit-hooks.json")).ok();
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term_h, owned, plugin_dir, observer, picked: Mutex::new(None), ran });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -385,14 +463,17 @@ pub fn run() {
             term_resume,
             term_write,
             term_resize,
-            term_stop
+            term_stop,
+            term_stop_all
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, ev| {
             if let tauri::RunEvent::Exit = ev {
                 let st = app.state::<AppState>();
-                st.term.stop();
+                for t in st.tabs.take_all() {
+                    t.stop();
+                }
             }
         });
 }
@@ -444,10 +525,76 @@ mod tests {
         v.sort_by(|x, y| x.id.cmp(&y.id));
         let mut o = owned::Owned::load(None);
         o.add(&id("a")).unwrap();
-        let out = visible(&mut o, v, Some(("/w/p".to_string(), 0)), 10);
+        let out = visible(&mut o, v, &[("/w/p".to_string(), 0, 7)], 10);
         let ids: Vec<_> = out.iter().map(|s| s.id.clone()).collect();
         assert_eq!(ids, vec![id("a"), id("c")]);
         assert!(o.contains(&id("c")) && !o.contains(&id("b")));
+        assert_eq!(out[1].tab, Some(7));
+    }
+
+    fn sess(st: &mut sessions::Store, id: &str, cwd: &str) {
+        st.ingest_hook(&serde_json::json!({"hook_event_name":"UserPromptSubmit","session_id":id,"cwd":cwd}), 1);
+    }
+
+    #[test]
+    fn visible_tab_follows_adopting_run() {
+        let (a, b) = ("a1111111-2222-3333-4444-555555555555", "b1111111-2222-3333-4444-555555555555");
+        let mut st = sessions::Store::default();
+        sess(&mut st, a, "/w/p");
+        sess(&mut st, b, "/w/q");
+        let mut v = st.all();
+        v.sort_by(|x, y| x.id.cmp(&y.id));
+        let mut o = owned::Owned::load(None);
+        let runs = [("/w/p".to_string(), 0, 1), ("/w/q".to_string(), 0, 2)];
+        let out = visible(&mut o, v, &runs, 10);
+        assert_eq!(out.iter().map(|s| s.tab).collect::<Vec<_>>(), vec![Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn visible_linked_recorded_session_keeps_tab_without_runs() {
+        let (a, b) = ("a1111111-2222-3333-4444-555555555555", "b1111111-2222-3333-4444-555555555555");
+        let mut st = sessions::Store::default();
+        sess(&mut st, a, "/w/p");
+        sess(&mut st, b, "/w/p");
+        let mut v = st.all();
+        v.sort_by(|x, y| x.id.cmp(&y.id));
+        let mut o = owned::Owned::load(None);
+        o.add(a).unwrap();
+        o.add(b).unwrap();
+        o.link(a, 5);
+        let out = visible(&mut o, v, &[], 10);
+        assert_eq!(out.iter().map(|s| s.tab).collect::<Vec<_>>(), vec![Some(5), None]);
+    }
+
+    #[test]
+    fn resume_check_cases() {
+        use sessions::Source::*;
+        let id = "a1111111-2222-3333-4444-555555555555";
+        assert!(resume_check(Some(Hook), false, &[], id).unwrap_err().contains("보낸 메시지가 없어"));
+        assert!(resume_check(Some(Hook), true, &[], id).is_ok());
+        assert!(resume_check(Some(Log), false, &[], id).is_ok());
+        assert!(resume_check(Some(Both), false, &[], id).is_ok());
+        assert!(resume_check(Some(Log), true, &[None, Some(id.to_string())], id).is_err());
+        assert!(resume_check(Some(Log), true, &[None, Some("x".to_string())], id).is_ok());
+    }
+
+    #[test]
+    fn launch_cleans_new_slot_on_start_err_and_keeps_existing() {
+        let tabs = term::Tabs::default();
+        for i in 0..7 {
+            tabs.open(i).unwrap();
+        }
+        let r = launch(&tabs, 100, 80, 24, |_| Err("x".to_string()), "/w".into(), 0);
+        assert!(r.is_err());
+        assert!(tabs.get(100).is_none());
+        assert!(tabs.open(101).is_ok());
+        // 이미 있던 id는 start Err여도 남는다
+        let r = launch(&tabs, 3, 80, 24, |_| Err("x".to_string()), "/w".into(), 0);
+        assert!(r.is_err());
+        assert!(tabs.get(3).is_some());
+        // 성공하면 ran이 기록된다
+        assert!(launch(&tabs, 3, 80, 24, |_| Ok(()), "/w".into(), 0).is_ok());
+        assert_eq!(tabs.cwds(), vec!["/w".to_string()]);
     }
 
     #[test]
