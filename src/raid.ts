@@ -80,27 +80,20 @@ export const shields = (raid: Raid | null): Shield[] => {
 export const healing = (raid: Raid | null, state: Shown): boolean =>
   !fallen(raid, state) && shields(raid).some((s) => s.look === "failed");
 
-const BUBBLE: Record<string, string> = {
-  Read: "파일 읽는 중", NotebookRead: "파일 읽는 중", Grep: "찾는 중", Glob: "찾는 중",
-  Edit: "고치는 중", MultiEdit: "고치는 중", Write: "고치는 중", NotebookEdit: "고치는 중",
-  Bash: "명령 실행 중", WebFetch: "웹 찾는 중", WebSearch: "웹 찾는 중",
-  Agent: "지시하는 중", Task: "지시하는 중", TodoWrite: "할 일 정리 중",
+const BUBBLE: Record<Job, string> = {
+  commander: "지휘 중", wizard: "설계 중", warrior: "구현 중", archer: "리뷰 중", rogue: "보안 점검 중", healer: "디버깅 중", paladin: "검증 중",
 };
-export const bubble = (tool: string | null): string | null => {
-  if (tool == null) return null;
-  if (Object.prototype.hasOwnProperty.call(BUBBLE, tool)) return BUBBLE[tool];
-  return tool.startsWith("mcp__") ? "외부 도구 쓰는 중" : "일하는 중";
-};
+export const bubble = (job: string): string =>
+  Object.prototype.hasOwnProperty.call(BUBBLE, job) ? BUBBLE[job as Job] : "일하는 중";
 
 export const heroAct = (s: NodeState): Act => (s === "running" ? "attack" : s === "waiting" ? "wait" : s === "failed" ? "ko" : "idle");
 export const leadAct = (s: Shown): Act =>
   s === "working" ? "attack" : s === "waiting" ? "wait" : s === "error" ? "ko" : s === "stalled" ? "sleep" : "idle";
 
 // 역할 텍스트는 kind → description → "—". 문자열은 그대로 담는다(HTML로 넣지 않는 것은 호출부 몫).
-export const heroLabel = (job: Job, kind: string | null, description: string | null, stateText: string, act: Act, tool: string | null): string => {
+export const heroLabel = (job: Job, kind: string | null, description: string | null, stateText: string, act: Act): string => {
   const base = `${JOB_LABEL[job]}(${kind ?? description ?? "—"}) · ${stateText}`;
-  const b = act === "attack" ? bubble(tool) : null;
-  return b ? `${base} · 지금 하는 일(추정): ${b}` : base;
+  return act === "attack" ? `${base} · 지금 하는 일: ${bubble(job)}` : base;
 };
 
 export const summary = (raid: Raid | null, agents: Agent[], state: Shown): string => {

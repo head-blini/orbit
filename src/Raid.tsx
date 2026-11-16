@@ -29,7 +29,7 @@ function Stack({ name, frames, k, act, flip }: { name: string; frames: string[];
 
 const Icon = ({ name }: { name: string }) => <Svg s={S[name] as Sprite} k={2} />;
 
-type Hero = { id: string; job: Job; role: string; act: Act; tool: string | null; label: string };
+type Hero = { id: string; job: Job; role: string; act: Act; label: string };
 
 export default function Raid({ session, selected, onSelect }: { session: Session | null; selected: string | null; onSelect: (key: string) => void }) {
   const id = session?.id ?? null;
@@ -70,12 +70,12 @@ export default function Raid({ session, selected, onSelect }: { session: Session
   const heroes: Hero[] = [];
   if (session) {
     const act = leadAct(st);
-    heroes.push({ id: "lead", job: "commander", role: "Lead", act, tool: session.tool, label: heroLabel("commander", "Lead", null, LEAD_LABEL[st], act, session.tool) });
+    heroes.push({ id: "lead", job: "commander", role: "Lead", act, label: heroLabel("commander", "Lead", null, LEAD_LABEL[st], act) });
     agents.map((a, i) => ({ a, i })).sort((p, q) => p.a.col - q.a.col).forEach(({ a, i }) => {
       const job = jobOf(a.kind);
       const act = heroAct(a.state);
-      heroes.push({ id: nodeKey(a) || `i${i}`, job, role: a.kind ?? a.description ?? "—", act, tool: a.tool,
-        label: heroLabel(job, a.kind, a.description, NODE_LABEL[a.state] ?? "알 수 없음", act, a.tool) });
+      heroes.push({ id: nodeKey(a) || `i${i}`, job, role: a.kind ?? a.description ?? "—", act,
+        label: heroLabel(job, a.kind, a.description, NODE_LABEL[a.state] ?? "알 수 없음", act) });
     });
   }
   const targetId = heroes.find((h) => h.id !== "lead" && (h.act === "attack" || h.act === "wait"))?.id;
@@ -125,7 +125,7 @@ export default function Raid({ session, selected, onSelect }: { session: Session
           <ol className="party" aria-label="파티">
             {heroes.map((h) => {
               const cls = h.act === "attack" ? " is-run" : h.act === "wait" ? " is-wait" : h.act === "ko" ? " is-fail" : "";
-              const b = h.act === "attack" ? bubble(h.tool) : null;
+              const b = h.act === "attack" ? bubble(h.job) : null;
               return (
                 <li key={h.id} ref={h.id === targetId ? targetRef : undefined}>
                   <button type="button" className={`hero${cls}`} aria-label={h.label} aria-current={h.id === selected ? "true" : undefined} onClick={() => onSelect(h.id)}>
