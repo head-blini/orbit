@@ -1,0 +1,99 @@
+/* 레이드: 게임보이 전투 화면. 4명암 토큰만 쓴다(새 색·새 토큰 없음). 배치 숫자는 리터럴. */
+.graph { display: flex; flex-direction: column; }
+.field {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  scroll-padding: var(--s-1);
+  padding: var(--s-1); /* 포커스 링(2px + 2px)이 잘리지 않게 */
+  scrollbar-color: var(--c-ink) var(--c-light);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s-4);
+  align-items: start;
+}
+.field.narrow { grid-template-columns: 1fr; gap: var(--s-3); }
+.field.narrow .mon { order: -1; position: static; }
+
+.p0 { fill: var(--c-ink); }
+.p1 { fill: var(--c-dark); }
+.p2 { fill: var(--c-light); }
+.p3 { fill: var(--c-paper); }
+svg { display: block; }
+
+/* 프레임 겹침: 첫 프레임만 보이고, .act일 때만 CSS가 교대한다 */
+.stack { display: grid; }
+.stack .fr { grid-area: 1 / 1; visibility: hidden; }
+.stack .fr0 { visibility: visible; }
+.stack.flip { transform: scaleY(-1); }
+.stack.act.n2 .fr0 { animation: rf2a 0.5s step-end infinite; }
+.stack.act.n2 .fr1 { animation: rf2b 0.5s step-end infinite; }
+.stack.act.n3 .fr0 { animation: rf3a 1s step-end infinite; }
+.stack.act.n3 .fr1 { animation: rf3b 1s step-end infinite; }
+.stack.act.n3 .fr2 { animation: rf3c 1s step-end infinite; }
+@keyframes rf2a { 0% { visibility: visible; } 50% { visibility: hidden; } }
+@keyframes rf2b { 0% { visibility: hidden; } 50% { visibility: visible; } }
+@keyframes rf3a { 0% { visibility: visible; } 25% { visibility: hidden; } 50% { visibility: visible; } 75% { visibility: hidden; } }
+@keyframes rf3b { 0% { visibility: hidden; } 25% { visibility: visible; } 50% { visibility: hidden; } }
+@keyframes rf3c { 0% { visibility: hidden; } 75% { visibility: visible; } }
+
+.party { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-2); align-content: start; }
+.party li { width: 96px; }
+.hero {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--s-1);
+  text-align: center;
+  color: var(--c-ink);
+  background: var(--c-paper);
+  border: var(--b-box);
+  border-radius: var(--r-node);
+  box-shadow: var(--sh-node);
+  font: inherit;
+  cursor: pointer;
+}
+.hero .hname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hero .mark { visibility: hidden; }
+.hero[aria-current="true"] .mark { visibility: visible; }
+.hero .role { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-meta); color: var(--c-dark); }
+/* 작업 중 = 굵은 이중 테두리, 대기 = 회색 바탕, 실패 = 점선 */
+.hero.is-run { border: var(--b-panel); box-shadow: var(--sh-panel); padding: calc(var(--s-1) - 1px); }
+.hero.is-wait { background: var(--c-light); box-shadow: var(--sh-node-wait); }
+.hero.is-wait .role { color: var(--c-ink); }
+.hero.is-fail { border: var(--b-box-fail); box-shadow: none; }
+
+.slot { height: 36px; display: flex; align-items: flex-end; justify-content: center; position: relative; }
+.bub {
+  position: relative;
+  box-sizing: border-box; max-width: 86px; max-height: 34px; overflow: hidden;
+  padding: 2px var(--s-1);
+  border: var(--b-chip);
+  background: var(--c-paper); color: var(--c-ink);
+  font-size: var(--fs-meta); line-height: 14px; text-align: left;
+}
+.bub::after { content: ""; position: absolute; left: 12px; bottom: -6px; width: 4px; height: 4px; background: var(--c-ink); }
+
+.mon { margin: 0; display: grid; justify-items: center; gap: var(--s-1); position: sticky; top: 0; }
+.mon .hp { display: flex; align-items: center; gap: var(--s-2); }
+.mon .hp .rm-bar { flex: none; width: 120px; }
+.field.narrow .mon .hp .rm-bar { width: 96px; }
+.mon .loops { font-size: var(--fs-meta); color: var(--c-dark); min-height: 1em; }
+.mon .note { margin: 0; }
+.heal { border: var(--b-chip); background: var(--c-paper); color: var(--c-ink); padding: 0 var(--s-2); }
+.shields { list-style: none; margin: 0; padding: 0; display: flex; gap: var(--s-2); }
+.shields li { display: grid; justify-items: center; padding: 2px; }
+.shields li.fail { border: var(--b-box-fail); }
+.shields .gl { font-size: var(--fs-meta); }
+
+.msgbox {
+  flex-shrink: 0;
+  margin: var(--s-2) 0 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--c-paper); color: var(--c-ink);
+  border: var(--b-panel); box-shadow: var(--sh-panel); border-radius: var(--r-panel);
+  font-family: var(--f-body); font-size: var(--fs-body);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stack.act.n2 .fr, .stack.act.n3 .fr { animation: none; }
+}

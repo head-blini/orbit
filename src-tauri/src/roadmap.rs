@@ -185,27 +185,86 @@ fn clip(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-/// `<runs>/<id>/STATE.json` 하나. 링크·범위 밖·큰 파일·깨진 JSON은 None.
-fn read_run(runs_dir: &Path, id: &str) -> Option<Run> {
-    let run_dir = runs_dir.join(id);
-    let file = run_dir.join("STATE.json");
+/// `dir/name` 하나를 읽는다. 링크·범위 밖·max 초과·일반 파일 아님은 None.
+fn read_capped(dir: &Path, name: &str, max: u64) -> Option<Vec<u8>> {
+    let file = dir.join(name);
     let meta = std::fs::symlink_metadata(&file).ok()?;
     if meta.file_type().is_symlink() || !meta.is_file() {
         return None;
     }
-    if file.canonicalize().ok()?.parent()? != run_dir.canonicalize().ok()?.as_path() {
+    if file.canonicalize().ok()?.parent()? != dir.canonicalize().ok()?.as_path() {
         return None;
     }
     let f = std::fs::File::open(&file).ok()?;
     let m = f.metadata().ok()?;
-    if !m.is_file() || m.len() > MAX_STATE {
+    if !m.is_file() || m.len() > max {
         return None;
     }
     let mut buf = Vec::new();
-    f.take(MAX_STATE + 1).read_to_end(&mut buf).ok()?;
-    if buf.len() as u64 > MAX_STATE {
+    f.take(max + 1).read_to_end(&mut buf).ok()?;
+    if buf.len() as u64 > max {
         return None;
     }
+    Some(buf)
+}
+
+/// 마지막 `VERDICT: PASS|FAIL` 줄로 판정한다(gate.mjs와 같은 규칙). 파일이 없거나 못 읽으면 Missing.
+fn verdict(dir: &Path, name: &str) -> Verdict {
+    let Some(buf) = read_capped(dir, name, MAX_BYTES) else { return Verdict::Missing };
+    let ws = |c: &u8| matches!(c, b' ' | b'\t');
+    let mut out = Verdict::Pending;
+    for line in buf.split(|&c| c == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        let Some(rest) = line.strip_prefix(b"VERDICT:") else { continue };
+        let rest = &rest[rest.iter().take_while(|c| ws(c)).count()..];
+        let rest = &rest[..rest.len() - rest.iter().rev().take_while(|c| ws(c)).count()];
+        match rest {
+            b"PASS" => out = Verdict::Pass,
+            b"FAIL" => out = Verdict::Fail,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// 레이드 화면용. 세션 cwd와 run id로 `STATE.json`과 체크포인트 파일 네 개를 읽는다.
+/// 읽은 문자열은 고정 값으로만 바꿔 내보낸다.
+pub fn raid(cwd: Option<&str>, run: Option<&str>) -> Raid {
+    let (Some(cwd), Some(run)) = (cwd.filter(|c| !c.is_empty()), run) else { return Raid::None };
+    if !local_abs(cwd) || !run_id_ok(run) {
+        return Raid::None;
+    }
+    let orbit = Path::new(cwd).join(".orbit");
+    let runs_dir = orbit.join("runs");
+    let run_dir = runs_dir.join(run);
+    if !real_dir(&orbit) || !real_dir(&runs_dir) || !real_dir(&run_dir) {
+        return Raid::None;
+    }
+    let Some(buf) = read_capped(&run_dir, "STATE.json", MAX_STATE) else { return Raid::None };
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(&buf) else { return Raid::None };
+    let Some(o) = v.as_object() else { return Raid::None };
+    let track = ["quick", "standard", "full"].into_iter().find(|t| o.get("track").and_then(|x| x.as_str()) == Some(t));
+    let stage = ["brief", "plan", "build", "review", "verify", "security", "release", "done"]
+        .into_iter()
+        .find(|s| o.get("stage").and_then(|x| x.as_str()) == Some(s));
+    let loops = o
+        .get("loops")
+        .and_then(|x| x.as_object())
+        .map(|m| m.values().filter_map(|x| x.as_u64()).fold(0u64, |a, n| a.saturating_add(n)).min(99))
+        .unwrap_or(0);
+    let gates = Gates {
+        plan: verdict(&run_dir, "PLAN_CHECK.md"),
+        review: verdict(&run_dir, "REVIEW.md"),
+        verify: verdict(&run_dir, "VERIFY.md"),
+        security: verdict(&run_dir, "SECURITY.md"),
+    };
+    Raid::Run { track, stage, loops, gates }
+}
+
+/// `<runs>/<id>/STATE.json` 하나. 링크·범위 밖·큰 파일·깨진 JSON은 None.
+fn read_run(runs_dir: &Path, id: &str) -> Option<Run> {
+    let run_dir = runs_dir.join(id);
+    let buf = read_capped(&run_dir, "STATE.json", MAX_STATE)?;
     let v: serde_json::Value = serde_json::from_slice(&buf).ok()?;
     let o = v.as_object()?;
     Some(Run {
@@ -243,6 +302,30 @@ pub fn runs(dir: &Path) -> Vec<Run> {
         }
     }
     out
+}
+
+#[derive(serde::Serialize, Debug, PartialEq, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum Verdict {
+    Missing,
+    Pending,
+    Pass,
+    Fail,
+}
+
+#[derive(serde::Serialize, Debug, PartialEq, Clone)]
+pub struct Gates {
+    pub plan: Verdict,
+    pub review: Verdict,
+    pub verify: Verdict,
+    pub security: Verdict,
+}
+
+#[derive(serde::Serialize, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Raid {
+    None,
+    Run { track: Option<&'static str>, stage: Option<&'static str>, loops: u64, gates: Gates },
 }
 
 #[cfg(test)]
@@ -608,5 +691,157 @@ mod tests {
         assert_eq!(v["file"], false);
         assert_eq!(v["runs"][0]["id"], "a");
         assert_eq!(v["runs"][0]["request"], req);
+    }
+
+    fn raid_at(proj: &Path, id: &str) -> Raid {
+        raid(Some(proj.to_str().unwrap()), Some(id))
+    }
+
+    fn put(proj: &Path, id: &str, name: &str, body: &[u8]) {
+        let d = proj.join(".orbit").join("runs").join(id);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join(name), body).unwrap();
+    }
+
+    fn gates_of(r: &Raid) -> Gates {
+        match r {
+            Raid::Run { gates, .. } => gates.clone(),
+            other => panic!("Run이 아님: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn raid_rejects_bad_input() {
+        let root = tmp();
+        let proj = root.join("proj");
+        mk_run(&proj, "a", r#"{"track":"quick"}"#, 0);
+        let p = proj.to_str().unwrap();
+        assert_eq!(raid(None, Some("a")), Raid::None);
+        assert_eq!(raid(Some(""), Some("a")), Raid::None);
+        assert_eq!(raid(Some("rel/path"), Some("a")), Raid::None);
+        assert_eq!(raid(Some(p), None), Raid::None);
+        for bad in ["..", "a/b", "", ".hid"] {
+            assert_eq!(raid(Some(p), Some(bad)), Raid::None, "{bad}");
+        }
+        assert_eq!(raid(Some(p), Some("nope")), Raid::None);
+    }
+
+    #[test]
+    fn raid_reads_state_and_loops() {
+        let root = tmp();
+        let proj = root.join("proj");
+        mk_run(&proj, "a", r#"{"track":"standard","stage":"build","loops":{"plan":1,"review":"x","debug":2}}"#, 0);
+        assert_eq!(
+            raid_at(&proj, "a"),
+            Raid::Run {
+                track: Some("standard"),
+                stage: Some("build"),
+                loops: 3,
+                gates: Gates { plan: Verdict::Missing, review: Verdict::Missing, verify: Verdict::Missing, security: Verdict::Missing },
+            }
+        );
+        mk_run(&proj, "b", r#"{"track":"full","stage":"done","loops":{"a":90,"b":90}}"#, 0);
+        match raid_at(&proj, "b") {
+            Raid::Run { loops, .. } => assert_eq!(loops, 99),
+            o => panic!("{:?}", o),
+        }
+        mk_run(&proj, "c", r#"{"track":"quick","loops":[1,2]}"#, 0);
+        match raid_at(&proj, "c") {
+            Raid::Run { loops, stage, .. } => assert_eq!((loops, stage), (0, None)),
+            o => panic!("{:?}", o),
+        }
+    }
+
+    #[test]
+    fn raid_unknown_values_become_none() {
+        let root = tmp();
+        let proj = root.join("proj");
+        mk_run(&proj, "a", r#"{"track":"<img src=x>","stage":"<b>x</b>"}"#, 0);
+        let r = raid_at(&proj, "a");
+        assert_eq!(
+            r,
+            Raid::Run { track: None, stage: None, loops: 0, gates: gates_of(&r) }
+        );
+        mk_run(&proj, "b", r#"{"track":5,"stage":["build"]}"#, 0);
+        match raid_at(&proj, "b") {
+            Raid::Run { track, stage, .. } => assert_eq!((track, stage), (None, None)),
+            o => panic!("{:?}", o),
+        }
+        mk_run(&proj, "c", "[1]", 0);
+        assert_eq!(raid_at(&proj, "c"), Raid::None);
+        mk_run(&proj, "d", "{broken", 0);
+        assert_eq!(raid_at(&proj, "d"), Raid::None);
+    }
+
+    #[test]
+    fn raid_verdict_rules() {
+        let root = tmp();
+        let proj = root.join("proj");
+        mk_run(&proj, "a", r#"{"track":"full"}"#, 0);
+        put(&proj, "a", "PLAN_CHECK.md", b"VERDICT: PASS\nnotes\nVERDICT: FAIL\n");
+        put(&proj, "a", "REVIEW.md", b"VERDICT: FAIL\nVERDICT:\t PASS \t\n");
+        put(&proj, "a", "VERIFY.md", b"VERDICT: PASS extra\n");
+        put(&proj, "a", "SECURITY.md", b"x\r\nVERDICT: PASS\r\n");
+        let g = gates_of(&raid_at(&proj, "a"));
+        assert_eq!(g.plan, Verdict::Fail);
+        assert_eq!(g.review, Verdict::Pass);
+        assert_eq!(g.verify, Verdict::Pending);
+        assert_eq!(g.security, Verdict::Pass);
+        mk_run(&proj, "b", r#"{"track":"full"}"#, 0);
+        assert_eq!(gates_of(&raid_at(&proj, "b")).plan, Verdict::Missing);
+        let v = serde_json::to_value(raid_at(&proj, "a")).unwrap();
+        assert_eq!(v["kind"], "run");
+        assert_eq!(v["track"], "full");
+        assert_eq!(v["gates"]["plan"], "fail");
+        assert_eq!(v["gates"]["review"], "pass");
+        assert_eq!(v["gates"]["verify"], "pending");
+        assert_eq!(v["gates"]["security"], "pass");
+        assert_eq!(serde_json::to_value(Raid::None).unwrap()["kind"], "none");
+    }
+
+    #[test]
+    fn raid_size_caps() {
+        let root = tmp();
+        let proj = root.join("proj");
+        let mut big = br#"{"track":"quick","pad":""#.to_vec();
+        big.extend(std::iter::repeat(b'a').take(64 * 1024));
+        big.extend_from_slice(b"\"}");
+        mk_run(&proj, "a", std::str::from_utf8(&big).unwrap(), 0);
+        assert_eq!(raid_at(&proj, "a"), Raid::None);
+        mk_run(&proj, "b", r#"{"track":"quick"}"#, 0);
+        let mut md = b"VERDICT: PASS\n".to_vec();
+        md.extend(std::iter::repeat(b'a').take(256 * 1024));
+        put(&proj, "b", "REVIEW.md", &md);
+        assert_eq!(gates_of(&raid_at(&proj, "b")).review, Verdict::Missing);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn raid_rejects_links() {
+        use std::os::unix::fs::symlink;
+        let root = tmp();
+        let proj = root.join("proj");
+        std::fs::write(root.join("out.json"), r#"{"track":"quick"}"#).unwrap();
+        std::fs::write(root.join("out.md"), "VERDICT: PASS\n").unwrap();
+        mk_run(&proj, "a", r#"{"track":"quick"}"#, 0);
+        std::fs::remove_file(proj.join(".orbit/runs/a/STATE.json")).unwrap();
+        symlink(root.join("out.json"), proj.join(".orbit/runs/a/STATE.json")).unwrap();
+        assert_eq!(raid_at(&proj, "a"), Raid::None);
+        mk_run(&proj, "b", r#"{"track":"quick"}"#, 0);
+        symlink(root.join("out.md"), proj.join(".orbit/runs/b/REVIEW.md")).unwrap();
+        assert_eq!(gates_of(&raid_at(&proj, "b")).review, Verdict::Missing);
+        // runs/<id> 링크 폴더
+        let real = root.join("elsewhere");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("STATE.json"), r#"{"track":"quick"}"#).unwrap();
+        symlink(&real, proj.join(".orbit/runs/c")).unwrap();
+        assert_eq!(raid_at(&proj, "c"), Raid::None);
+        // .orbit/runs 링크
+        let proj2 = root.join("proj2");
+        std::fs::create_dir_all(proj2.join(".orbit")).unwrap();
+        std::fs::create_dir_all(root.join("runs-real/a")).unwrap();
+        std::fs::write(root.join("runs-real/a/STATE.json"), r#"{"track":"quick"}"#).unwrap();
+        symlink(root.join("runs-real"), proj2.join(".orbit/runs")).unwrap();
+        assert_eq!(raid_at(&proj2, "a"), Raid::None);
     }
 }

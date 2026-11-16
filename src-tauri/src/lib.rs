@@ -200,6 +200,12 @@ fn get_roadmap(state: State<AppState>, id: String) -> roadmap::Roadmap {
 }
 
 #[tauri::command(async)]
+fn get_raid(state: State<AppState>, id: String) -> roadmap::Raid {
+    let (cwd, run) = lock(&state.store).get(&id).map(|s| (s.cwd.clone(), s.run.clone())).unwrap_or_default();
+    roadmap::raid(cwd.as_deref(), run.as_deref())
+}
+
+#[tauri::command(async)]
 fn get_sessions(state: State<AppState>) -> Vec<sessions::Session> {
     let runs = current_runs(&state.tabs);
     let now = sessions::now_ms();
@@ -521,6 +527,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_status,
             get_roadmap,
+            get_raid,
             get_sessions,
             list_screens,
             open_screens_dir,

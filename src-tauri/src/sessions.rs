@@ -37,6 +37,8 @@ pub struct Agent {
     /// 만들어질 때 세션의 run 세대. 화면으로 보내지 않는다.
     #[serde(skip)]
     pub run_gen: u32,
+    /// 이 노드가 마지막으로 쓴 도구(훅 PreToolUse, 이름 검사 통과분).
+    pub tool: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -63,6 +65,8 @@ pub struct Session {
     pub stalled: bool,
     /// 지금 run id(`.orbit/current`에 쓴 값, 패턴을 통과한 것만).
     pub run: Option<String>,
+    /// Lead가 마지막으로 쓴 도구(이름 검사 통과분).
+    pub tool: Option<String>,
     /// 이 세션이 묶인 터미널 탭. 스냅숏에만 채운다(Store 안은 None).
     pub tab: Option<u32>,
     #[serde(skip)]
@@ -136,18 +140,23 @@ fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>
     let last = agents.iter().filter(|a| a.run_gen == rg).map(|a| a.col).max().unwrap_or(1);
     let finished = agents.iter().any(|a| a.run_gen == rg && a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
     let col = if finished { last.saturating_add(1) } else { last };
-    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col, run_gen: rg });
+    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col, run_gen: rg, tool: None });
     if agents.len() > MAX_AGENTS {
         agents.remove(0);
     }
     agents.len() - 1
 }
 
+/// `.orbit/current`를 가리키는 경로인가. 문자열 비교만 한다(로그 줄 줄이기도 이걸 쓴다).
+pub fn is_current_path(path: &str) -> bool {
+    path == ".orbit/current" || path.ends_with("/.orbit/current") || path.ends_with("\\.orbit\\current")
+}
+
 /// `.orbit/current`에 run id를 쓰는 Write·Edit면 그 id. 경로는 문자열 비교에만 쓴다.
 pub fn run_start(tool: Option<&str>, input: Option<&Value>) -> Option<String> {
     let input = input?;
     let path = input.get("file_path")?.as_str()?;
-    if !(path == ".orbit/current" || path.ends_with("/.orbit/current") || path.ends_with("\\.orbit\\current")) {
+    if !is_current_path(path) {
         return None;
     }
     let key = match tool? {
@@ -167,6 +176,12 @@ const MAX_CWD: usize = 4096;
 /// id류 문자열. 너무 길면 없는 값으로 본다.
 fn id_str(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str).filter(|s| s.len() <= MAX_ID)
+}
+
+/// 도구 이름 검사: 1~64바이트, ASCII 영숫자와 `_ - .`만. 아니면 None.
+fn tool_name(v: Option<&Value>) -> Option<String> {
+    let s = v?.as_str()?;
+    (!s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))).then(|| s.to_string())
 }
 
 /// 표시용 문자열. 문자 경계에서 MAX_TEXT자로 자른다.
@@ -197,6 +212,9 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64, rg: u32
         "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PermissionRequest" | "Notification" => {
             let waits = name == "PermissionRequest" || v.get("notification_type").and_then(Value::as_str) == Some("permission_prompt");
             if let Some(i) = aid.and_then(|id| by_aid(agents, id)) {
+                if name == "PreToolUse" {
+                    agents[i].tool = tool_name(v.get("tool_name"));
+                }
                 match (waits, agents[i].state) {
                     (true, NodeState::Running) => agents[i].state = NodeState::Waiting,
                     (false, NodeState::Waiting) if matches!(name, "PreToolUse" | "PostToolUse" | "PostToolUseFailure") => agents[i].state = NodeState::Running,
@@ -329,6 +347,7 @@ impl Store {
             agents: Vec::new(),
             stalled: false,
             run: None,
+            tool: None,
             tab: None,
             run_gen: 0,
             events: Vec::new(),
@@ -383,6 +402,9 @@ impl Store {
             s.state = st;
         }
         if name == Some("PreToolUse") && v.get("agent_id").is_none() {
+            if let Some(s) = self.sessions.get_mut(sid) {
+                s.tool = tool_name(v.get("tool_name"));
+            }
             self.apply_run(sid, tool, v.get("tool_input"), id_str(v.get("tool_use_id")));
         }
         if let (Some(n), Some(s)) = (name, self.sessions.get_mut(sid)) {
@@ -425,6 +447,9 @@ impl Store {
             };
             let id = id_str(id);
             if phase == Phase::Call && !sidechain {
+                if let Some(s) = self.sessions.get_mut(session) {
+                    s.tool = tool_name(b.get("name"));
+                }
                 self.apply_run(session, b.get("name").and_then(Value::as_str), b.get("input"), id);
             }
             if let (Some(id), Some(s), false) = (id, self.sessions.get_mut(session), sidechain) {
@@ -1168,7 +1193,7 @@ mod tests {
 
     #[test]
     fn z_col_saturates() {
-        let mut ag = vec![Agent { tool_use_id: None, agent_id: None, kind: None, description: None, state: NodeState::Done, started_ms: None, duration_ms: None, tokens: None, col: u32::MAX, run_gen: 0 }];
+        let mut ag = vec![Agent { tool_use_id: None, agent_id: None, kind: None, description: None, state: NodeState::Done, started_ms: None, duration_ms: None, tokens: None, col: u32::MAX, run_gen: 0, tool: None }];
         let i = push_agent(&mut ag, None, None, NodeState::Running, None, 0);
         assert_eq!(ag[i].col, u32::MAX);
     }
@@ -1388,5 +1413,60 @@ mod tests {
         let j = serde_json::to_value(snapshot(st.get(S).unwrap(), 0)).unwrap();
         assert!(j.as_object().unwrap().contains_key("tab"));
         assert_eq!(j["tab"], json!(null));
+    }
+
+    // --- raid: 말풍선용 도구 이름 ---
+    #[test]
+    fn t1_tool_hook_lead() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Read", "t1", json!({})), 1);
+        assert_eq!(st.get(S).unwrap().tool.as_deref(), Some("Read"));
+    }
+
+    #[test]
+    fn t1_tool_hook_subagent() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Read", "t1", json!({})), 1);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", json!({"tool_input":{"subagent_type":"orbit:engineer"}})), 2);
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("orbit:engineer")), 3);
+        assert_eq!(ag(&st)[0].agent_id.as_deref(), Some("a1"));
+        st.ingest_hook(&ah("PreToolUse", "Bash", "t3", json!({"agent_id":"a1"})), 4);
+        assert_eq!(ag(&st)[0].tool.as_deref(), Some("Bash"));
+        assert_eq!(st.get(S).unwrap().tool.as_deref(), Some("Agent"));
+    }
+
+    #[test]
+    fn t1_tool_log() {
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("l1", "Edit", json!({}), "2000-03-01T00:00:01Z", false), 1);
+        assert_eq!(st.get(S).unwrap().tool.as_deref(), Some("Edit"));
+        st.ingest_log(S, &alog("l2", "Grep", json!({}), "2000-03-01T00:00:02Z", true), 2);
+        assert_eq!(st.get(S).unwrap().tool.as_deref(), Some("Edit"));
+    }
+
+    #[test]
+    fn t1_tool_name_check() {
+        let ok = |s: &str| tool_name(Some(&json!(s)));
+        assert_eq!(ok("mcp__a__b").as_deref(), Some("mcp__a__b"));
+        assert_eq!(ok(&"a".repeat(64)).is_some(), true);
+        assert_eq!(ok(&"a".repeat(65)), None);
+        assert_eq!(ok(""), None);
+        assert_eq!(ok("Read File"), None);
+        assert_eq!(ok("<b>"), None);
+        assert_eq!(tool_name(Some(&json!(5))), None);
+        assert_eq!(tool_name(None), None);
+    }
+
+    #[test]
+    fn t1_tool_snapshot_json() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Read", "t1", json!({})), 1);
+        let v = serde_json::to_value(snapshot(st.get(S).unwrap(), 1)).unwrap();
+        assert_eq!(v["tool"], "Read");
+        assert!(v.get("run_gen").is_none());
+        assert!(v.get("events").is_none());
+        st.ingest_hook(&sub("SubagentStart", "a9", json!("x")), 2);
+        let v = serde_json::to_value(snapshot(st.get(S).unwrap(), 2)).unwrap();
+        assert!(v["agents"][0].as_object().unwrap().contains_key("tool"));
     }
 }
