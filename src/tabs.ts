@@ -36,3 +36,78 @@ export const nextActive = (ids: number[], closing: number, active: number | null
 export const canResume = (s: Pick<Session, "source">): boolean => s.source !== "hook";
 
 export const quickExit = (startedAt: number, now: number): boolean => now - startedAt <= QUICK_EXIT_MS;
+
+export type Phase = "starting" | "running" | "stopping" | "ended";
+export type LiveTab = { id: number; name: string; phase: Phase; wait: boolean; cwd: string | null };
+export type TermCtl = {
+  pick: (id: number | null) => void;
+  close: (id: number, from: "row" | "x") => void;
+  jump: (n: number) => void;
+};
+
+export const MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);
+export const SAME = "이 폴더는 이미 터미널에서 실행 중입니다 — 실행 중 줄을 고르세요";
+export const rowId = (tab: number): string => `live-${tab}`;
+
+// 실행 중 묶음 = views 순서(각자의 지금 세션), 지난 묶음 = 어느 터미널의 지금 세션도 아닌 것(list 순서)
+export const splitSessions = (
+  views: LiveTab[],
+  list: Session[],
+): { live: { view: LiveTab; sid: string | null }[]; past: Session[] } => {
+  const live = views.map((view) => ({ view, sid: tabSid(list, view.id) }));
+  const sids = new Set(live.map((x) => x.sid));
+  return { live, past: list.filter((s) => !sids.has(s.id)) };
+};
+
+// /clear로 밀려난 옛 세션: 열린 터미널을 가리키지만 그 터미널의 지금 세션이 아님
+export const pushedOut = (s: Session, views: LiveTab[], liveSids: ReadonlySet<string>): boolean =>
+  s.tab !== null && views.some((v) => v.id === s.tab) && !liveSids.has(s.id);
+
+const trimEnd = (p: string): string => p.replace(/[/\\]+$/, "");
+
+// 같은 폴더에서 ended 아닌 터미널 id
+export const folderTab = (views: LiveTab[], list: Session[], cwd: string | null): number | null => {
+  if (cwd === null) return null;
+  const want = trimEnd(cwd);
+  for (const v of views) {
+    if (v.phase === "ended") continue;
+    const sid = tabSid(list, v.id);
+    const c = v.cwd ?? list.find((s) => s.id === sid)?.cwd ?? null;
+    if (c !== null && trimEnd(c) === want) return v.id;
+  }
+  return null;
+};
+
+type Sym = "…" | "—" | "!" | "working" | "error" | "stalled";
+
+// shownState와 같은 판정(types.ts 값 import 불가)
+export const liveRow = (
+  v: LiveTab,
+  s: Session | null,
+): { sym: Sym | null; status: string; sr: string; title: string; time: boolean } => {
+  let sym: Sym | null = null;
+  let status: string;
+  let sr: string;
+  let tt: string;
+  if (v.phase === "starting") {
+    sym = "…"; status = "시작하는 중…"; sr = ", 시작하는 중"; tt = "시작하는 중";
+  } else if (v.phase === "stopping") {
+    sym = "…"; status = "종료하는 중…"; sr = ", 종료하는 중"; tt = "종료하는 중";
+  } else if (v.phase === "ended") {
+    sym = "—"; status = "종료됨"; sr = ", 종료됨"; tt = "종료됨";
+  } else if (v.wait) {
+    sym = "!"; status = "답을 기다리는 중"; sr = ", 답을 기다리는 중"; tt = status;
+  } else if (!s) {
+    status = "실행 중 · 세션 연결 전"; sr = ", 실행 중, 세션 연결 전"; tt = "세션 연결 전";
+  } else {
+    status = "실행 중"; sr = ", 터미널 실행 중"; tt = "실행 중";
+  }
+  if (sym === null && v.phase === "running" && !v.wait && s) {
+    const st = s.stalled ? "stalled" : s.state;
+    if (st === "working" || st === "error" || st === "stalled") sym = st;
+  }
+  return {
+    sym, status, sr, title: `${v.name} — ${tt}`,
+    time: s !== null && v.phase !== "starting" && v.phase !== "stopping",
+  };
+};

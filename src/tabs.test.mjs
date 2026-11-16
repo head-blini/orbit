@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tabKey, tabSessions, tabSid, newTabId, nextActive, canResume, quickExit, MAX_TABS, QUICK_EXIT_MS } from "./tabs.ts";
+import { tabKey, tabSessions, tabSid, newTabId, nextActive, canResume, quickExit, MAX_TABS, QUICK_EXIT_MS,
+  rowId, SAME, splitSessions, pushedOut, folderTab, liveRow } from "./tabs.ts";
 
 const k = (key, o = {}) => ({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...o });
 const s = (id, tab, last_ms, source = "hook") => ({ id, tab, last_ms, source });
@@ -63,4 +64,62 @@ test("quickExit", () => {
   assert.equal(quickExit(1000, 1000), true);
   assert.equal(quickExit(1000, 3000), true);
   assert.equal(quickExit(1000, 3001), false);
+});
+
+const v = (id, o = {}) => ({ id, name: `t${id}`, phase: "running", wait: false, cwd: null, ...o });
+
+test("rowId·SAME", () => {
+  assert.equal(rowId(5), "live-5");
+  assert.ok(SAME.includes("이미 터미널에서 실행 중"));
+});
+
+test("splitSessions", () => {
+  const l = [s("b", 1, 200), s("c", null, 150), s("a", 1, 100)];
+  const r = splitSessions([v(1), v(2)], l);
+  assert.deepEqual(r.live.map((x) => [x.view.id, x.sid]), [[1, "b"], [2, null]]);
+  assert.deepEqual(r.past.map((x) => x.id), ["c", "a"]);
+  assert.deepEqual(splitSessions([], l).past.length, 3);
+});
+
+test("pushedOut", () => {
+  const l = [s("b", 1, 200), s("c", null, 150), s("a", 1, 100), s("z", 9, 50)];
+  const views = [v(1)];
+  const live = new Set(["b"]);
+  assert.equal(pushedOut(l[2], views, live), true);
+  assert.equal(pushedOut(l[1], views, live), false);
+  assert.equal(pushedOut(l[3], views, live), false);
+  assert.equal(pushedOut(l[0], views, live), false);
+});
+
+test("folderTab", () => {
+  const l = [{ ...s("a", 2, 10), cwd: "/w/q" }];
+  assert.equal(folderTab([v(1, { cwd: "/w/p" })], [], "/w/p/"), 1);
+  assert.equal(folderTab([v(1, { cwd: "/w/p/" })], [], "/w/p"), 1);
+  assert.equal(folderTab([v(1, { cwd: "/w/p", phase: "ended" })], [], "/w/p"), null);
+  assert.equal(folderTab([v(2)], l, "/w/q"), 2);
+  assert.equal(folderTab([v(2)], l, "/w/x"), null);
+  assert.equal(folderTab([v(1, { cwd: "/w/p" })], [], null), null);
+  assert.equal(folderTab([v(1, { cwd: "/w/p", phase: "starting" })], [], "/w/p"), 1);
+});
+
+test("liveRow", () => {
+  const ss = (state, stalled = false) => ({ ...s("a", 1, 10), state, stalled });
+  let r = liveRow(v(1, { phase: "starting" }), null);
+  assert.deepEqual([r.sym, r.status, r.time, r.title], ["…", "시작하는 중…", false, "t1 — 시작하는 중"]);
+  r = liveRow(v(1), null);
+  assert.deepEqual([r.sym, r.status, r.time], [null, "실행 중 · 세션 연결 전", false]);
+  r = liveRow(v(1, { wait: true }), ss("waiting"));
+  assert.deepEqual([r.sym, r.status, r.time, r.title], ["!", "답을 기다리는 중", true, "t1 — 답을 기다리는 중"]);
+  assert.equal(liveRow(v(1), ss("waiting")).sym, null);
+  assert.equal(liveRow(v(1), ss("done")).sym, null);
+  assert.equal(liveRow(v(1), ss("working")).sym, "working");
+  assert.equal(liveRow(v(1), ss("error")).sym, "error");
+  assert.equal(liveRow(v(1), ss("working", true)).sym, "stalled");
+  r = liveRow(v(1), ss("working"));
+  assert.deepEqual([r.status, r.title, r.time], ["실행 중", "t1 — 실행 중", true]);
+  r = liveRow(v(1, { phase: "stopping" }), ss("working"));
+  assert.deepEqual([r.sym, r.status, r.time], ["…", "종료하는 중…", false]);
+  r = liveRow(v(1, { phase: "ended" }), ss("done"));
+  assert.deepEqual([r.sym, r.status, r.time, r.title], ["—", "종료됨", true, "t1 — 종료됨"]);
+  assert.equal(liveRow(v(1, { phase: "ended" }), null).time, false);
 });
