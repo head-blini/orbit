@@ -112,3 +112,49 @@ test("while composing, a replacement equal to the last flushed syllable still up
   assert.deepEqual(ime.input("insertReplacementText", "안"), { handled: true, send: "" });
   assert.equal(ime.pending, "안");
 });
+
+// keydown까지 넣은 모형: Terminal.tsx의 attachCustomKeyEventHandler(조합 중 keydown → ime.keydown)와 input capture 리스너 순서.
+// 자모 키는 keydown 229 뒤에 input. 2벌식 쌍자음·ㅒ·ㅖ는 Shift를 누른다: 수정키는 IME를 거치지 않아 keydown이 229가 아닌 16("Shift")으로 온다.
+const K = ["key", 229, "Process"], SHIFT = ["key", 16, "Shift"];
+function type(events) {
+  const ime = new HangulIme();
+  let out = "";
+  for (const [t, a, b] of events) {
+    if (t === "key") {
+      if (!ime.active) continue;
+      const k = ime.keydown(a, b);
+      if (!k.block) out += k.send;
+    } else out += ime.input(t, a).send;
+  }
+  return out + ime.flush(); // Enter
+}
+const ins = (d) => [K, ["insertText", d]], rep = (d) => [K, ["insertReplacementText", d]];
+
+// 사용자 보고(20261116-ime-dup): "있어요" → "이있어요"
+test("Shift for ㅆ mid-syllable does not send the half-built syllable (있어요)", () => {
+  assert.equal(type([...ins("ㅇ"), ...rep("이"), SHIFT, ...rep("있"), ...ins("ㅇ"), ...rep("어"), ...rep("엉"), ["insertReplacementText", "어"], ["insertText", "요"]]), "있어요");
+});
+
+test("same bug family: 했어, 예, 얘기, 이써(ㅆ moves to next syllable), 깎아(ㄲ final)", () => {
+  assert.equal(type([...ins("ㅎ"), ...rep("해"), SHIFT, ...rep("했"), ...ins("ㅇ"), ...rep("어")]), "했어");
+  assert.equal(type([...ins("ㅇ"), SHIFT, ...rep("예")]), "예");
+  assert.equal(type([...ins("ㅇ"), SHIFT, ...rep("얘"), ...ins("ㄱ"), ...rep("기")]), "얘기");
+  assert.equal(type([...ins("ㅇ"), ...rep("이"), SHIFT, ...rep("있"), K, ["insertReplacementText", "이"], ["insertText", "써"]]), "이써");
+  assert.equal(type([SHIFT, ...ins("ㄲ"), ...rep("까"), SHIFT, ...rep("깎"), ...ins("ㅇ"), ...rep("아")]), "깎아");
+});
+
+test("other modifiers alone keep composing; non-modifier keys still flush", () => {
+  for (const [code, key] of [[17, "Control"], [18, "Alt"], [91, "Meta"]]) {
+    assert.equal(type([...ins("ㅇ"), ...rep("이"), ["key", code, key], ...rep("있")]), "있", key);
+  }
+  const ime = new HangulIme();
+  ime.input("insertText", "ㅎ");
+  ime.input("insertReplacementText", "한");
+  assert.deepEqual(ime.keydown(13, "Enter"), { block: false, send: "한" });
+  assert.deepEqual(ime.keydown(13, "Enter"), { block: false, send: "" });
+});
+
+test("double final consonant without Shift (ㄱㅏㅂㅅㅣ → 갑시) and Shift at syllable start (가까) were already fine", () => {
+  assert.equal(type([...ins("ㄱ"), ...rep("가"), ...rep("갑"), ...rep("값"), K, ["insertReplacementText", "갑"], ["insertText", "시"]]), "갑시");
+  assert.equal(type([...ins("ㄱ"), ...rep("가"), SHIFT, ...ins("ㄲ"), ...rep("까")]), "가까");
+});

@@ -186,10 +186,10 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
     t.textarea?.addEventListener("blur", () => { send(rt.ime.flush()); preview(); }, { signal: ac.signal }); // xterm#5704: 병합 후 삭제
     t.onRender(() => { if (rt.ime.active) preview(); }); // xterm#5704: 병합 후 삭제. 앞 음절 에코로 커서가 옮겨 가면 따라간다
     t.attachCustomKeyEventHandler((e) => {
-      if (e.type === "keydown" && rt.ime.active) {
-        // xterm#5704: 병합 후 삭제. 229 = IME가 처리 중인 키: xterm의 textarea 비교 전송(CompositionHelper._handleAnyTextareaChanges)이 자모를 보내지 않게 막는다
-        if (e.keyCode === 229) return false;
-        send(rt.ime.flush()); preview(); // xterm#5704: 병합 후 삭제. Enter·방향키·F6 등: 조합 중인 음절을 먼저 보낸다
+      if (e.type === "keydown" && rt.ime.active) { // xterm#5704: 병합 후 삭제
+        const k = rt.ime.keydown(e.keyCode, e.key);
+        if (k.block) return false;
+        send(k.send); preview();
       }
       if (fontKey(e)) return false; // 글자 크기 단축키는 xterm이 먹지 않는다. section onKeyDown이 처리한다
       if (tabKey(e, MAC) !== null) return false; // ⌘1~8도 PTY로 보내지 않는다
