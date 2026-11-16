@@ -112,9 +112,15 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
 
   const inPanel = () => !!(headRef.current?.parentElement?.contains(document.activeElement));
 
-  // 고른 터미널이 바뀌면 그 줄을 보이게 하고, 요청된 곳으로 포커스를 보낸다(E5)
-  useEffect(() => {
-    if (active !== null) document.getElementById(rowId(active))?.scrollIntoView({ block: "nearest" });
+  // 고른 터미널이 바뀌면 그 줄을 보이게 하고, 요청된 곳으로 포커스를 보낸다(E5).
+  // 줄은 App이 onTabs를 받아 다시 그려야 생기고 사라진다: App이 그린 뒤 ctl.settle로 불린다.
+  const scrolled = useRef<number | null>(null);
+  const settle = () => {
+    const active = activeRef.current;
+    if (active !== scrolled.current) {
+      scrolled.current = active;
+      if (active !== null) document.getElementById(rowId(active))?.scrollIntoView({ block: "nearest" });
+    }
     const p = pend.current;
     pend.current = null;
     const head = () => (headRef.current?.querySelector<HTMLElement>("button:not(:disabled):not([aria-disabled=true])") ?? headRef.current?.querySelector<HTMLElement>("#h-term"))?.focus();
@@ -126,7 +132,7 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
     }
     else if (p === "xterm" && active !== null) rts.current.get(active)?.t?.focus();
     else if (p === "head") head();
-  }, [active, tabs.length]);
+  };
 
   const select = (id: number, to: "xterm" | null) => {
     if (!tabsRef.current.some((t) => t.id === id)) return;
@@ -334,6 +340,9 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
     invoke("term_stop", { tab: id }).catch(() => {});
     if (from === "row") { pend.current = "row"; rowTo.current = { id: nextActive(ids, id, id), skip: id }; }
     else if (was) { if (next !== null) pend.current = "xterm"; else { pend.current = "row"; rowTo.current = { id: null, skip: id }; } }
+    else if (document.getElementById(rowId(id))?.parentElement?.contains(document.activeElement)) { // 보이지 않던 줄의 ×: 포커스가 그 줄과 함께 사라지므로 Delete와 같이 이웃 줄로
+      pend.current = "row"; rowTo.current = { id: nextActive(ids, id, id), skip: id };
+    }
     else pend.current = null; // 다른 줄의 ×: 포커스는 그대로
     upd((x) => x.filter((t) => t.id !== id));
     go(next);
@@ -343,7 +352,7 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
     const t = tabsRef.current[n];
     if (t) { select(t.id, "xterm"); say(`${nameOf(t)} 터미널${waitOf(t) ? ", 답을 기다리는 중" : ""}`); }
   };
-  ctl.current = { pick: (id) => { if (id === null) go(null); else select(id, "xterm"); }, close: closeTab, jump };
+  ctl.current = { pick: (id) => { if (id === null) go(null); else select(id, "xterm"); }, close: closeTab, jump, settle };
 
   const actName = actTab ? nameOf(actTab) : "";
   const stateText = actTab ? (() => {

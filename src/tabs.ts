@@ -43,6 +43,7 @@ export type TermCtl = {
   pick: (id: number | null) => void;
   close: (id: number, from: "row" | "x") => void;
   jump: (n: number) => void;
+  settle: () => void; // App이 줄을 다시 그린 뒤 부른다: 스크롤·포커스 이동
 };
 
 export const MAC = typeof navigator !== "undefined" && /Mac/.test(navigator.userAgent);

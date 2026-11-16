@@ -191,6 +191,7 @@ export default function App() {
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
   const [live, setLive] = useState<{ tabs: LiveTab[]; active: number | null }>({ tabs: [], active: null });
   const ctl = useRef<TermCtl | null>(null);
+  useEffect(() => { ctl.current?.settle(); }, [live]); // 줄 DOM이 바뀐 뒤 포커스·스크롤
 
   // 화면이 쓰는 지금 세션: 터미널을 골랐으면 그 터미널의 세션(임시 줄이면 null), 아니면 마지막으로 고른 지난 세션
   const pickId = live.active !== null
