@@ -12,7 +12,7 @@
   /* font */
   --f-pixel: "Galmuri11", monospace;
   --f-body: "Segoe UI", system-ui, sans-serif;
-  --f-mono: "Cascadia Mono", Consolas, monospace;
+  --f-mono: Menlo, "Cascadia Mono", Consolas, monospace;
   --fs-meta: 11px; --fs-pixel: 12px; --fs-body: 13px; --fs-brand: 24px;
   /* border (decisions.md 36) */
   --b-panel: 3px solid var(--c-ink);

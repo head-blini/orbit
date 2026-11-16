@@ -100,7 +100,7 @@ export default function Terminal({ session }: { session: Session | null }) {
   const ensureTerm = (box: HTMLDivElement) => {
     if (termRef.current) return termRef.current;
     const t = new Xterm({
-      fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: fontRef.current, lineHeight: 1,
+      fontFamily: 'Menlo, "Cascadia Mono", Consolas, monospace', fontSize: fontRef.current, lineHeight: 1,
       cursorStyle: "block", cursorBlink: false, drawBoldTextInBrightColors: false,
       minimumContrastRatio: 1, allowTransparency: false, theme: THEME,
     });
