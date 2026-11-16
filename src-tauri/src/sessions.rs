@@ -147,11 +147,16 @@ fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>
     agents.len() - 1
 }
 
+/// `.orbit/current`를 가리키는 경로인가. 문자열 비교만 한다(로그 줄 줄이기도 이걸 쓴다).
+pub fn is_current_path(path: &str) -> bool {
+    path == ".orbit/current" || path.ends_with("/.orbit/current") || path.ends_with("\\.orbit\\current")
+}
+
 /// `.orbit/current`에 run id를 쓰는 Write·Edit면 그 id. 경로는 문자열 비교에만 쓴다.
 pub fn run_start(tool: Option<&str>, input: Option<&Value>) -> Option<String> {
     let input = input?;
     let path = input.get("file_path")?.as_str()?;
-    if !(path == ".orbit/current" || path.ends_with("/.orbit/current") || path.ends_with("\\.orbit\\current")) {
+    if !is_current_path(path) {
         return None;
     }
     let key = match tool? {

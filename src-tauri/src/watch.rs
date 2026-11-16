@@ -165,6 +165,12 @@ struct Inp<'a> {
     subagent_type: Option<&'a RawValue>,
     #[serde(borrow)]
     description: Option<&'a RawValue>,
+    #[serde(borrow)]
+    file_path: Option<&'a RawValue>,
+    #[serde(borrow)]
+    content: Option<&'a RawValue>,
+    #[serde(borrow)]
+    new_string: Option<&'a RawValue>,
 }
 
 fn first(r: &RawValue) -> u8 {
@@ -200,6 +206,12 @@ fn slim_block(r: &RawValue) -> Value {
         let mut im = Map::new();
         put_str(&mut im, "subagent_type", i.subagent_type);
         put_str(&mut im, "description", i.description);
+        // run 감지(`sessions::run_start`)용. 본문은 `.orbit/current`일 때만 들고 온다.
+        put_str(&mut im, "file_path", i.file_path);
+        if im.get("file_path").and_then(Value::as_str).is_some_and(crate::sessions::is_current_path) {
+            put_str(&mut im, "content", i.content);
+            put_str(&mut im, "new_string", i.new_string);
+        }
         m.insert("input".to_string(), Value::Object(im));
     }
     Value::Object(m)
@@ -511,6 +523,38 @@ mod tests {
         assert_eq!(ag[0].kind.as_deref(), Some("orbit:x"));
         assert_eq!(ag[0].description.as_deref(), Some("do it"));
         assert_eq!(ag[0].state, NodeState::Failed);
+    }
+
+    #[test]
+    fn q_slim_keeps_run_fields_through_ingest() {
+        use crate::sessions::Store;
+        let t = Tmp::new();
+        let text = concat!(
+            r#"{"timestamp":"2000-03-01T00:00:00Z","cwd":"/w/p","uuid":"u1","isSidechain":false,"message":{"content":[{"type":"tool_use","id":"w1","name":"Write","input":{"file_path":"/w/p/.orbit/current","content":"r-1\n"}}]}}"#, "\n",
+        );
+        append(&log(&t), text.as_bytes());
+        let mut w = Watcher::new(t.0.clone());
+        let mut st = Store::default();
+        let mut feed = |w: &mut Watcher, st: &mut Store| w.poll(|s, v| { st.ingest_log(s, &v, 1); });
+        feed(&mut w, &mut st);
+        assert_eq!(st.get(U).unwrap().run.as_deref(), Some("r-1"), "로그의 Write .orbit/current가 run을 정한다");
+        append(&log(&t), concat!(
+            r#"{"timestamp":"2000-03-01T00:00:01Z","uuid":"u2","message":{"content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"/w/p/.orbit/current","old_string":"r-1","new_string":"r-2"}}]}}"#, "\n",
+            r#"{"timestamp":"2000-03-01T00:00:02Z","uuid":"u3","message":{"content":[{"type":"tool_use","id":"w2","name":"Write","input":{"file_path":"/w/p/other","content":"r-3"}}]}}"#, "\n",
+        ).as_bytes());
+        feed(&mut w, &mut st);
+        assert_eq!(st.get(U).unwrap().run.as_deref(), Some("r-2"), "Edit도 반영, 다른 파일 Write는 무시");
+    }
+
+    #[test]
+    fn q2_slim_drops_content_of_other_files() {
+        let t = Tmp::new();
+        append(&log(&t), concat!(
+            r#"{"uuid":"u","message":{"content":[{"type":"tool_use","id":"w","name":"Write","input":{"file_path":"/w/p/big.txt","content":"xxxx"}}]}}"#, "\n",
+        ).as_bytes());
+        let mut w = Watcher::new(t.0.clone());
+        let r = collect(&mut w);
+        assert!(r[0].1["message"]["content"][0]["input"].get("content").is_none(), "다른 파일의 본문은 들고 오지 않는다");
     }
 
     #[test]
