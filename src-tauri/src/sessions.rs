@@ -34,6 +34,9 @@ pub struct Agent {
     pub tokens: Option<u64>,
     /// 단계 열(1부터). 생성 때 한 번 정해지고 합치기(min) 외에는 바뀌지 않는다.
     pub col: u32,
+    /// 만들어질 때 세션의 run 세대. 화면으로 보내지 않는다.
+    #[serde(skip)]
+    pub run_gen: u32,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -58,6 +61,10 @@ pub struct Session {
     pub state: State,
     pub agents: Vec<Agent>,
     pub stalled: bool,
+    /// 지금 run id(`.orbit/current`에 쓴 값, 패턴을 통과한 것만).
+    pub run: Option<String>,
+    #[serde(skip)]
+    pub run_gen: u32,
     /// 내부 중복 제거 전용. 화면으로 보내지 않는다.
     #[serde(skip)]
     pub events: Vec<Event>,
@@ -76,6 +83,8 @@ pub fn short_kind(k: &str) -> Option<String> {
 /// 내보내기 직전: 멈춤 판정 + 표시용 kind. 이미 복제한 값을 소비한다.
 pub fn stalled(mut c: Session, now: u64) -> Session {
     c.stalled = c.state == State::Working && now.saturating_sub(c.last_ms) > STALL_MS;
+    let g = c.run_gen;
+    c.agents.retain(|a| a.run_gen == g);
     for a in &mut c.agents {
         a.kind = a.kind.as_deref().and_then(short_kind);
     }
@@ -112,23 +121,40 @@ fn is_agent_tool(name: Option<&str>) -> bool {
 }
 
 /// tool_use_id 노드의 위치. 없으면 만들고(가장 오래된 노드부터 뺀다) 새 위치를 돌려준다.
-fn node_by_tool(agents: &mut Vec<Agent>, tuid: &str) -> usize {
+fn node_by_tool(agents: &mut Vec<Agent>, tuid: &str, rg: u32) -> usize {
     if let Some(i) = agents.iter().position(|a| a.tool_use_id.as_deref() == Some(tuid)) {
         return i;
     }
-    push_agent(agents, Some(tuid.to_string()), None, NodeState::Unknown, None)
+    push_agent(agents, Some(tuid.to_string()), None, NodeState::Unknown, None, rg)
 }
 
-fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>, state: NodeState, started: Option<u64>) -> usize {
+fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>, state: NodeState, started: Option<u64>, rg: u32) -> usize {
     // 마지막 열에 이미 끝난 노드가 하나라도 있으면 다음 열. 시각이 아니라 생성 순서로 안다.
     let last = agents.iter().map(|a| a.col).max().unwrap_or(1);
     let finished = agents.iter().any(|a| a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
     let col = if finished { last.saturating_add(1) } else { last };
-    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col });
+    agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col, run_gen: rg });
     if agents.len() > MAX_AGENTS {
         agents.remove(0);
     }
     agents.len() - 1
+}
+
+/// `.orbit/current`에 run id를 쓰는 Write·Edit면 그 id. 경로는 문자열 비교에만 쓴다.
+pub fn run_start(tool: Option<&str>, input: Option<&Value>) -> Option<String> {
+    let input = input?;
+    let path = input.get("file_path")?.as_str()?;
+    if !(path == ".orbit/current" || path.ends_with("/.orbit/current") || path.ends_with("\\.orbit\\current")) {
+        return None;
+    }
+    let key = match tool? {
+        "Write" => "content",
+        "Edit" => "new_string",
+        _ => return None,
+    };
+    let v = input.get(key)?.as_str()?.trim();
+    let ok = !v.is_empty() && v.len() <= 128 && !v.starts_with('.') && v.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.' | b'-'));
+    ok.then(|| v.to_string())
 }
 
 const MAX_ID: usize = 256;
@@ -159,7 +185,7 @@ fn fill_from_input(a: &mut Agent, input: Option<&Value>) {
     }
 }
 
-fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
+fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64, rg: u32) {
     let aid = id_str(v.get("agent_id"));
     let tuid = id_str(v.get("tool_use_id"));
     let by_aid = |ag: &[Agent], id: &str| ag.iter().position(|a| a.agent_id.as_deref() == Some(id));
@@ -180,7 +206,7 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
     match name {
         "PreToolUse" if tool_node => {
             let Some(t) = tuid else { return };
-            let i = node_by_tool(agents, t);
+            let i = node_by_tool(agents, t, rg);
             let a = &mut agents[i];
             fill_from_input(a, v.get("tool_input"));
             a.started_ms.get_or_insert(now);
@@ -190,13 +216,13 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
         }
         "PostToolUseFailure" if tool_node => {
             if let Some(t) = tuid {
-                let i = node_by_tool(agents, t);
+                let i = node_by_tool(agents, t, rg);
                 agents[i].state = NodeState::Failed;
             }
         }
         "PostToolUse" if tool_node => {
             let Some(t) = tuid else { return };
-            let mut i = node_by_tool(agents, t);
+            let mut i = node_by_tool(agents, t, rg);
             let Some(r) = v.get("tool_response").and_then(Value::as_object) else { return };
             if let Some(id) = id_str(r.get("agentId")) {
                 if let Some(j) = agents.iter().enumerate().position(|(k, a)| k != i && a.agent_id.as_deref() == Some(id)) {
@@ -234,8 +260,8 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
                 agents[i].state = NodeState::Running;
             } else if let Some(ty) = nonempty(v.get("agent_type")) {
                 // 추정 짝짓기: agent_id 없는 가장 오래된 running 노드 중 kind가 같거나 없는 것
-                let pair = agents.iter().position(|a| a.agent_id.is_none() && a.state == NodeState::Running && a.kind.as_deref().is_none_or(|k| k == ty.as_str()));
-                let i = pair.unwrap_or_else(|| push_agent(agents, None, None, NodeState::Running, Some(now)));
+                let pair = agents.iter().position(|a| a.run_gen == rg && a.agent_id.is_none() && a.state == NodeState::Running && a.kind.as_deref().is_none_or(|k| k == ty.as_str()));
+                let i = pair.unwrap_or_else(|| push_agent(agents, None, None, NodeState::Running, Some(now), rg));
                 let a = &mut agents[i];
                 a.agent_id = Some(id.to_string());
                 a.kind.get_or_insert_with(|| ty.to_string());
@@ -252,7 +278,7 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
                     }
                 }
             } else if let Some(ty) = nonempty(v.get("agent_type")) {
-                let i = push_agent(agents, None, Some(id.to_string()), NodeState::Done, None);
+                let i = push_agent(agents, None, Some(id.to_string()), NodeState::Done, None, rg);
                 agents[i].kind = Some(ty.to_string());
             }
         }
@@ -260,12 +286,12 @@ fn hook_agents(agents: &mut Vec<Agent>, v: &Value, name: &str, now: u64) {
     }
 }
 
-fn log_agent(agents: &mut Vec<Agent>, b: &Value, phase: Phase, id: &str, ts: Option<u64>) {
+fn log_agent(agents: &mut Vec<Agent>, b: &Value, phase: Phase, id: &str, ts: Option<u64>, rg: u32) {
     if phase == Phase::Call {
         if !is_agent_tool(b.get("name").and_then(Value::as_str)) {
             return;
         }
-        let i = node_by_tool(agents, id);
+        let i = node_by_tool(agents, id, rg);
         let a = &mut agents[i];
         fill_from_input(a, b.get("input"));
         if a.started_ms.is_none() {
@@ -299,6 +325,8 @@ impl Store {
             state: State::Working,
             agents: Vec::new(),
             stalled: false,
+            run: None,
+            run_gen: 0,
             events: Vec::new(),
         });
         s.ver = ver;
@@ -309,6 +337,20 @@ impl Store {
         }
         if s.started_ms.is_none() {
             s.started_ms = started;
+        }
+    }
+
+    /// `.orbit/current` 쓰기면 run을 바꾼다. 같은 호출(call:<id>)을 이미 봤으면 적용하지 않는다.
+    fn apply_run(&mut self, sid: &str, tool: Option<&str>, input: Option<&Value>, tuid: Option<&str>) {
+        let Some(r) = run_start(tool, input) else { return };
+        if tuid.is_some_and(|t| self.seen.get(sid).is_some_and(|s| s.contains(&format!("call:{t}")))) {
+            return;
+        }
+        if let Some(s) = self.sessions.get_mut(sid) {
+            if s.run.as_deref() != Some(r.as_str()) {
+                s.run = Some(r);
+                s.run_gen = s.run_gen.wrapping_add(1);
+            }
         }
     }
 
@@ -336,8 +378,12 @@ impl Store {
         if let (Some(st), Some(s)) = (state, self.sessions.get_mut(sid)) {
             s.state = st;
         }
+        if name == Some("PreToolUse") && v.get("agent_id").is_none() {
+            self.apply_run(sid, tool, v.get("tool_input"), id_str(v.get("tool_use_id")));
+        }
         if let (Some(n), Some(s)) = (name, self.sessions.get_mut(sid)) {
-            hook_agents(&mut s.agents, v, n, now_ms);
+            let g = s.run_gen;
+            hook_agents(&mut s.agents, v, n, now_ms, g);
         }
         let phase = match name {
             Some("PreToolUse") => Phase::Call,
@@ -374,8 +420,12 @@ impl Store {
                 _ => continue,
             };
             let id = id_str(id);
+            if phase == Phase::Call && !sidechain {
+                self.apply_run(session, b.get("name").and_then(Value::as_str), b.get("input"), id);
+            }
             if let (Some(id), Some(s), false) = (id, self.sessions.get_mut(session), sidechain) {
-                log_agent(&mut s.agents, b, phase, id, ts);
+                let g = s.run_gen;
+                log_agent(&mut s.agents, b, phase, id, ts, g);
             }
             let pn = if phase == Phase::Call { "call" } else { "result" };
             let key = match (id, uuid) {
@@ -1114,8 +1164,8 @@ mod tests {
 
     #[test]
     fn z_col_saturates() {
-        let mut ag = vec![Agent { tool_use_id: None, agent_id: None, kind: None, description: None, state: NodeState::Done, started_ms: None, duration_ms: None, tokens: None, col: u32::MAX }];
-        let i = push_agent(&mut ag, None, None, NodeState::Running, None);
+        let mut ag = vec![Agent { tool_use_id: None, agent_id: None, kind: None, description: None, state: NodeState::Done, started_ms: None, duration_ms: None, tokens: None, col: u32::MAX, run_gen: 0 }];
+        let i = push_agent(&mut ag, None, None, NodeState::Running, None, 0);
         assert_eq!(ag[i].col, u32::MAX);
     }
 
@@ -1167,5 +1217,150 @@ mod tests {
         assert_eq!(ag(&st)[0].state, NodeState::Done);
         st.ingest_hook(&ah("PreToolUse", &"한".repeat(1000), "t2", json!({})), 1);
         assert_eq!(evs(&st).last().unwrap().tool.chars().count(), 256);
+    }
+
+    // ---- run마다 새 그래프 ----
+    fn wh(tuid: &str, tool: &str, val: &str) -> Value {
+        let k = if tool == "Edit" { "new_string" } else { "content" };
+        ah("PreToolUse", tool, tuid, json!({"tool_input":{"file_path":"/w/p/.orbit/current",k:val}}))
+    }
+    fn wl(tuid: &str, tool: &str, val: &str) -> Value {
+        let k = if tool == "Edit" { "new_string" } else { "content" };
+        alog(tuid, tool, json!({"file_path":"/w/p/.orbit/current",k:val}), "2000-03-01T00:00:00Z", false)
+    }
+    fn shown(st: &Store) -> Vec<String> {
+        snapshot(st.get(S).unwrap(), 0).agents.iter().filter_map(|a| a.tool_use_id.clone()).collect()
+    }
+    fn s_(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn run_start_cases() {
+        let c = "/w/p/.orbit/current";
+        let w = |p: &str, v: Value| run_start(Some("Write"), Some(&json!({"file_path":p,"content":v})));
+        assert_eq!(w(c, json!("r1\n")), Some("r1".into()));
+        assert_eq!(w(".orbit/current", json!("r1")), Some("r1".into()));
+        assert_eq!(w("C:\\w\\.orbit\\current", json!("r1")), Some("r1".into()));
+        let e = |p: &str, v: Value| run_start(Some("Edit"), Some(&json!({"file_path":p,"new_string":v})));
+        assert_eq!(e(c, json!("r2\n")), Some("r2".into()));
+        assert_eq!(e(c, json!("../x")), None);
+        assert_eq!(e("/w/p/src/a.rs", json!("r2")), None);
+        assert_eq!(e(c, json!(5)), None);
+        assert_eq!(run_start(Some("Edit"), Some(&json!({"file_path":c}))), None);
+        assert_eq!(run_start(Some("Write"), Some(&json!({"file_path":c,"new_string":"r1"}))), None);
+        assert_eq!(run_start(Some("Bash"), Some(&json!({"file_path":c,"content":"r1"}))), None);
+        assert_eq!(run_start(Some("Read"), Some(&json!({"file_path":c,"content":"r1"}))), None);
+        for p in ["/w/foo.orbit/current", "/w/.orbit/current.bak", "/w/.orbit/runs/x"] {
+            assert_eq!(w(p, json!("r1")), None, "{p}");
+        }
+        for v in [json!("../x"), json!("a b"), json!(".hidden"), json!(""), json!("a".repeat(129)), json!(7)] {
+            assert_eq!(w(c, v.clone()), None, "{v}");
+        }
+        assert_eq!(w(c, json!("a".repeat(128))).map(|s| s.len()), Some(128));
+        assert_eq!(run_start(Some("Write"), Some(&json!({"file_path":c}))), None);
+        assert_eq!(run_start(Some("Write"), None), None);
+        assert_eq!(run_start(Some("Write"), Some(&json!({"file_path":3,"content":"r1"}))), None);
+    }
+
+    #[test]
+    fn run_hook_order_hides_old_nodes() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 1);
+        st.ingest_hook(&wh("w1", "Write", "r1"), 2);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", json!({})), 3);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t3", json!({})), 4);
+        assert_eq!(shown(&st), s_(&["t2", "t3"]));
+        assert_eq!(st.get(S).unwrap().run.as_deref(), Some("r1"));
+        assert_eq!(st.get(S).unwrap().agents.len(), 3);
+        // 같은 id를 훅으로 다시, 이어서 같은 호출의 로그 줄
+        st.ingest_hook(&wh("w2", "Write", "r1"), 5);
+        st.ingest_log(S, &wl("w1", "Write", "r1"), 6);
+        assert_eq!(shown(&st), s_(&["t2", "t3"]));
+        // 새 id
+        st.ingest_hook(&wh("w3", "Write", "r2"), 7);
+        assert!(shown(&st).is_empty());
+        st.ingest_hook(&h("UserPromptSubmit"), 8);
+        st.ingest_hook(&ah("PreToolUse", "Read", "rd", json!({})), 9);
+        st.ingest_hook(&h("Stop"), 10);
+        assert!(shown(&st).is_empty());
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t4", json!({})), 11);
+        assert_eq!(shown(&st), s_(&["t4"]));
+        assert_eq!(st.get(S).unwrap().run.as_deref(), Some("r2"));
+    }
+
+    #[test]
+    fn run_log_path_and_same_message() {
+        let mut st = Store::default();
+        st.ingest_log(S, &alog("u1", "Agent", json!({}), "2000-03-01T00:00:00Z", false), 1);
+        st.ingest_log(S, &wl("w1", "Write", "r1"), 1);
+        st.ingest_log(S, &alog("u2", "Agent", json!({}), "2000-03-01T00:00:01Z", false), 1);
+        assert_eq!(shown(&st), s_(&["u2"]));
+        let both = json!({"timestamp":"2000-03-01T00:00:02Z","message":{"content":[
+            {"type":"tool_use","id":"w9","name":"Write","input":{"file_path":".orbit/current","content":"r9"}},
+            {"type":"tool_use","id":"u3","name":"Agent","input":{}}]}});
+        st.ingest_log(S, &both, 1);
+        assert_eq!(shown(&st), s_(&["u3"]));
+    }
+
+    #[test]
+    fn run_ignores_agent_and_sidechain() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 1);
+        let mut v = wh("w1", "Write", "r1");
+        v["agent_id"] = json!("a1");
+        st.ingest_hook(&v, 2);
+        let side = alog("w2", "Write", json!({"file_path":".orbit/current","content":"r2"}), "2000-03-01T00:00:00Z", true);
+        st.ingest_log(S, &side, 3);
+        assert_eq!(st.get(S).unwrap().run, None);
+        assert_eq!(shown(&st), s_(&["t1"]));
+    }
+
+    #[test]
+    fn run_subagent_start_does_not_pair_with_old_run() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({"tool_input":{"subagent_type":"x"}})), 1);
+        st.ingest_hook(&wh("w1", "Write", "r2"), 2);
+        st.ingest_hook(&sub("SubagentStart", "a1", json!("x")), 3);
+        let a = &st.get(S).unwrap().agents;
+        assert_eq!(a.len(), 2);
+        assert_eq!(a[0].agent_id, None);
+        assert_eq!(a[1].agent_id.as_deref(), Some("a1"));
+        assert_eq!(a[1].run_gen, 1);
+    }
+
+    #[test]
+    fn run_duplicate_late_log_does_not_revert() {
+        let mut st = Store::default();
+        st.ingest_hook(&wh("w1", "Write", "r1"), 1);
+        st.ingest_hook(&wh("w2", "Write", "r2"), 2);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t5", json!({})), 3);
+        st.ingest_log(S, &wl("w1", "Write", "r1"), 4);
+        assert_eq!(st.get(S).unwrap().run.as_deref(), Some("r2"));
+        assert_eq!(shown(&st), s_(&["t5"]));
+        let no_id = json!({"timestamp":"2000-03-01T00:00:05Z","message":{"content":[
+            {"type":"tool_use","name":"Write","input":{"file_path":".orbit/current","content":"r3"}}]}});
+        st.ingest_log(S, &no_id, 5);
+        assert_eq!(st.get(S).unwrap().run.as_deref(), Some("r3"));
+    }
+
+    #[test]
+    fn run_edit_paths() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 1);
+        st.ingest_hook(&wh("e1", "Edit", "r1"), 2);
+        assert_eq!(st.get(S).unwrap().run.as_deref(), Some("r1"));
+        assert!(shown(&st).is_empty());
+        st.ingest_log(S, &wl("e2", "Edit", "r2"), 3);
+        assert_eq!(st.get(S).unwrap().run.as_deref(), Some("r2"));
+    }
+
+    #[test]
+    fn run_serializes_only_run() {
+        let mut st = Store::default();
+        st.ingest_hook(&wh("w1", "Write", "r1"), 1);
+        let j = serde_json::to_value(snapshot(st.get(S).unwrap(), 0)).unwrap();
+        assert_eq!(j["run"], json!("r1"));
+        assert!(j.get("run_gen").is_none());
     }
 }

@@ -5,7 +5,7 @@ export type Agent = { tool_use_id: string | null; agent_id: string | null; kind:
   state: NodeState; started_ms: number | null; duration_ms: number | null; tokens: number | null;
   col: number };
 export type Session = { id: string; cwd: string | null; started_ms: number | null; last_ms: number; source: Source;
-  ver: number; state: SessionState; agents: Agent[]; stalled: boolean };
+  ver: number; state: SessionState; agents: Agent[]; stalled: boolean; run: string | null };
 
 export type RoadmapLine = { mark: "heading" | "done" | "todo"; text: string };
 export type Roadmap = { kind: "missing" } | { kind: "toobig"; max_bytes: number; max_entries: number }
