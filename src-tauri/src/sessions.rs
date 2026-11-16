@@ -324,7 +324,9 @@ impl Store {
         self.touch(sid, Source::Hook, v.get("cwd").and_then(Value::as_str).filter(|c| c.len() <= MAX_CWD), now_ms, None);
         let name = v.get("hook_event_name").and_then(Value::as_str);
         let note = v.get("notification_type").and_then(Value::as_str);
+        let tool = v.get("tool_name").and_then(Value::as_str);
         let state = match (name, note) {
+            (Some("PreToolUse"), _) if tool == Some("AskUserQuestion") => Some(State::Waiting),
             (Some("UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure"), _) => Some(State::Working),
             (Some("PermissionRequest"), _) | (Some("Notification"), Some("permission_prompt")) => Some(State::Waiting),
             (Some("Stop" | "SessionEnd"), _) | (Some("Notification"), Some("idle_prompt")) => Some(State::Done),
@@ -658,6 +660,22 @@ mod tests {
             (notif(json!("idle_prompt")), State::Done), (h("SessionEnd"), State::Done),
             (h("SubagentStart"), State::Done), (notif(json!("auth_success")), State::Done),
             (notif(json!(5)), State::Done), (h("Zzz"), State::Done),
+        ];
+        for (v, want) in steps {
+            st.ingest_hook(&v, 1);
+            assert_eq!(st_of(&st), want, "{v}");
+        }
+    }
+
+    #[test]
+    fn l2_ask_user_question_waits() {
+        let mut st = Store::default();
+        let tool = |ev: &str, t: Value| json!({"hook_event_name":ev,"session_id":S,"tool_name":t});
+        let steps = [
+            (tool("PreToolUse", json!("AskUserQuestion")), State::Waiting),
+            (tool("PostToolUse", json!("AskUserQuestion")), State::Working),
+            (tool("PreToolUse", json!("Read")), State::Working),
+            (tool("PreToolUse", json!(5)), State::Working),
         ];
         for (v, want) in steps {
             st.ingest_hook(&v, 1);
