@@ -335,7 +335,7 @@ export default function App() {
 
       {handle("b")}
 
-      <Terminal session={cur} sessions={list} />
+      <Terminal session={cur} sessions={list} onPick={(id) => { setSelected(id); setNode(null); }} />
 
       <div className="console"><Screen /></div>
 
