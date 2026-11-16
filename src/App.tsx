@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import Raid from "./Raid.tsx"; // 확장자 필수: 대소문자 무시 파일시스템에서 "./Raid"가 raid.ts와 겹친다
+import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
 import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, liveRow, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
@@ -384,8 +384,8 @@ export default function App() {
       {handle("l")}
 
       <section className="panel graph" aria-labelledby="h-graph">
-        <h2 id="h-graph" className="px">레이드</h2>
-        <Raid session={cur} selected={node} onSelect={setNode} />
+        <h2 id="h-graph" className="px">에이전트 그래프</h2>
+        <Graph session={cur} selected={node} onSelect={setNode} />
       </section>
 
       {handle("r")}
