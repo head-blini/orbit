@@ -3,6 +3,7 @@
 .term-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); white-space: nowrap; flex-wrap: wrap; row-gap: var(--s-1); }
 .term-head h2 { margin: 0; font-weight: normal; }
 .term-state { flex: 1 1 0; min-width: 6em; overflow: hidden; text-overflow: ellipsis; color: var(--c-dark); } /* 남는 폭, 넘치면 말줄임 */
+.term-wait { flex: none; color: var(--c-ink); }
 .term-btns { display: flex; gap: var(--s-2); flex: none; }
 .term-font { display: flex; align-items: center; gap: var(--s-1); margin-left: var(--s-1); flex: none; } /* 묶음 사이 --s-3 = gap 8 + 4 */
 .term-font .btn { padding-left: var(--s-2); padding-right: var(--s-2); min-width: 24px; }

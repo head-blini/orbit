@@ -300,7 +300,7 @@ export default function App() {
         {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
-      <Terminal session={cur} />
+      <Terminal session={cur} sessions={list} />
 
       <div className="console"><Screen /></div>
 

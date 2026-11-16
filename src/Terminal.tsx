@@ -6,6 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { folderName, type Session } from "./types";
 import { HangulIme } from "./hangulIme"; // xterm#5704: 병합 후 삭제
+import { termWaiting } from "./waiting";
 import { THEME, MIN_CONTRAST } from "./termTheme";
 import { fontStep, loadFont, saveFont, FONT } from "./layout";
 import "./Terminal.css";
@@ -21,7 +22,7 @@ const fontKey = (e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: b
   return e.key === "=" || e.key === "+" ? "inc" : e.key === "-" ? "dec" : e.key === "0" ? "reset" : null;
 };
 
-export default function Terminal({ session }: { session: Session | null }) {
+export default function Terminal({ session, sessions }: { session: Session | null; sessions: Session[] }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [ready, setReady] = useState(false); // 마운트 때 term_stop이 끝나야 시작할 수 있다(B1)
   const [shown, setShown] = useState(false);
@@ -30,6 +31,7 @@ export default function Terminal({ session }: { session: Session | null }) {
   const [note, setNote] = useState("");
   const [font, setFont] = useState(() => loadFont(() => localStorage));
   const [pickBusy, setPickBusy] = useState(false); // 폴더 선택 창이 떠 있는 동안
+  const [since, setSince] = useState<number | null>(null); // 마지막 시작 시각. 이 뒤에 대기로 바뀐 세션만 "이 터미널의 답 대기"로 본다
   const boxRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
@@ -173,6 +175,7 @@ export default function Terminal({ session }: { session: Session | null }) {
       } finally { setPickBusy(false); }
     }
     const g = ++gen.current;
+    setSince(Date.now());
     refocus.current = inPanel(); // 시작 버튼이 disabled 되므로 취소·오류로 돌아오면 포커스를 되돌린다 (W7)
     setErr(""); setPhase("picking");
     try {
@@ -237,6 +240,8 @@ export default function Terminal({ session }: { session: Session | null }) {
     : phase === "running" ? `${folder} · 실행 중`
     : phase === "stopping" ? `${folder} · 종료하는 중…`
     : phase === "ended" ? `${folder} · 종료됨` : folder;
+  const waiting = phase === "running" && termWaiting(sessions, since);
+  useEffect(() => { if (waiting) say("claude가 답을 기다립니다"); }, [waiting]);
   const canOpen = ready && !pickBusy && (phase === "idle" || phase === "ended" || phase === "running");
   const canStart = ready && (phase === "idle" || phase === "ended");
 
@@ -248,6 +253,7 @@ export default function Terminal({ session }: { session: Session | null }) {
       <div className="term-head" ref={headRef}>
         <h2 id="h-term" className="px" tabIndex={-1}>터미널</h2>
         <span className="term-state px" title={stateText}>{stateText}</span>
+        {waiting && <span className="term-wait px"><span className="blink" aria-hidden="true">!</span> 답을 기다리는 중</span>}
         <div className="term-btns">
           <button type="button" className="btn" disabled={!canOpen} onClick={() => begin("folder")}>폴더 열기</button>
           <button type="button" className="btn" disabled={!canStart || !session} onClick={() => begin("new")}
