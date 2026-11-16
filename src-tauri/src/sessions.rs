@@ -63,6 +63,8 @@ pub struct Session {
     pub stalled: bool,
     /// 지금 run id(`.orbit/current`에 쓴 값, 패턴을 통과한 것만).
     pub run: Option<String>,
+    /// 이 세션이 묶인 터미널 탭. 스냅숏에만 채운다(Store 안은 None).
+    pub tab: Option<u32>,
     #[serde(skip)]
     pub run_gen: u32,
     /// 내부 중복 제거 전용. 화면으로 보내지 않는다.
@@ -327,6 +329,7 @@ impl Store {
             agents: Vec::new(),
             stalled: false,
             run: None,
+            tab: None,
             run_gen: 0,
             events: Vec::new(),
         });
@@ -1376,5 +1379,14 @@ mod tests {
         let j = serde_json::to_value(snapshot(st.get(S).unwrap(), 0)).unwrap();
         assert_eq!(j["run"], json!("r1"));
         assert!(j.get("run_gen").is_none());
+    }
+
+    #[test]
+    fn tab_serializes_as_null() {
+        let mut st = Store::default();
+        st.ingest_hook(&wh("w1", "Write", "r1"), 1);
+        let j = serde_json::to_value(snapshot(st.get(S).unwrap(), 0)).unwrap();
+        assert!(j.as_object().unwrap().contains_key("tab"));
+        assert_eq!(j["tab"], json!(null));
     }
 }
