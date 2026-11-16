@@ -73,19 +73,11 @@ impl Owned {
 
     fn save(&self) -> Result<(), String> {
         let Some(p) = &self.path else { return Ok(()) };
-        let tmp = {
-            let mut s = p.as_os_str().to_owned();
-            s.push(".tmp");
-            PathBuf::from(s)
-        };
         if let Some(d) = p.parent() {
             std::fs::create_dir_all(d).map_err(|e| format!("{} 만들기 실패: {e}", d.display()))?;
         }
         let json = serde_json::to_vec(&self.ids).map_err(|e| e.to_string())?;
-        std::fs::write(&tmp, json).and_then(|_| std::fs::rename(&tmp, p)).map_err(|e| {
-            let _ = std::fs::remove_file(&tmp);
-            format!("{} 저장 실패: {e}", p.display())
-        })
+        crate::hooks::write_private(p, &json).map_err(|e| format!("{} 저장 실패: {e}", p.display()))
     }
 
     /// 기록에 있으면 true. 없으면 채택 규칙(cwd 일치 + 터미널 시작 뒤에 처음 봄)을 따져 맞으면 기록하고 true.
@@ -96,6 +88,12 @@ impl Owned {
         }
         if !crate::term::valid_id(id) {
             return false;
+        }
+        if self.first_seen.len() >= MAX_IDS && !self.first_seen.contains_key(id) {
+            // 상한: 가장 오래전에 처음 본 항목부터 버린다
+            if let Some(old) = self.first_seen.iter().min_by_key(|(_, v)| **v).map(|(k, _)| k.clone()) {
+                self.first_seen.remove(&old);
+            }
         }
         let first = *self.first_seen.entry(id.to_string()).or_insert(now);
         let (Some((rcwd, rstart)), Some(cwd)) = (run, cwd) else { return false };
@@ -190,6 +188,27 @@ mod tests {
         assert_eq!(o.ids.len(), MAX_IDS);
         assert!(!o.contains(&id(0)) && !o.contains(&id(2)));
         assert!(o.contains(&id(3)) && o.contains(&id(MAX_IDS + 2)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_file_is_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = dir();
+        let p = d.join("o.json");
+        Owned::load(Some(p.clone())).add(A).unwrap();
+        assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn first_seen_is_capped() {
+        let mut o = Owned::load(None);
+        let id = |n: usize| format!("{n:08x}-2222-3333-4444-555555555555");
+        for n in 0..MAX_IDS + 5 {
+            o.adopt(&id(n), None, None, None, n as u64);
+        }
+        assert_eq!(o.first_seen.len(), MAX_IDS);
+        assert!(!o.first_seen.contains_key(&id(0)) && o.first_seen.contains_key(&id(MAX_IDS + 4)));
     }
 
     #[test]

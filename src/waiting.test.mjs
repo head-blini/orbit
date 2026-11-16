@@ -17,3 +17,17 @@ test("여러 세션 중 하나만 맞아도 true", () => {
   assert.equal(termWaiting([s("done", 200), s("waiting", 50), s("waiting", 300)], 100), true);
 });
 test("빈 목록은 false", () => assert.equal(termWaiting([], 100), false));
+
+import { staleWaiting, pruneStale } from "./waiting.ts";
+test("stale 세션은 대기가 풀리기 전엔 false, 풀린 뒤 다시 waiting이면 true", () => {
+  const old = { ...s("waiting", 500), id: "a" };
+  const stale = staleWaiting([old]);
+  assert.equal(termWaiting([old], 100, stale), false);
+  pruneStale(stale, [{ ...old, state: "working" }]);
+  assert.equal(stale.size, 0);
+  assert.equal(termWaiting([{ ...old, last_ms: 600 }], 100, stale), true);
+});
+test("stale이 아닌 다른 세션은 그대로 true", () => {
+  const stale = new Set(["a"]);
+  assert.equal(termWaiting([{ ...s("waiting", 500), id: "b" }], 100, stale), true);
+});

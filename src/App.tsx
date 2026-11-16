@@ -249,6 +249,19 @@ export default function App() {
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
   const cur = selected ? sessions.get(selected) ?? null : null;
 
+  // 손잡이는 각 경계 근처에 둔다(Tab 순서가 화면 위치를 따르도록). 위치는 CSS grid가 정한다.
+  const handle = (k: Kind) => {
+    const { label, orient } = HANDLES.find((h) => h.k === k)!;
+    const px = sizes[k] ?? meas[k] ?? undefined;
+    return (
+      <div className={`resizer rz-${k}`} role="separator" tabIndex={0} aria-label={label} aria-orientation={orient}
+        aria-valuenow={px} aria-valuetext={px === undefined ? undefined : `${px}px`} aria-valuemin={LIMITS[k].min}
+        aria-valuemax={Number.isFinite(LIMITS[k].max) ? LIMITS[k].max : undefined}
+        onPointerDown={onDown(k)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+        onKeyDown={onKey(k)} onFocus={() => refreshMeas(k)} onDoubleClick={onReset(k)} />
+    );
+  };
+
   return (
     <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}>
       <header className="panel topbar">
@@ -290,27 +303,26 @@ export default function App() {
           )}
       </section>
 
+      {handle("l")}
+
       <section className="panel graph" aria-labelledby="h-graph">
         <h2 id="h-graph" className="px">에이전트 그래프</h2>
         <Graph session={cur} selected={node} onSelect={setNode} />
       </section>
+
+      {handle("r")}
 
       <section className="panel detail" aria-labelledby="h-roadmap">
         <h2 id="h-roadmap" className="px">로드맵</h2>
         {selected ? <RoadmapView rm={roadmap} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
       </section>
 
+      {handle("b")}
+
       <Terminal session={cur} sessions={list} />
 
       <div className="console"><Screen /></div>
 
-      {HANDLES.map(({ k, label, orient }) => (
-        <div key={k} className={`resizer rz-${k}`} role="separator" tabIndex={0} aria-label={label} aria-orientation={orient}
-          aria-valuenow={sizes[k] ?? meas[k] ?? undefined} aria-valuemin={LIMITS[k].min}
-          aria-valuemax={Number.isFinite(LIMITS[k].max) ? LIMITS[k].max : undefined}
-          onPointerDown={onDown(k)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
-          onKeyDown={onKey(k)} onFocus={() => refreshMeas(k)} onDoubleClick={onReset(k)} />
-      ))}
     </div>
   );
 }

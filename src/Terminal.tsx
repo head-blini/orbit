@@ -6,7 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { folderName, type Session } from "./types";
 import { HangulIme } from "./hangulIme"; // xterm#5704: 병합 후 삭제
-import { termWaiting } from "./waiting";
+import { termWaiting, staleWaiting, pruneStale } from "./waiting";
 import { THEME, MIN_CONTRAST } from "./termTheme";
 import { fontStep, loadFont, saveFont, FONT } from "./layout";
 import "./Terminal.css";
@@ -31,6 +31,7 @@ export default function Terminal({ session, sessions }: { session: Session | nul
   const [note, setNote] = useState("");
   const [font, setFont] = useState(() => loadFont(() => localStorage));
   const [pickBusy, setPickBusy] = useState(false); // 폴더 선택 창이 떠 있는 동안
+  const stale = useRef<Set<string>>(new Set());
   const [since, setSince] = useState<number | null>(null); // 마지막 시작 시각. 이 뒤에 대기로 바뀐 세션만 "이 터미널의 답 대기"로 본다
   const boxRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
@@ -176,6 +177,7 @@ export default function Terminal({ session, sessions }: { session: Session | nul
     }
     const g = ++gen.current;
     setSince(Date.now());
+    stale.current = staleWaiting(sessions); // 종료 뒤 남은 Waiting을 이 터미널의 대기로 오표시하지 않는다
     refocus.current = inPanel(); // 시작 버튼이 disabled 되므로 취소·오류로 돌아오면 포커스를 되돌린다 (W7)
     setErr(""); setPhase("picking");
     try {
@@ -240,7 +242,8 @@ export default function Terminal({ session, sessions }: { session: Session | nul
     : phase === "running" ? `${folder} · 실행 중`
     : phase === "stopping" ? `${folder} · 종료하는 중…`
     : phase === "ended" ? `${folder} · 종료됨` : folder;
-  const waiting = phase === "running" && termWaiting(sessions, since);
+  const waiting = phase === "running" && termWaiting(sessions, since, stale.current);
+  useEffect(() => { pruneStale(stale.current, sessions); }, [sessions]);
   useEffect(() => { if (waiting) say("claude가 답을 기다립니다"); }, [waiting]);
   const canOpen = ready && !pickBusy && (phase === "idle" || phase === "ended" || phase === "running");
   const canStart = ready && (phase === "idle" || phase === "ended");
@@ -264,10 +267,10 @@ export default function Terminal({ session, sessions }: { session: Session | nul
             aria-disabled={phase === "stopping" ? "true" : undefined} onClick={stop}>종료</button>
         </div>
         <div className="term-font" role="group" aria-label="터미널 글자 크기">
-          <button type="button" className="btn" disabled={font <= FONT.min} onClick={() => bump("dec")}
+          <button type="button" className="btn" aria-disabled={font <= FONT.min ? "true" : undefined} onClick={() => bump("dec")}
             aria-label="터미널 글자 작게" title="글자 작게 (⌘-)">-</button>
           <span className="px" title={`⌘0: 기본 ${FONT.def}`}>{font}</span>
-          <button type="button" className="btn" disabled={font >= FONT.max} onClick={() => bump("inc")}
+          <button type="button" className="btn" aria-disabled={font >= FONT.max ? "true" : undefined} onClick={() => bump("inc")}
             aria-label="터미널 글자 크게" title="글자 크게 (⌘=)">+</button>
         </div>
       </div>
