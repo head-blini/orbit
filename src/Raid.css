@@ -79,10 +79,6 @@ svg { display: block; }
 .mon .loops { font-size: var(--fs-meta); color: var(--c-dark); min-height: 1em; }
 .mon .note { margin: 0; }
 .heal { border: var(--b-chip); background: var(--c-paper); color: var(--c-ink); padding: 0 var(--s-2); }
-.shields { list-style: none; margin: 0; padding: 0; display: flex; gap: var(--s-2); }
-.shields li { display: grid; justify-items: center; padding: 2px; }
-.shields li.fail { border: var(--b-box-fail); }
-.shields .gl { font-size: var(--fs-meta); }
 
 .msgbox {
   flex-shrink: 0;

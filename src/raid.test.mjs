@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   jobOf, JOB_LABEL, monsterOf, MONSTER_LABEL, progress, hp, fallen, shields, healing,
-  bubble, heroAct, leadAct, heroLabel, summary, TRACK_STAGES, TRACK_GATES, STAGE_LABEL,
+  bubble, heroAct, leadAct, heroLabel, summary, TRACK_STAGES, TRACK_GATES,
 } from "./raid.ts";
 
 const gates = (o = {}) => ({ plan: "missing", review: "missing", verify: "missing", security: "missing", ...o });
@@ -39,7 +39,6 @@ test("③ progress·hp", () => {
   assert.equal(progress(run("standard", "done"), [], "done"), 1);
   assert.equal(hp(run("full", "release"), [], "working"), 14);
   assert.deepEqual(TRACK_STAGES.quick, ["plan", "build", "verify", "release"]);
-  assert.deepEqual(STAGE_LABEL, { brief: "요구 정리", plan: "계획", build: "구현", review: "리뷰", verify: "검증", security: "보안", release: "머지", done: "끝" });
 });
 
 test("④ 슬라임 hp", () => {
@@ -87,9 +86,9 @@ test("⑧ heroLabel", () => {
 test("⑨ summary", () => {
   const r = run("standard", "build", { loops: 1, gates: gates({ plan: "pass" }) });
   const agents = [ag("engineer", "running"), ag("engineer", "done"), ag("qa", "done")];
-  assert.equal(summary(r, agents, "working"), "오크(standard) HP 70%, 구현 단계, 용사 4명 중 2명 공격 중, 방어막 3개 중 1개 깨짐, 되돌림 1회");
+  assert.equal(summary(r, agents, "working"), "오크 HP 70%, 용사 4명 중 2명 공격 중, 되돌림 1회");
   const hr = run("standard", "build", { loops: 1, gates: gates({ plan: "fail" }) });
-  assert.equal(summary(hr, agents, "working"), "오크(standard) HP 70%, 구현 단계, 용사 4명 중 2명 공격 중, 방어막 3개 중 0개 깨짐, 되돌림 1회, 몬스터 회복 중");
+  assert.equal(summary(hr, agents, "working"), "오크 HP 70%, 용사 4명 중 2명 공격 중, 되돌림 1회, 몬스터 회복 중");
   assert.equal(summary(run("standard", "done"), agents, "done"), "오크 쓰러짐");
   assert.equal(summary({ kind: "none" }, [], "working"), "슬라임 HP 100%, 용사 1명 중 1명 공격 중");
   assert.equal(summary({ kind: "none" }, [], "done"), "슬라임 쓰러짐");
