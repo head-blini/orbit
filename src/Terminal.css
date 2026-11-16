@@ -1,9 +1,12 @@
 /* 터미널 (run 20261115-terminal DESIGN.md). 머리 줄(제목 · 상태 · 버튼 4개) / 오류 줄(있을 때만) / 화면 */
 .terminal { display: flex; flex-direction: column; }
-.term-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); white-space: nowrap; }
+.term-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); white-space: nowrap; flex-wrap: wrap; row-gap: var(--s-1); }
 .term-head h2 { margin: 0; font-weight: normal; }
-.term-state { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--c-dark); } /* 남는 폭, 넘치면 말줄임 */
-.term-btns { display: flex; gap: var(--s-2); }
+.term-state { flex: 1 1 0; min-width: 6em; overflow: hidden; text-overflow: ellipsis; color: var(--c-dark); } /* 남는 폭, 넘치면 말줄임 */
+.term-btns { display: flex; gap: var(--s-2); flex: none; }
+.term-font { display: flex; align-items: center; gap: var(--s-1); margin-left: var(--s-1); flex: none; } /* 묶음 사이 --s-3 = gap 8 + 4 */
+.term-font .btn { padding-left: var(--s-2); padding-right: var(--s-2); min-width: 24px; }
+.term-font .px { width: 2ch; text-align: center; color: var(--c-ink); }
 .term-err { margin: 0 0 var(--s-2); overflow-wrap: anywhere; } /* 글자 = ink, 일반 글꼴. 머리말만 픽셀 */
 .term-err .px { margin-right: var(--s-1); }
 .term-body { flex: 1; min-height: 0; display: grid; place-content: center; gap: var(--s-1); text-align: center; } /* 시작 전 빈 칸 */

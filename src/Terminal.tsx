@@ -6,6 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { folderName, type Session } from "./types";
 import { HangulIme } from "./hangulIme"; // xterm#5704: 병합 후 삭제
+import { fontStep, loadFont, saveFont, FONT } from "./layout";
 import "./Terminal.css";
 
 type TermOut = { t: "data"; d: string } | { t: "exit" };
@@ -23,6 +24,12 @@ const THEME = {
   brightMagenta: DARK, brightCyan: DARK, brightWhite: PAPER,
 };
 
+// Cmd/Ctrl + = · + · - · 0 → 글자 크기 동작
+const fontKey = (e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }): "inc" | "dec" | "reset" | null => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return null;
+  return e.key === "=" || e.key === "+" ? "inc" : e.key === "-" ? "dec" : e.key === "0" ? "reset" : null;
+};
+
 export default function Terminal({ session }: { session: Session | null }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [ready, setReady] = useState(false); // 마운트 때 term_stop이 끝나야 시작할 수 있다(B1)
@@ -30,6 +37,7 @@ export default function Terminal({ session }: { session: Session | null }) {
   const [ran, setRan] = useState(""); // 터미널이 돌고 있는(돌았던) 폴더 이름
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
+  const [font, setFont] = useState(() => loadFont(() => localStorage));
   const [pickBusy, setPickBusy] = useState(false); // 폴더 선택 창이 떠 있는 동안
   const boxRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
@@ -45,6 +53,7 @@ export default function Terminal({ session }: { session: Session | null }) {
   const noteTimer = useRef<number | undefined>(undefined);
   const ime = useRef(new HangulIme()); // xterm#5704: 병합 후 삭제. 맥 WKWebView 한글 조합 보정 (hangulIme.ts)
 
+  const fontShown = useRef(font); // 마지막으로 반영한 크기(첫 렌더에는 알리지 않는다)
   const sess = session ? folderName(session) : "";
 
   // 같은 문구도 다시 낭독되게 비웠다가 넣는다
@@ -75,12 +84,23 @@ export default function Terminal({ session }: { session: Session | null }) {
     headRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
   }, [phase]);
 
+  // 글자 크기가 바뀌면 xterm에 적용하고 저장한다. xterm이 아직 없으면 첫 시작 때 ensureTerm이 font를 읽는다.
+  const fontRef = useRef(font);
+  fontRef.current = font;
+  useEffect(() => {
+    saveFont(() => localStorage, font);
+    const t = termRef.current;
+    if (t) { t.options.fontSize = font; try { fitRef.current?.fit(); } catch { /* 숨김 상태 */ } }
+    if (fontShown.current !== font) { fontShown.current = font; say(`글자 크기 ${font}`); }
+  }, [font]);
+  const bump = (a: "inc" | "dec" | "reset") => setFont((f) => fontStep(a, f));
+
   const inPanel = () => !!(headRef.current?.contains(document.activeElement) || boxRef.current?.contains(document.activeElement));
 
   const ensureTerm = (box: HTMLDivElement) => {
     if (termRef.current) return termRef.current;
     const t = new Xterm({
-      fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: 13, lineHeight: 1,
+      fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: fontRef.current, lineHeight: 1,
       cursorStyle: "block", cursorBlink: false, drawBoldTextInBrightColors: false,
       minimumContrastRatio: 1, allowTransparency: false, theme: THEME,
     });
@@ -124,6 +144,7 @@ export default function Terminal({ session }: { session: Session | null }) {
         if (e.keyCode === 229) return false;
         send(ime.current.flush()); preview(); // xterm#5704: 병합 후 삭제. Enter·방향키·F6 등: 조합 중인 음절을 먼저 보낸다
       }
+      if (fontKey(e)) return false; // 글자 크기 단축키는 xterm이 먹지 않는다. section onKeyDown이 처리한다
       if (e.key !== "F6") return true;
       if (e.type === "keydown") {
         const h = headRef.current;
@@ -229,7 +250,10 @@ export default function Terminal({ session }: { session: Session | null }) {
   const canStart = ready && (phase === "idle" || phase === "ended");
 
   return (
-    <section className="panel terminal" aria-labelledby="h-term">
+    <section className="panel terminal" aria-labelledby="h-term" onKeyDown={(e) => {
+      const a = fontKey(e);
+      if (a) { e.preventDefault(); bump(a); }
+    }}>
       <div className="term-head" ref={headRef}>
         <h2 id="h-term" className="px" tabIndex={-1}>터미널</h2>
         <span className="term-state px" title={stateText}>{stateText}</span>
@@ -241,6 +265,13 @@ export default function Terminal({ session }: { session: Session | null }) {
             aria-label={session ? `이어 가기: ${sess} 세션` : undefined}>이어 가기</button>
           <button type="button" className="btn" disabled={phase !== "running" && phase !== "stopping"}
             aria-disabled={phase === "stopping" ? "true" : undefined} onClick={stop}>종료</button>
+        </div>
+        <div className="term-font" role="group" aria-label="터미널 글자 크기">
+          <button type="button" className="btn" disabled={font <= FONT.min} onClick={() => bump("dec")}
+            aria-label="터미널 글자 작게" title="글자 작게 (⌘-)">-</button>
+          <span className="px" title={`⌘0: 기본 ${FONT.def}`}>{font}</span>
+          <button type="button" className="btn" disabled={font >= FONT.max} onClick={() => bump("inc")}
+            aria-label="터미널 글자 크게" title="글자 크게 (⌘=)">+</button>
         </div>
       </div>
       {err && <p className="term-err"><span className="px" aria-hidden="true">✕ 오류:</span>{err}</p>}
