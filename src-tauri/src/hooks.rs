@@ -155,6 +155,9 @@ pub fn observer(port: u16, token: &str) -> Value {
 /// `path`에 소유자만 읽고 쓰는(unix 0600) 파일을 임시 파일 → rename으로 쓴다. 남은 임시 파일은 먼저 지운다.
 pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
+    // 탭 여러 개가 같은 파일을 동시에 쓰면 임시 파일이 부딪친다. 쓰기를 한 줄로 세운다.
+    static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _w = WRITE.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = suffixed(path, ".tmp");
     let _ = fs::remove_file(&tmp);
     let mut o = fs::OpenOptions::new();
@@ -229,6 +232,21 @@ pub fn is_installed(path: &Path, port: u16, token: &str) -> Result<bool, String>
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    fn write_observer_concurrent_all_ok() {
+        let d = Dir::new();
+        let p = d.0.join("orbit-hooks.json");
+        let hs: Vec<_> = (0..16)
+            .map(|_| {
+                let p = p.clone();
+                std::thread::spawn(move || write_observer(&p, 1234, "t").is_ok())
+            })
+            .collect();
+        for h in hs {
+            assert!(h.join().unwrap());
+        }
+    }
 
     const FIXTURE: &str = r#"{"model":"x","permissions":{"allow":["Read"]},"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo hi"}]}]}}"#;
 

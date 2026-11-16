@@ -501,6 +501,108 @@ impl Term {
         let _ = p.killer.kill();
         drop(p);
     }
+
+    /// 같은 Term(같은 PTY 슬롯)인가.
+    pub fn same(&self, o: &Term) -> bool {
+        Arc::ptr_eq(&self.0, &o.0)
+    }
+}
+
+/// 탭은 최대 8개.
+pub const MAX_TABS: usize = 8;
+
+struct Tab {
+    term: Term,
+    /// 시작한 (cwd, 시작 시각 ms). 시작 성공 뒤 `set_ran`이 채운다.
+    ran: Option<(String, u64)>,
+}
+
+/// 탭 id → Term 맵. lock 안에서는 clone·복사만 하고, Term 메서드는 lock 밖에서 부른다.
+#[derive(Clone, Default)]
+pub struct Tabs(Arc<Mutex<std::collections::HashMap<u32, Tab>>>, Arc<std::sync::atomic::AtomicU64>);
+
+fn lk_tabs(m: &Mutex<std::collections::HashMap<u32, Tab>>) -> MutexGuard<'_, std::collections::HashMap<u32, Tab>> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+impl Tabs {
+    /// 없으면 새로 넣고(created=true), 있으면 그 Term(created=false). 새 탭이 상한을 넘으면 Err.
+    pub fn open(&self, tab: u32) -> Result<(Term, bool), String> {
+        let mut g = lk_tabs(&self.0);
+        if let Some(t) = g.get(&tab) {
+            return Ok((t.term.clone(), false));
+        }
+        if g.len() >= MAX_TABS {
+            return Err(format!("탭은 {MAX_TABS}개까지 열 수 있습니다"));
+        }
+        let term = Term::default();
+        g.insert(tab, Tab { term: term.clone(), ran: None });
+        Ok((term, true))
+    }
+
+    pub fn get(&self, tab: u32) -> Option<Term> {
+        lk_tabs(&self.0).get(&tab).map(|t| t.term.clone())
+    }
+
+    /// 맵에 같은 Term이 아직 있을 때만 ran을 기록한다. 아니면 false(그 사이 탭이 닫혔다).
+    pub fn set_ran(&self, tab: u32, term: &Term, cwd: String, t0: u64) -> bool {
+        let mut g = lk_tabs(&self.0);
+        match g.get_mut(&tab) {
+            Some(t) if t.term.same(term) => {
+                t.ran = Some((cwd, t0));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn remove(&self, tab: u32) -> Option<Term> {
+        lk_tabs(&self.0).remove(&tab).map(|t| t.term)
+    }
+
+    /// 같은 Term일 때만 뺀다(그 사이 같은 id로 새로 열린 탭은 건드리지 않는다).
+    pub fn remove_if(&self, tab: u32, term: &Term) -> bool {
+        let mut g = lk_tabs(&self.0);
+        if g.get(&tab).is_some_and(|t| t.term.same(term)) {
+            g.remove(&tab);
+            return true;
+        }
+        false
+    }
+
+    /// 모두 꺼내고 세대를 올린다. 시작 전에 읽어 둔 세대와 다르면 그 시작은 stop_all보다 먼저 시작한 것이다.
+    pub fn take_all(&self) -> Vec<Term> {
+        let mut g = lk_tabs(&self.0);
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        g.drain().map(|(_, t)| t.term).collect()
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.1.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// ran이 있는 항목의 (탭 id, Term, cwd, 시작 시각). running 판정은 호출자가 lock 밖에서 한다.
+    pub fn runs(&self) -> Vec<(u32, Term, String, u64)> {
+        lk_tabs(&self.0).iter().filter_map(|(k, t)| t.ran.as_ref().map(|(c, s)| (*k, t.term.clone(), c.clone(), *s))).collect()
+    }
+
+    /// ran cwd 목록(중복 제거).
+    pub fn cwds(&self) -> Vec<String> {
+        let mut v: Vec<String> = lk_tabs(&self.0).values().filter_map(|t| t.ran.as_ref().map(|(c, _)| c.clone())).collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+}
+
+/// `projects/*/<id>.jsonl`이 파일로 있는가(1단계 하위 폴더만). id 형식이 아니면 false.
+pub fn has_transcript(projects: &Path, id: &str) -> bool {
+    if !valid_id(id) {
+        return false;
+    }
+    let Ok(rd) = std::fs::read_dir(projects) else { return false };
+    let name = format!("{id}.jsonl");
+    rd.flatten().any(|e| e.path().join(&name).is_file())
 }
 
 
@@ -958,5 +1060,136 @@ mod tests {
         }
         assert!(s.contains("안녕"), "{s:?}");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn tabs_open_caps_at_max_and_reuses_existing() {
+        let t = Tabs::default();
+        for i in 1..=MAX_TABS as u32 {
+            assert!(t.open(i).unwrap().1, "새 탭 {i}");
+        }
+        assert!(t.open(99).is_err());
+        let (a, created) = t.open(3).unwrap();
+        assert!(!created);
+        assert!(a.same(&t.get(3).unwrap()));
+    }
+
+    #[test]
+    fn tabs_remove_then_get_none_and_reopen() {
+        let t = Tabs::default();
+        t.open(1).unwrap();
+        assert!(t.remove(1).is_some());
+        assert!(t.get(1).is_none());
+        assert!(t.remove(1).is_none());
+        assert!(t.open(1).unwrap().1);
+    }
+
+    #[test]
+    fn tabs_remove_frees_slot_when_full() {
+        let t = Tabs::default();
+        for i in 1..=MAX_TABS as u32 {
+            t.open(i).unwrap();
+        }
+        assert!(t.open(100).is_err());
+        t.remove(4);
+        assert!(t.open(100).unwrap().1);
+    }
+
+    #[test]
+    fn tabs_set_ran_requires_same_term_still_in_map() {
+        let t = Tabs::default();
+        let (a, _) = t.open(1).unwrap();
+        assert!(t.set_ran(1, &a, "/w/p".into(), 5));
+        t.remove(1);
+        assert!(!t.set_ran(1, &a, "/w/p".into(), 6));
+        let (b, _) = t.open(1).unwrap();
+        assert!(!t.set_ran(1, &a, "/w/p".into(), 7), "같은 id의 새 Term");
+        assert!(t.set_ran(1, &b, "/w/q".into(), 8));
+        assert!(!t.set_ran(2, &b, "/w/q".into(), 9), "없는 탭");
+    }
+
+    #[test]
+    fn tabs_remove_if_only_same_term() {
+        let t = Tabs::default();
+        let (a, _) = t.open(1).unwrap();
+        t.remove(1);
+        let (b, _) = t.open(1).unwrap();
+        assert!(!t.remove_if(1, &a), "같은 id의 새 Term은 남는다");
+        assert!(t.get(1).is_some());
+        assert!(t.remove_if(1, &b));
+        assert!(t.get(1).is_none());
+    }
+
+    #[test]
+    fn tabs_take_all_bumps_gen() {
+        let t = Tabs::default();
+        let g = t.epoch();
+        t.take_all();
+        assert_ne!(t.epoch(), g);
+    }
+
+    #[test]
+    fn tabs_take_all_empties_map() {
+        let t = Tabs::default();
+        t.open(1).unwrap();
+        t.open(2).unwrap();
+        assert_eq!(t.take_all().len(), 2);
+        assert!(t.get(1).is_none() && t.get(2).is_none());
+        assert!(t.take_all().is_empty());
+        assert!(t.runs().is_empty() && t.cwds().is_empty());
+    }
+
+    #[test]
+    fn tabs_runs_and_cwds_only_with_ran() {
+        let t = Tabs::default();
+        let (a, _) = t.open(1).unwrap();
+        t.open(2).unwrap();
+        let (c, _) = t.open(3).unwrap();
+        assert!(t.set_ran(1, &a, "/w/p".into(), 10));
+        assert!(t.set_ran(3, &c, "/w/p".into(), 30));
+        let mut r: Vec<(u32, String, u64)> = t.runs().into_iter().map(|(i, _, c, s)| (i, c, s)).collect();
+        r.sort();
+        assert_eq!(r, vec![(1, "/w/p".to_string(), 10), (3, "/w/p".to_string(), 30)]);
+        assert_eq!(t.cwds(), vec!["/w/p".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tabs_stop_one_leaves_other_running() {
+        let t = Tabs::default();
+        let d = tmp("tabs2");
+        let cwd = d.to_str().unwrap();
+        let (a, _) = t.open(1).unwrap();
+        let (b, _) = t.open(2).unwrap();
+        for x in [&a, &b] {
+            x.start(Some(PathBuf::from("/bin/sh")), cwd, &["-c", "sleep 30"], |_| {}).unwrap();
+        }
+        assert!(a.running() && b.running());
+        t.remove(1).unwrap().stop();
+        assert!(!a.running());
+        assert!(b.running());
+        t.remove(2).unwrap().stop();
+        assert!(!b.running());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn has_transcript_finds_file_in_one_level_only() {
+        let p = tmp("transcript");
+        assert!(!has_transcript(&p, ID));
+        std::fs::create_dir_all(p.join("slug")).unwrap();
+        assert!(!has_transcript(&p, ID));
+        std::fs::create_dir_all(p.join("slug").join(format!("{ID}.jsonl"))).unwrap();
+        assert!(!has_transcript(&p, ID), "같은 이름의 폴더");
+        std::fs::remove_dir_all(p.join("slug").join(format!("{ID}.jsonl"))).unwrap();
+        std::fs::write(p.join("slug").join(format!("{ID}.jsonl")), b"{}").unwrap();
+        assert!(has_transcript(&p, ID));
+        assert!(!has_transcript(&p, "../x"));
+        assert!(!has_transcript(&p, "22222222-2222-3333-4444-555555555555"));
+        std::fs::create_dir_all(p.join("a").join("b")).unwrap();
+        std::fs::write(p.join("a").join("b").join("33333333-2222-3333-4444-555555555555.jsonl"), b"{}").unwrap();
+        assert!(!has_transcript(&p, "33333333-2222-3333-4444-555555555555"), "2단계 아래는 안 본다");
+        assert!(!has_transcript(&p.join("no-such"), ID));
+        let _ = std::fs::remove_dir_all(&p);
     }
 }

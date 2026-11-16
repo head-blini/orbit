@@ -12,6 +12,10 @@ pub struct Owned {
     set: HashSet<String>,
     /// 메모리 전용: 필터가 세션을 처음 본 시각.
     first_seen: HashMap<String, u64>,
+    /// 메모리 전용: 세션 id → 탭 id.
+    tabs: HashMap<String, u32>,
+    /// 메모리 전용: 탭 id → 마지막으로 link된 세션 id.
+    cur: HashMap<u32, String>,
 }
 
 fn bad_path(p: &std::path::Path) -> PathBuf {
@@ -47,7 +51,7 @@ impl Owned {
             }
         }
         let set = ids.iter().cloned().collect();
-        Owned { path, ids, set, first_seen: HashMap::new() }
+        Owned { path, ids, set, first_seen: HashMap::new(), tabs: HashMap::new(), cur: HashMap::new() }
     }
 
     #[cfg(test)]
@@ -80,14 +84,43 @@ impl Owned {
         crate::hooks::write_private(p, &json).map_err(|e| format!("{} 저장 실패: {e}", p.display()))
     }
 
-    /// 기록에 있으면 true. 없으면 채택 규칙(cwd 일치 + 터미널 시작 뒤에 처음 봄)을 따져 맞으면 기록하고 true.
-    /// `run`의 cwd는 이미 `norm_cwd`된 값이다.
-    pub fn adopt(&mut self, id: &str, cwd: Option<&str>, started_ms: Option<u64>, run: Option<(&str, u64)>, now: u64) -> bool {
+    /// 세션을 탭에 묶는다(이미 있으면 덮어씀). 탭의 지금 세션도 이 id로 바뀐다.
+    pub fn link(&mut self, id: &str, tab: u32) {
+        if self.tabs.len() >= MAX_IDS && !self.tabs.contains_key(id) {
+            if let Some(old) = self.tabs.keys().next().cloned() {
+                self.tabs.remove(&old);
+            }
+        }
+        self.tabs.insert(id.to_string(), tab);
+        self.cur.insert(tab, id.to_string());
+    }
+
+    /// 탭이 닫혔을 때 그 탭의 지금 세션 기록을 지운다(`tab_of`는 그대로).
+    pub fn unlink(&mut self, tab: u32) {
+        self.cur.remove(&tab);
+    }
+
+    pub fn unlink_all(&mut self) {
+        self.cur.clear();
+    }
+
+    pub fn tab_of(&self, id: &str) -> Option<u32> {
+        self.tabs.get(id).copied()
+    }
+
+    /// 탭에 마지막으로 link된 세션 id.
+    pub fn current(&self, tab: u32) -> Option<&str> {
+        self.cur.get(&tab).map(String::as_str)
+    }
+
+    /// None=숨김, Some(None)=이미 기록됨, Some(Some(i))=이번에 `runs[i]`로 채택(맞는 run이 여럿이면 시작 시각이 가장 늦은 것).
+    /// 채택 규칙: cwd 일치 + 터미널 시작 뒤에 처음 봄. `runs`의 cwd는 이미 `norm_cwd`된 값이다.
+    pub fn adopt_in(&mut self, id: &str, cwd: Option<&str>, started_ms: Option<u64>, runs: &[(&str, u64)], now: u64) -> Option<Option<usize>> {
         if self.set.contains(id) {
-            return true;
+            return Some(None);
         }
         if !crate::term::valid_id(id) {
-            return false;
+            return None;
         }
         if self.first_seen.len() >= MAX_IDS && !self.first_seen.contains_key(id) {
             // 상한: 가장 오래전에 처음 본 항목부터 버린다
@@ -96,13 +129,22 @@ impl Owned {
             }
         }
         let first = *self.first_seen.entry(id.to_string()).or_insert(now);
-        let (Some((rcwd, rstart)), Some(cwd)) = (run, cwd) else { return false };
+        let cwd = cwd?;
         let seen = started_ms.map_or(first, |s| s.min(first));
-        if norm_cwd(cwd) != rcwd || seen < rstart {
-            return false;
-        }
+        let n = norm_cwd(cwd);
+        let i = runs
+            .iter()
+            .enumerate()
+            .filter(|(_, (rcwd, rstart))| n == *rcwd && seen >= *rstart)
+            .max_by_key(|(_, (_, rstart))| *rstart)
+            .map(|(i, _)| i)?;
         let _ = self.add(id);
-        true
+        Some(Some(i))
+    }
+
+    #[cfg(test)]
+    pub fn adopt(&mut self, id: &str, cwd: Option<&str>, started_ms: Option<u64>, run: Option<(&str, u64)>, now: u64) -> bool {
+        self.adopt_in(id, cwd, started_ms, run.as_slice(), now).is_some()
     }
 }
 
@@ -285,5 +327,68 @@ mod tests {
             assert_eq!(norm_cwd("C:/Foo/"), r"c:\foo");
             assert_eq!(norm_cwd(r"C:\"), r"c:\");
         }
+    }
+
+    const RUNS: [(&str, u64); 2] = [("/w/p", 1000), ("/w/p", 2000)];
+
+    #[test]
+    fn adopt_in_latest_start_wins() {
+        let mut o = Owned::load(None);
+        assert_eq!(o.adopt_in(A, Some("/w/p"), None, &RUNS, 2500), Some(Some(1)));
+    }
+
+    #[test]
+    fn adopt_in_seen_before_later_run() {
+        let mut o = Owned::load(None);
+        assert_eq!(o.adopt_in(A, Some("/w/p"), None, &RUNS, 1500), Some(Some(0)));
+    }
+
+    #[test]
+    fn adopt_in_other_cwd_none() {
+        let mut o = Owned::load(None);
+        assert_eq!(o.adopt_in(A, Some("/w/q"), None, &RUNS, 2500), None);
+    }
+
+    #[test]
+    fn adopt_in_recorded_is_some_none() {
+        let mut o = Owned::load(None);
+        o.add(A).unwrap();
+        assert_eq!(o.adopt_in(A, None, None, &[], 1), Some(None));
+    }
+
+    #[test]
+    fn adopt_in_empty_runs_none() {
+        let mut o = Owned::load(None);
+        assert_eq!(o.adopt_in(A, Some("/w/p"), None, &[], 2500), None);
+    }
+
+    #[test]
+    fn link_and_tab_of_overwrite() {
+        let mut o = Owned::load(None);
+        assert_eq!(o.tab_of(A), None);
+        o.link(A, 3);
+        assert_eq!(o.tab_of(A), Some(3));
+        o.link(A, 4);
+        assert_eq!(o.tab_of(A), Some(4));
+    }
+
+    #[test]
+    fn current_is_last_link_and_tab_of_stays() {
+        let mut o = Owned::load(None);
+        assert_eq!(o.current(3), None);
+        o.link(A, 3);
+        o.link(B, 3);
+        assert_eq!(o.current(3), Some(B));
+        assert_eq!(o.tab_of(A), Some(3));
+    }
+
+    #[test]
+    fn unlink_clears_current_only() {
+        let mut o = Owned::load(None);
+        o.link(A, 3);
+        o.unlink(3);
+        assert_eq!(o.current(3), None);
+        assert_eq!(o.tab_of(A), Some(3));
+        o.unlink(9);
     }
 }
