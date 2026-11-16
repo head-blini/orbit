@@ -130,8 +130,9 @@ fn node_by_tool(agents: &mut Vec<Agent>, tuid: &str, rg: u32) -> usize {
 
 fn push_agent(agents: &mut Vec<Agent>, tuid: Option<String>, aid: Option<String>, state: NodeState, started: Option<u64>, rg: u32) -> usize {
     // 마지막 열에 이미 끝난 노드가 하나라도 있으면 다음 열. 시각이 아니라 생성 순서로 안다.
-    let last = agents.iter().map(|a| a.col).max().unwrap_or(1);
-    let finished = agents.iter().any(|a| a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
+    // 현재 run 노드만 본다: 숨겨진 지난 run 노드가 열을 밀면 안 된다.
+    let last = agents.iter().filter(|a| a.run_gen == rg).map(|a| a.col).max().unwrap_or(1);
+    let finished = agents.iter().any(|a| a.run_gen == rg && a.col == last && matches!(a.state, NodeState::Done | NodeState::Failed));
     let col = if finished { last.saturating_add(1) } else { last };
     agents.push(Agent { tool_use_id: tuid, agent_id: aid, kind: None, description: None, state, started_ms: started, duration_ms: None, tokens: None, col, run_gen: rg });
     if agents.len() > MAX_AGENTS {
@@ -1327,6 +1328,19 @@ mod tests {
         assert_eq!(a[0].agent_id, None);
         assert_eq!(a[1].agent_id.as_deref(), Some("a1"));
         assert_eq!(a[1].run_gen, 1);
+    }
+
+    #[test]
+    fn run_column_ignores_old_run_nodes() {
+        let mut st = Store::default();
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t1", json!({})), 1);
+        st.ingest_hook(&wh("w1", "Write", "r1"), 2);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t2", json!({})), 3);
+        st.ingest_hook(&ah("PostToolUse", "Agent", "t1", json!({})), 4);
+        st.ingest_hook(&ah("PreToolUse", "Agent", "t3", json!({})), 5);
+        let a = &st.get(S).unwrap().agents;
+        let col = |id: &str| a.iter().find(|x| x.tool_use_id.as_deref() == Some(id)).unwrap().col;
+        assert_eq!(col("t2"), col("t3"));
     }
 
     #[test]

@@ -38,7 +38,7 @@ pub struct Run {
     pub request: Option<String>,
 }
 
-const MAX_SCAN: usize = 200;
+const MAX_SCAN: usize = 5000;
 const MAX_RUNS: usize = 5;
 const MAX_STATE: u64 = 64 * 1024;
 
@@ -502,6 +502,18 @@ mod tests {
             }
             o => panic!("{:?}", o),
         }
+    }
+
+    #[test]
+    fn runs_newest_found_beyond_200_dirs() {
+        let p = tmp().join("proj");
+        for i in 0..300 {
+            mk_run(&p, &format!("r{i:03}"), "{}", 1000 + i);
+        }
+        mk_run(&p, "newest", "{}", 1);
+        let r = runs(&p);
+        assert_eq!(r.len(), 5);
+        assert_eq!(ids(&r)[0], "newest");
     }
 
     #[test]
