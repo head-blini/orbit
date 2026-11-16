@@ -8,6 +8,13 @@
 - 미확인: 실제 IME로는 재현·검증하지 못했다(사용자 재확인 필요). 조합 중 Enter 한 번에 전송되는지, 한자 변환 같은 비한글 replacement는 xterm이 버릴 수 있다는 추정.
 - 다음에 미리 할 것: WKWebView 위에 xterm류 입력 컴포넌트를 올릴 때는 구현 전에 맥에서 한글을 먼저 쳐 본다. 이벤트 열을 모형 테스트로 먼저 고정한다.
 
+## 조합 중 Shift가 반쪽 음절을 먼저 보낸다 ("있어요" → "이있어요")
+- 증상: 2벌식에서 음절 중간에 Shift를 누르는 글자(ㅆ 받침, ㅒ·ㅖ 모음, ㄲ 받침)에서 앞 반쪽 음절이 먼저 들어가 글이 겹친다. `있어요`→`이있어요`, `했어`→`해했어`, `예`→`ㅇ예`, `깎아`→`까깎아`. Shift 없는 겹받침(갑시)과 음절 첫 Shift(가까)는 정상.
+- 원인: `attachCustomKeyEventHandler`가 조합 중 229가 아닌 keydown을 모두 "Enter·방향키 같은 비IME 키"로 보고 `ime.flush()`했다. 수정키 Shift는 IME를 거치지 않아 keyCode 16으로 와서, 반쯤 된 음절("이")이 먼저 나가고 이어 오는 replacement "있"이 새 음절로 또 나갔다. 첫 IME 보정(d550ed7)부터 있던 분기이고 회귀는 아니다.
+- 해결: keydown 판단을 `HangulIme.keydown(keyCode, key)`로 옮기고 수정키 단독(`Shift`·`Control`·`Alt`·`Meta`)은 flush하지 않는다. 모형 테스트 `node --test src/hangulIme.test.mjs`에 `type()`으로 keydown까지 넣었다.
+- 다음에 미리 할 것: IME 보정의 "이 키는 조합을 끊는다" 판단은 키 종류별(수정키 단독, 229, 그 밖)로 테스트에 적는다. 이벤트 열 모형은 keydown을 포함한다.
+- 미확인: WKWebView의 Shift keydown이 실제로 keyCode 16인지(모형 가정, 증상 문자열이 정확히 맞음), CapsLock·지구본 입력 소스 전환과 blur(Cmd+Tab) 중 조합에서 같은 겹침이 나는지.
+
 ## PTY write는 상태 lock을 쥔 채 하지 않는다
 - 증상(REVIEW 1회차 B1): `term_write`가 상태 `Mutex`를 쥔 채 PTY에 쓰면, 자식이 입력을 안 읽어 쓰기가 막힐 때 `stop`·재시작·resize까지 같은 lock에 걸려 멈춘다.
 - 원인: 느린 I/O(블로킹 write)를 공유 상태 lock 안에서 했다.
