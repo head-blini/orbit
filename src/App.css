@@ -110,13 +110,15 @@ body {
 .sess:hover { background: var(--c-light); }
 .sess:hover .time { color: var(--c-ink); }
 /* 6개 이상이면 선택하지 않은 줄은 한 줄 칩 (decisions.md 44) */
-.sess.chip { grid-template-columns: 12px 1fr auto auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); }
+.sess.chip { grid-template-columns: 12px 1fr auto auto; grid-template-rows: auto; border: var(--b-chip); padding: 0 var(--s-2); min-height: 24px; align-items: center; }
+.list:has(> li > .chip) { gap: var(--s-1); }
 .sess.chip .cur { grid-row: 1; }
 .sess.chip .time { grid-column: 4; grid-row: 1; margin-left: var(--s-2); }
 
 /* 실행 중 묶음 줄: 줄 버튼 + 닫기 칸 */
-.row { display: grid; grid-template-columns: 1fr auto; align-items: start; }
-.sess-x { min-width: 24px; min-height: 24px; padding: 0; margin-left: -2px; }
+.row { display: grid; grid-template-columns: 1fr auto; align-items: stretch; }
+.row .sess-x { width: 24px; min-width: 24px; padding: 0; margin-left: -2px; display: grid; place-items: center; line-height: 1; }
+.row .sess:focus-visible { position: relative; z-index: 1; }
 .sess[data-phase="ended"] { border-style: dashed; }
 .sess[data-phase="ended"] .name { color: var(--c-dark); }
 .sess[data-phase="ended"]:hover .name { color: var(--c-ink); }
@@ -135,6 +137,7 @@ body {
 
 /* 로드맵 (오른쪽 위, 칸은 .detail 그대로). 묶음 제목 = 기존 h3(픽셀 + 1px 밑줄), 항목 본문 = 일반 글꼴 */
 .sessions h3, .detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; overflow-wrap: anywhere; }
+.sessions h3 ~ h3 { margin-top: var(--s-4); }
 .sessions h3:first-of-type, .detail h3:first-of-type { margin-top: 0; }
 .rm-sum { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
 .rm-bar { flex: 1; position: relative; height: 8px; border: var(--b-chip); border-radius: var(--r-pbar); overflow: hidden; }
