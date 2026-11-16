@@ -188,3 +188,4 @@ body {
 .shell.dragging.drag-l, .shell.dragging.drag-r { cursor: col-resize; }
 .shell.dragging.drag-b { cursor: row-resize; }
 .shell.dragging.drag-l .rz-l::after, .shell.dragging.drag-r .rz-r::after, .shell.dragging.drag-b .rz-b::after { background: var(--c-ink); }
+.rm li .note { display: block; }

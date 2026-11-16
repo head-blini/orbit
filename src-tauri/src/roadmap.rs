@@ -27,7 +27,20 @@ pub enum Roadmap {
     TooBig { max_bytes: u64, max_entries: usize },
     Error { reason: String },
     Found { lines: Vec<Line>, skipped: bool },
+    /// ROADMAP.md가 없거나 항목이 없을 때 보여 줄 최근 run. `file` = ROADMAP.md가 있었는가.
+    Runs { runs: Vec<Run>, file: bool },
 }
+
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Run {
+    pub id: String,
+    pub stage: Option<String>,
+    pub request: Option<String>,
+}
+
+const MAX_SCAN: usize = 200;
+const MAX_RUNS: usize = 5;
+const MAX_STATE: u64 = 64 * 1024;
 
 fn too_big() -> Roadmap {
     Roadmap::TooBig { max_bytes: MAX_BYTES, max_entries: MAX_ENTRIES }
@@ -145,7 +158,91 @@ pub fn for_cwd(cwd: Option<&str>) -> Roadmap {
     if !local_abs(cwd) {
         return err("로컬 절대 경로가 아닙니다");
     }
-    read(Path::new(cwd))
+    let dir = Path::new(cwd);
+    let r = read(dir);
+    let (empty, file) = match &r {
+        Roadmap::Missing => (true, false),
+        Roadmap::Found { lines, .. } => (lines.iter().all(|l| l.mark == Mark::Heading), true),
+        _ => (false, false),
+    };
+    if !empty {
+        return r;
+    }
+    let list = runs(dir);
+    if list.is_empty() { r } else { Roadmap::Runs { runs: list, file } }
+}
+
+/// run id 패턴: 1~128바이트, ASCII 영숫자·`_`·`.`·`-`, `.`으로 시작 금지.
+fn run_id_ok(n: &str) -> bool {
+    !n.is_empty() && n.len() <= 128 && !n.starts_with('.') && n.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'.' | b'-'))
+}
+
+fn real_dir(p: &Path) -> bool {
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.is_dir() && !m.file_type().is_symlink())
+}
+
+fn clip(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+/// `<runs>/<id>/STATE.json` 하나. 링크·범위 밖·큰 파일·깨진 JSON은 None.
+fn read_run(runs_dir: &Path, id: &str) -> Option<Run> {
+    let run_dir = runs_dir.join(id);
+    let file = run_dir.join("STATE.json");
+    let meta = std::fs::symlink_metadata(&file).ok()?;
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return None;
+    }
+    if file.canonicalize().ok()?.parent()? != run_dir.canonicalize().ok()?.as_path() {
+        return None;
+    }
+    let f = std::fs::File::open(&file).ok()?;
+    let m = f.metadata().ok()?;
+    if !m.is_file() || m.len() > MAX_STATE {
+        return None;
+    }
+    let mut buf = Vec::new();
+    f.take(MAX_STATE + 1).read_to_end(&mut buf).ok()?;
+    if buf.len() as u64 > MAX_STATE {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(&buf).ok()?;
+    let o = v.as_object()?;
+    Some(Run {
+        id: id.to_string(),
+        stage: o.get("stage").and_then(|x| x.as_str()).map(|x| clip(x, 32)),
+        request: o.get("request").and_then(|x| x.as_str()).map(|x| clip(&x.split_whitespace().collect::<Vec<_>>().join(" "), 120)),
+    })
+}
+
+/// `dir/.orbit/runs/*/STATE.json` 중 최근 수정된 것 최대 5개. mtime만 먼저 모아 정렬한 뒤 앞에서부터 읽는다.
+pub fn runs(dir: &Path) -> Vec<Run> {
+    let orbit = dir.join(".orbit");
+    let runs_dir = orbit.join("runs");
+    if !real_dir(&orbit) || !real_dir(&runs_dir) {
+        return Vec::new();
+    }
+    let Ok(rd) = std::fs::read_dir(&runs_dir) else { return Vec::new() };
+    let mut cands: Vec<(Option<std::time::SystemTime>, String)> = Vec::new();
+    for e in rd.flatten().take(MAX_SCAN) {
+        let Some(name) = e.file_name().to_str().map(str::to_string) else { continue };
+        if !run_id_ok(&name) || !e.file_type().is_ok_and(|t| t.is_dir() && !t.is_symlink()) {
+            continue;
+        }
+        let mt = std::fs::symlink_metadata(runs_dir.join(&name).join("STATE.json")).and_then(|m| m.modified()).ok();
+        cands.push((mt, name));
+    }
+    cands.sort_by(|a, b| b.cmp(a)); // None은 가장 작아 맨 뒤
+    let mut out = Vec::new();
+    for (_, id) in cands {
+        if let Some(r) = read_run(&runs_dir, &id) {
+            out.push(r);
+            if out.len() >= MAX_RUNS {
+                break;
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -363,5 +460,141 @@ mod tests {
         let v = serde_json::to_value(parse(sample().as_bytes())).unwrap();
         assert_eq!(v["kind"], "found");
         assert_eq!(v["lines"][0]["mark"], "heading");
+    }
+
+    // ---- run 목록 ----
+    use std::time::{Duration, SystemTime};
+
+    fn mk_run(proj: &Path, id: &str, body: &str, age: u64) {
+        let d = proj.join(".orbit").join("runs").join(id);
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("STATE.json");
+        std::fs::write(&f, body).unwrap();
+        let t = SystemTime::now() - Duration::from_secs(age);
+        std::fs::OpenOptions::new().write(true).open(&f).unwrap().set_modified(t).unwrap();
+    }
+
+    fn ids(v: &[Run]) -> Vec<&str> {
+        v.iter().map(|r| r.id.as_str()).collect()
+    }
+
+    #[test]
+    fn runs_none_without_orbit_dir() {
+        let p = tmp().join("proj");
+        assert!(runs(&p).is_empty());
+        assert_eq!(for_cwd(p.to_str()), Roadmap::Missing);
+    }
+
+    #[test]
+    fn runs_sorted_by_mtime_with_fields() {
+        let p = tmp().join("proj");
+        mk_run(&p, "a", r#"{"stage":"plan","request":"first"}"#, 300);
+        mk_run(&p, "c", r#"{"stage":"verify","request":"third"}"#, 10);
+        mk_run(&p, "b", r#"{"stage":"build","request":"second"}"#, 100);
+        let r = runs(&p);
+        assert_eq!(ids(&r), ["c", "b", "a"]);
+        assert_eq!(r[0].stage.as_deref(), Some("verify"));
+        assert_eq!(r[0].request.as_deref(), Some("third"));
+        match for_cwd(p.to_str()) {
+            Roadmap::Runs { runs, file } => {
+                assert_eq!(runs.len(), 3);
+                assert!(!file);
+            }
+            o => panic!("{:?}", o),
+        }
+    }
+
+    #[test]
+    fn runs_request_whitespace_and_cap() {
+        let p = tmp().join("proj");
+        let long = "한".repeat(200);
+        mk_run(&p, "a", &serde_json::json!({"stage": "s".repeat(50), "request": format!("a \n\t  b {long}")}).to_string(), 1);
+        let r = runs(&p);
+        assert_eq!(r[0].stage.as_ref().unwrap().chars().count(), 32);
+        let q = r[0].request.as_ref().unwrap();
+        assert!(q.starts_with("a b 한"));
+        assert_eq!(q.chars().count(), 120);
+    }
+
+    #[test]
+    fn runs_wrong_types_are_none() {
+        let p = tmp().join("proj");
+        mk_run(&p, "a", r#"{"stage":3,"request":{"x":1}}"#, 1);
+        let r = runs(&p);
+        assert_eq!(ids(&r), ["a"]);
+        assert_eq!((r[0].stage.clone(), r[0].request.clone()), (None, None));
+    }
+
+    #[test]
+    fn runs_skip_bad_files_and_names() {
+        let p = tmp().join("proj");
+        mk_run(&p, "ok", r#"{"stage":"x"}"#, 500);
+        mk_run(&p, "broken", "{nope", 1);
+        mk_run(&p, "arr", "[1]", 2);
+        mk_run(&p, "big", &format!(r#"{{"request":"{}"}}"#, "x".repeat(70_000)), 3);
+        mk_run(&p, ".hidden", r#"{"stage":"x"}"#, 4);
+        mk_run(&p, "a b", r#"{"stage":"x"}"#, 5);
+        let d = p.join(".orbit/runs/dirstate/STATE.json");
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(ids(&runs(&p)), ["ok"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runs_skip_symlinks() {
+        use std::os::unix::fs::symlink;
+        let root = tmp();
+        let p = root.join("proj");
+        mk_run(&p, "ok", r#"{"stage":"x"}"#, 500);
+        let out = root.join("outside");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("STATE.json"), r#"{"stage":"evil"}"#).unwrap();
+        symlink(&out, p.join(".orbit/runs/linkdir")).unwrap();
+        let d = p.join(".orbit/runs/linkfile");
+        std::fs::create_dir_all(&d).unwrap();
+        symlink(out.join("STATE.json"), d.join("STATE.json")).unwrap();
+        assert_eq!(ids(&runs(&p)), ["ok"]);
+        // .orbit/runs 자체가 링크
+        let p2 = root.join("proj2");
+        std::fs::create_dir_all(p2.join(".orbit")).unwrap();
+        let real = root.join("realruns");
+        std::fs::create_dir_all(real.join("x")).unwrap();
+        std::fs::write(real.join("x/STATE.json"), "{}").unwrap();
+        symlink(&real, p2.join(".orbit/runs")).unwrap();
+        assert!(runs(&p2).is_empty());
+    }
+
+    #[test]
+    fn runs_cap_five_and_fill_past_broken() {
+        let p = tmp().join("proj");
+        for i in 0..7u64 {
+            mk_run(&p, &format!("r{i}"), r#"{"stage":"x"}"#, 100 + i);
+        }
+        assert_eq!(ids(&runs(&p)), ["r0", "r1", "r2", "r3", "r4"]);
+        mk_run(&p, "n1", "{bad", 1);
+        mk_run(&p, "n2", "{bad", 2);
+        assert_eq!(ids(&runs(&p)), ["r0", "r1", "r2", "r3", "r4"]);
+    }
+
+    #[test]
+    fn runs_only_when_roadmap_empty() {
+        let p = tmp().join("proj");
+        mk_run(&p, "a", r#"{"stage":"x"}"#, 1);
+        std::fs::write(p.join(FILE), "## 제목만\n").unwrap();
+        assert!(matches!(for_cwd(p.to_str()), Roadmap::Runs { file: true, .. }));
+        std::fs::write(p.join(FILE), "## t\n- [ ] 일\n").unwrap();
+        assert!(matches!(for_cwd(p.to_str()), Roadmap::Found { .. }));
+    }
+
+    #[test]
+    fn runs_serializes_tagged_and_keeps_html_text() {
+        let p = tmp().join("proj");
+        let req = "<img src=x onerror=alert(1)>";
+        mk_run(&p, "a", &serde_json::json!({"request": req}).to_string(), 1);
+        let v = serde_json::to_value(for_cwd(p.to_str())).unwrap();
+        assert_eq!(v["kind"], "runs");
+        assert_eq!(v["file"], false);
+        assert_eq!(v["runs"][0]["id"], "a");
+        assert_eq!(v["runs"][0]["request"], req);
     }
 }

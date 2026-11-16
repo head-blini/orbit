@@ -42,6 +42,22 @@ function RoadmapView({ rm }: { rm: Roadmap | null }) {
   if (rm.kind === "toobig")
     return <><p className="empty">✕ ROADMAP.md가 너무 커서 읽지 않았습니다</p><p className="note">한도: {Math.round(rm.max_bytes / 1024)} KiB · {rm.max_entries}개</p></>;
   if (rm.kind === "error") return <><p className="empty">✕ 로드맵을 읽지 못했습니다</p><p className="note">{rm.reason}</p></>;
+  if (rm.kind === "runs")
+    return (
+      <>
+        <p className="empty">{rm.file ? "ROADMAP.md에 체크 항목이 없습니다" : "ROADMAP.md가 없습니다"}</p>
+        <p className="note">{HINT}</p>
+        <h3 className="px">최근 run</h3>
+        <ul className="rm">
+          {rm.runs.map((r) => (
+            <li key={r.id}>
+              <span className="mk" aria-hidden="true">·</span>
+              <span>{r.id} · {r.stage ?? "—"}{r.request && <span className="note">{r.request}</span>}</span>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
   const items = rm.lines.filter((l) => l.mark !== "heading");
   const done = items.filter((l) => l.mark === "done").length;
   // 줄을 차례로 묶는다: 제목은 h3, 이어지는 항목은 ul
