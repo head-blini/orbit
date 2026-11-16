@@ -134,18 +134,59 @@ fn write_atomic(path: &Path, root: &Value) -> Result<Option<PathBuf>, String> {
     Ok(backup)
 }
 
+fn handler(port: u16, token: &str) -> Value {
+    json!({
+        "type": "http",
+        "url": format!("http://127.0.0.1:{port}/events"),
+        "headers": { TOKEN_HEADER: token },
+        "timeout": 2,
+    })
+}
+
+/// 터미널이 띄우는 claude에만 붙이는 훅 설정(EVENTS 전부, 핸들러는 `install`과 같다).
+pub fn observer(port: u16, token: &str) -> Value {
+    let mut hooks = serde_json::Map::new();
+    for ev in EVENTS {
+        hooks.insert(ev.to_string(), json!([{ "hooks": [handler(port, token)] }]));
+    }
+    json!({ "hooks": hooks })
+}
+
+/// `path`에 소유자만 읽고 쓰는(unix 0600) 파일을 임시 파일 → rename으로 쓴다. 남은 임시 파일은 먼저 지운다.
+pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = suffixed(path, ".tmp");
+    let _ = fs::remove_file(&tmp);
+    let mut o = fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let r = o
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(bytes).and_then(|_| f.sync_all()))
+        .and_then(|_| fs::rename(&tmp, path));
+    if r.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    r
+}
+
+/// `observer` 내용을 `path`에 쓴다. 오류 문자열에는 경로만 넣고 내용·토큰은 넣지 않는다.
+pub fn write_observer(path: &Path, port: u16, token: &str) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("폴더 생성 실패: {e}"))?;
+    }
+    let bytes = serde_json::to_vec(&observer(port, token)).map_err(|e| e.to_string())?;
+    write_private(path, &bytes).map_err(|e| format!("{} 쓰기 실패: {e}", path.display()))
+}
+
 pub fn install(path: &Path, port: u16, token: &str) -> Result<Option<PathBuf>, String> {
     let mut root = read_root(path)?.unwrap_or_else(|| json!({}));
     strip(&mut root)?;
     let obj = root.as_object_mut().expect("root is object");
     let hooks = obj.entry("hooks").or_insert_with(|| json!({}));
     let hooks = hooks.as_object_mut().ok_or("`hooks`가 객체가 아님")?;
-    let handler = json!({
-        "type": "http",
-        "url": format!("http://127.0.0.1:{port}/events"),
-        "headers": { TOKEN_HEADER: token },
-        "timeout": 2,
-    });
+    let handler = handler(port, token);
     for ev in EVENTS {
         hooks
             .entry(ev)
@@ -454,5 +495,62 @@ mod tests {
         assert_eq!(uninstall(&p), Ok(None));
         assert_eq!(fs::read(&p).unwrap(), FIXTURE.as_bytes());
         assert_eq!(d.names(), ["settings.json"]);
+    }
+
+    #[test]
+    fn observer_has_one_handler_per_event_and_nothing_else() {
+        let v = observer(4000, "tok");
+        assert_eq!(v.as_object().unwrap().len(), 1);
+        let hooks = v["hooks"].as_object().unwrap();
+        assert_eq!(hooks.len(), EVENTS.len());
+        for ev in EVENTS {
+            let groups = hooks[ev].as_array().unwrap();
+            assert_eq!(groups.len(), 1);
+            let hs = groups[0]["hooks"].as_array().unwrap();
+            assert_eq!(hs.len(), 1);
+            assert_eq!(hs[0]["type"], "http");
+            assert_eq!(hs[0]["url"], "http://127.0.0.1:4000/events");
+            assert_eq!(hs[0]["headers"]["X-Orbit-Token"], "tok");
+            assert_eq!(hs[0]["timeout"], 2);
+        }
+    }
+
+    #[test]
+    fn write_observer_writes_replaces_and_leaves_no_tmp() {
+        let d = Dir::new();
+        let p = d.0.join("sub").join("orbit-hooks.json");
+        write_observer(&p, 4000, "tok").unwrap();
+        assert_eq!(read(&p), observer(4000, "tok"));
+        write_observer(&p, 4001, "tok").unwrap();
+        assert_eq!(read(&p), observer(4001, "tok"));
+        assert!(!d.0.join("sub").join("orbit-hooks.json.tmp").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_observer_is_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = Dir::new();
+        let p = d.0.join("orbit-hooks.json");
+        write_observer(&p, 4000, "tok").unwrap();
+        assert_eq!(fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+    }
+
+    #[test]
+    fn write_observer_survives_stale_tmp() {
+        let d = Dir::new();
+        let p = d.0.join("orbit-hooks.json");
+        fs::write(d.0.join("orbit-hooks.json.tmp"), "old").unwrap();
+        write_observer(&p, 4000, "tok").unwrap();
+        assert_eq!(read(&p), observer(4000, "tok"));
+        assert!(!d.0.join("orbit-hooks.json.tmp").exists());
+    }
+
+    #[test]
+    fn write_observer_errs_without_leaking_token() {
+        let d = Dir::new();
+        let parent = d.file("x");
+        let e = write_observer(&parent.join("orbit-hooks.json"), 4000, "sekrit-tok").unwrap_err();
+        assert!(!e.contains("sekrit-tok"));
     }
 }

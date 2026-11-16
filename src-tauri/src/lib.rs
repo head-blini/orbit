@@ -24,6 +24,8 @@ struct AppState {
     term: term::Term,
     owned: Arc<Mutex<owned::Owned>>,
     plugin_dir: Option<String>,
+    /// 터미널 claude에 붙일 훅 설정 파일 경로(`app_data_dir/orbit-hooks.json`).
+    observer: Option<PathBuf>,
     /// 마지막으로 고른 폴더. 경로는 웹뷰로 나가지 않는다.
     picked: Mutex<Option<String>>,
     /// 마지막으로 start에 성공한 cwd. 훅 설정 점검에만 쓰고 웹뷰로 나가지 않는다.
@@ -188,12 +190,28 @@ fn term_open_folder(state: State<AppState>, on_out: tauri::ipc::Channel<term::Te
     start_new(&state, s, on_out)
 }
 
+/// 훅 설정 파일을 쓰고 `--settings`에 넘길 경로를 돌려준다. skip이거나 경로를 모르거나 쓰기에 실패하면 None(시작은 막지 않음).
+fn observer_arg(path: Option<&std::path::Path>, port: u16, token: &str, skip: bool) -> Option<String> {
+    let path = path.filter(|_| !skip)?;
+    let s = path.to_str()?;
+    hooks::write_observer(path, port, token).ok()?;
+    Some(s.to_string())
+}
+
+/// 사용자 settings에 지금 포트·토큰의 훅이 이미 있거나 받을 서버가 없으면 주입하지 않는다.
+fn observer_for(state: &AppState) -> Option<String> {
+    let (Ok(c), Ok(_)) = (&state.cfg, &state.server) else { return None };
+    let skip = matches!(&state.settings_path, Ok(p) if hooks::is_installed(p, c.port, &c.token) == Ok(true));
+    observer_arg(state.observer.as_deref(), c.port, &c.token, skip)
+}
+
 /// 새 세션 id를 기록(실패는 무시)한 뒤 `--session-id`로 시작한다.
 fn start_new(state: &AppState, cwd: String, on_out: tauri::ipc::Channel<term::TermOut>) -> Result<(), String> {
     let id = term::new_session_id()?;
     let _ = lock_owned(&state.owned).add(&id);
     let t0 = sessions::now_ms();
-    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(None, Some(&id), state.plugin_dir.as_deref()), move |m| {
+    let obs = observer_for(state);
+    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(None, Some(&id), obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
     })?;
     *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some((cwd, t0));
@@ -213,7 +231,8 @@ fn term_from_session(
     }
     let _ = lock_owned(&state.owned).add(id);
     let t0 = sessions::now_ms();
-    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(Some(id), None, state.plugin_dir.as_deref()), move |m| {
+    let obs = observer_for(state);
+    state.term.start(term::find_in(&term::claude_dirs()), &cwd, &term::args(Some(id), None, obs.as_deref(), state.plugin_dir.as_deref()), move |m| {
         let _ = on_out.send(m);
     })?;
     *state.ran.lock().unwrap_or_else(|e| e.into_inner()) = Some((cwd, t0));
@@ -348,7 +367,8 @@ pub fn run() {
                 .ok()
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term_h, owned, plugin_dir, picked: Mutex::new(None), ran });
+            let observer = app.path().app_data_dir().map(|d| d.join("orbit-hooks.json")).ok();
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, term: term_h, owned, plugin_dir, observer, picked: Mutex::new(None), ran });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -448,5 +468,23 @@ mod tests {
         assert_eq!(snaps.len(), 1);
         assert!(snaps[0].stalled);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn observer_arg_cases() {
+        let d = std::env::temp_dir().join(format!("orbit-obs-test-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("orbit-hooks.json");
+        assert_eq!(observer_arg(Some(&p), 4000, "tok", true), None);
+        assert!(!p.exists());
+        assert_eq!(observer_arg(None, 4000, "tok", false), None);
+        let bad = d.join("file");
+        std::fs::write(&bad, "x").unwrap();
+        assert_eq!(observer_arg(Some(&bad.join("o.json")), 4000, "tok", false), None);
+        let got = observer_arg(Some(&p), 4000, "tok", false).unwrap();
+        assert_eq!(got, p.to_str().unwrap());
+        assert!(p.exists());
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

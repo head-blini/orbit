@@ -270,11 +270,14 @@ pub fn new_session_id() -> Result<String, String> {
 }
 
 /// claude 인자: 플러그인 경로가 있으면 `--plugin-dir <경로>`(앱이 정한 고정 값)와 메인 세션을 Lead로 하는 `--agent orbit:lead`, 이어 가기는 `--resume <id>`, 새 세션은 `--session-id <id>`(id는 호출자가 검증, 둘은 동시에 주지 않음).
-pub fn args<'a>(resume: Option<&'a str>, session_id: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
+pub fn args<'a>(resume: Option<&'a str>, session_id: Option<&'a str>, settings: Option<&'a str>, plugin: Option<&'a str>) -> Vec<&'a str> {
     debug_assert!(resume.is_none() || session_id.is_none());
     let mut v = Vec::new();
     if let Some(p) = plugin {
         v.extend(["--plugin-dir", p, "--agent", "orbit:lead"]);
+    }
+    if let Some(s) = settings {
+        v.extend(["--settings", s]);
     }
     if let Some(id) = resume {
         v.extend(["--resume", id]);
@@ -865,12 +868,18 @@ mod tests {
 
     #[test]
     fn args_combinations() {
-        assert!(args(None, None, None).is_empty());
-        assert_eq!(args(Some(ID), None, None), vec!["--resume", ID]);
-        assert_eq!(args(None, Some(ID), None), vec!["--session-id", ID]);
-        assert_eq!(args(None, None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
-        assert_eq!(args(Some(ID), None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
-        assert_eq!(args(None, Some(ID), Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--session-id", ID]);
+        assert!(args(None, None, None, None).is_empty());
+        assert_eq!(args(Some(ID), None, None, None), vec!["--resume", ID]);
+        assert_eq!(args(None, Some(ID), None, None), vec!["--session-id", ID]);
+        assert_eq!(args(None, None, None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead"]);
+        assert_eq!(args(Some(ID), None, None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--resume", ID]);
+        assert_eq!(args(None, Some(ID), None, Some("/p")), vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--session-id", ID]);
+        assert_eq!(
+            args(None, Some(ID), Some("/s.json"), Some("/p")),
+            vec!["--plugin-dir", "/p", "--agent", "orbit:lead", "--settings", "/s.json", "--session-id", ID]
+        );
+        assert_eq!(args(None, None, Some("/s.json"), None), vec!["--settings", "/s.json"]);
+        assert_eq!(args(Some(ID), None, Some("/s.json"), None), vec!["--settings", "/s.json", "--resume", ID]);
     }
 
     #[test]
