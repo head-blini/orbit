@@ -5,6 +5,7 @@ import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
 import { createGate } from "./roadmapGate";
+import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
 
@@ -83,7 +84,73 @@ function RoadmapView({ rm }: { rm: Roadmap | null }) {
   );
 }
 
+const HANDLES: { k: Kind; label: string; orient: "vertical" | "horizontal" }[] = [
+  { k: "l", label: "세션 목록 폭", orient: "vertical" },
+  { k: "r", label: "오른쪽 칸 폭", orient: "vertical" },
+  { k: "b", label: "터미널 높이", orient: "horizontal" },
+];
+const GAP = 8;
+
 export default function App() {
+  const [sizes, setSizes] = useState<Sizes>(() => loadSizes(() => localStorage));
+  const [meas, setMeas] = useState<Sizes>({ l: null, r: null, b: null });
+  const [dragging, setDragging] = useState<Kind | null>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ k: Kind; pos: number; start: number; avail: number } | null>(null);
+  const sizesRef = useRef(sizes);
+  sizesRef.current = sizes;
+
+  // 지금 칸 크기(px)와 늘릴 수 있는 한계. 반대편 칸·가운데 최소를 남긴다.
+  const measure = (k: Kind) => {
+    const shell = shellRef.current;
+    if (!shell) return null;
+    const q = (c: string) => shell.querySelector(c)?.getBoundingClientRect();
+    const cs = getComputedStyle(shell);
+    const w = shell.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const h = shell.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const sess = q(".sessions"), det = q(".detail"), term = q(".terminal"), top = q(".topbar");
+    if (!sess || !det || !term || !top) return null;
+    return k === "l" ? { cur: sess.width, avail: w - 2 * GAP - det.width - MID_MIN }
+      : k === "r" ? { cur: det.width, avail: w - 2 * GAP - sess.width - MID_MIN }
+      : { cur: term.height, avail: h - top.height - 2 * GAP - TOP_MIN };
+  };
+  const commit = (next: Sizes) => { setSizes(next); sizesRef.current = next; saveSizes(() => localStorage, next); };
+  const refreshMeas = (k: Kind) => { const m = measure(k); if (m) setMeas((p) => ({ ...p, [k]: Math.round(m.cur) })); };
+  const onDown = (k: Kind) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const m = measure(k);
+    if (!m) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { k, pos: k === "b" ? e.clientY : e.clientX, start: m.cur, avail: m.avail };
+    setDragging(k);
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const delta = d.k === "b" ? d.pos - e.clientY : d.k === "r" ? d.pos - e.clientX : e.clientX - d.pos;
+    const v = Math.round(clampSize(d.k, d.start + delta, d.avail));
+    setSizes((p) => { const n = { ...p, [d.k]: v }; sizesRef.current = n; return n; });
+  };
+  const onUp = () => {
+    if (!drag.current) return;
+    const k = drag.current.k;
+    drag.current = null;
+    setDragging(null);
+    saveSizes(() => localStorage, sizesRef.current);
+    refreshMeas(k);
+  };
+  const onKey = (k: Kind) => (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const m = measure(k);
+    if (!m) return;
+    const v = keyStep(k, e.key, sizes[k] ?? m.cur);
+    if (v === null) return;
+    e.preventDefault();
+    const n = Math.round(clampSize(k, v, m.avail));
+    commit({ ...sizes, [k]: n });
+    setMeas((p) => ({ ...p, [k]: n }));
+  };
+  const onReset = (k: Kind) => () => { commit({ ...sizes, [k]: null }); setTimeout(() => refreshMeas(k), 0); };
+
   const [status, setStatus] = useState<Status | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [result, setResult] = useState("");
@@ -183,7 +250,7 @@ export default function App() {
   const cur = selected ? sessions.get(selected) ?? null : null;
 
   return (
-    <div className="shell">
+    <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}>
       <header className="panel topbar">
         <h1>ORBIT</h1>
         <span className="tb-result" role="status" title={shownResult}>{shownResult}</span>
@@ -201,7 +268,7 @@ export default function App() {
         <h2 id="h-sessions" className="px">세션</h2>
         {sessionsError || status?.projects_error ? <><p className="empty">✕ 로그 폴더를 읽지 못했습니다</p>{status?.projects_error && <p className="note">{status.projects_error}</p>}</>
           : !loaded ? <p className="empty">불러오는 중…</p>
-          : list.length === 0 ? <p className="empty">아직 세션이 없습니다</p>
+          : list.length === 0 ? <><p className="empty">아직 Orbit에서 시작한 세션이 없습니다</p><p className="note">아래 터미널의 [폴더 열기]로 시작하면 여기에 나옵니다. Orbit 밖에서 연 세션과 예전 기록은 지우지 않고 숨깁니다.</p></>
           : (
             <ul className="list">
               {list.map((x) => {
@@ -236,6 +303,14 @@ export default function App() {
       <Terminal session={cur} />
 
       <div className="console"><Screen /></div>
+
+      {HANDLES.map(({ k, label, orient }) => (
+        <div key={k} className={`resizer rz-${k}`} role="separator" tabIndex={0} aria-label={label} aria-orientation={orient}
+          aria-valuenow={sizes[k] ?? meas[k] ?? undefined} aria-valuemin={LIMITS[k].min}
+          aria-valuemax={Number.isFinite(LIMITS[k].max) ? LIMITS[k].max : undefined}
+          onPointerDown={onDown(k)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+          onKeyDown={onKey(k)} onFocus={() => refreshMeas(k)} onDoubleClick={onReset(k)} />
+      ))}
     </div>
   );
 }

@@ -172,3 +172,19 @@ body {
 
 /* 종료를 누른 뒤: disabled 대신 aria-disabled(포커스를 잃지 않게). */
 .btn[aria-disabled="true"], .btn[aria-disabled="true"]:hover { border-style: dashed; color: var(--c-dark); cursor: default; background: var(--c-paper); }
+
+/* 칸 크기 조절 손잡이: 칸 사이 8px 틈 위에만 놓는다. 평소엔 안 보이고 hover·드래그 때 2px 선 (run 20261116-sessions-resize) */
+.resizer { position: relative; touch-action: none; }
+.resizer::after { content: ""; position: absolute; }
+.rz-l, .rz-r { width: var(--gap-panel); }
+.rz-l { grid-column: 1; grid-row: 2; justify-self: end; margin-right: calc(-1 * var(--gap-panel)); z-index: 1; cursor: col-resize; }
+.rz-r { grid-column: 3; grid-row: 2 / 4; justify-self: start; margin-left: calc(-1 * var(--gap-panel)); z-index: 2; cursor: col-resize; }
+.rz-b { grid-column: 1 / 4; grid-row: 3; align-self: start; height: var(--gap-panel); margin-top: calc(-1 * var(--gap-panel)); z-index: 3; cursor: row-resize; }
+.rz-l::after, .rz-r::after { top: 0; bottom: 0; left: 3px; width: 2px; }
+.rz-b::after { left: 0; right: 0; top: 3px; height: 2px; }
+.resizer:hover::after { background: var(--c-dark); }
+.shell.dragging .resizer:focus-visible, .resizer:focus-visible { outline-offset: -2px; }
+.shell.dragging { user-select: none; }
+.shell.dragging.drag-l, .shell.dragging.drag-r { cursor: col-resize; }
+.shell.dragging.drag-b { cursor: row-resize; }
+.shell.dragging.drag-l .rz-l::after, .shell.dragging.drag-r .rz-r::after, .shell.dragging.drag-b .rz-b::after { background: var(--c-ink); }
