@@ -17,7 +17,7 @@ Claude Code용 GUI 관제실. 설계서는 [SPEC.md](SPEC.md) — 확정된 결�
 
 - 코드 변경 요청을 받으면 `orbit:router` 스킬부터 따른다: 트랙(quick/standard/full) 선택 → `.orbit/runs/<run-id>/` 생성 → 역할 서브에이전트(`orbit:engineer` 등) 호출(`orbit:handoff`) → 관문 판정(`orbit:gate`).
 - `orbit:` 에이전트가 목록에 없으면 플러그인이 로드되지 않은 것이다. 관문이 꺼져 있다고 보고 작업하지 말고 사용자에게 알린다.
-- Lead는 직접 코딩하지 않는다. `.orbit/` 밖의 편집과 빌드·테스트 실행은 플러그인의 관문 훅(`harness/hooks/gate.mjs`)이 막는다. 코드는 `orbit:engineer` / `orbit:debugger` / `orbit:librarian`만 고친다. 관문 확인 명령은 `orbit:gate` 스킬에 적힌 `node "${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs" check <plan|review|verify|security|ship>` 형식만 쓴다.
+- Lead는 직접 코딩하지 않는다. `.orbit/` 밖의 편집과 빌드·테스트 실행은 플러그인의 관문 훅(`harness/hooks/gate.mjs`)이 막는다. 코드는 `orbit:engineer` / `orbit:debugger` / `orbit:librarian`만 고친다. 관문 확인 명령은 `orbit:gate` 스킬을 불러 거기 보이는 절대 경로 형태 `node "<gate.mjs의 절대 경로>" check <plan|review|verify|security|ship>`만 쓴다(`${CLAUDE_PLUGIN_ROOT}`를 글자 그대로 치거나 상대 경로를 쓰면 막힌다).
 - 역할끼리는 대화가 아니라 `.orbit/runs/<run-id>/`의 산출물 파일로 인계한다.
 - "완료"는 명령과 그 출력이 붙어 있을 때만 인정한다.
 - main 머지와 push는 트랙의 관문(PLAN_CHECK · REVIEW · VERIFY · SECURITY)이 통과해야 열린다. 작업은 `orbit/<run-id>` 브랜치에서 한다.
