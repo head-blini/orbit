@@ -92,7 +92,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 - build: PLAN.md의 웨이브 단위로, 같은 웨이브의 태스크는 한 메시지에서 engineer를 병렬 호출한다.
   - 기본: 같은 웨이브의 태스크는 서로 다른 파일만 건드리므로 같은 체크아웃(run 브랜치)에서 병렬로 돌린다.
   - worktree 격리(같은 파일을 병렬로 건드려야 하거나 태스크가 클 때만, 의존성 설치와 첫 빌드가 worktree마다 필요해 비싸다): handoff에 `WORKTREE: .orbit/wt/<task>`와 `BRANCH: orbit-wt/<run-id>/<task>`를 준다. WORKTREE가 없으면 engineer가 만든다. 웨이브가 끝나면 Lead가 run 브랜치에서 `git merge --no-ff orbit-wt/<run-id>/<task>`. 충돌은 engineer에게 맡긴다.
-  - 정리: 웨이브 머지 뒤 Lead가 engineer를 불러 루트(run 브랜치)에서 `git worktree remove <WORKTREE>` → `git branch -d orbit-wt/<run-id>/<task>` 순서로 정리한다.
+  - 정리: 웨이브 머지 뒤 Lead가 engineer를 불러 루트(run 브랜치)에서 `git worktree remove <WORKTREE>` → `git branch -d orbit-wt/<run-id>/<task>` 순서로 정리한다. 정리 호출에는 WORKTREE를 주지 않는다(GOAL에 경로만 적는다). `worktree remove`가 거부되면 `--force`를 쓰지 말고 사유를 보고한다.
 - review: diff에 맞는 리뷰어만 병렬 호출 → `gate` 스킬의 병합 규칙으로 REVIEW.md 작성.
   - **[REVIEW-MAX2]** standard 트랙의 리뷰는 최대 2명이다: reviewer-correctness와, diff에 가장 맞는 리뷰어 1명. 전체 패널(기본 4 + 조건부)은 full 트랙에서만 돌린다.
   - full 트랙 기본 패널: reviewer-correctness, reviewer-tests, reviewer-maintainability, reviewer-rules.
