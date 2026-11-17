@@ -870,3 +870,29 @@ test('rf1 R2: COMMIT 불일치 사유에 다음 할 일이 붙는다', () => {
   advance(root, { 'src/b.ts': 'x' });
   assert.match(reasonOf(root, MERGE), /COMMIT 줄을 고친다/);
 });
+
+test('lf1: 따옴표 친 --output, 묶어 쓴 -fC, --discard-changes, grep -O는 제한 셸에서 BLOCK', () => {
+  const root = shipProject('orbit/r1', 'standard');
+  const lead = (command) => decide({ ...bash(command), cwd: root }, root);
+  const reviewer = (command) => decide({ ...bash(command, 'a1'), agent_type: 'orbit:reviewer-rules', cwd: root }, root);
+  const eng = (command) => decide({ ...bash(command, 'a1'), cwd: root }, root);
+  const bad = ['git log -1 "--output=out.txt"', "git show -s '--output=out.txt'", 'git switch -fC main', 'git switch -Cf main', 'git switch -fc x',
+    'git switch --discard-changes orbit/r1', 'git grep -Oless foo', 'git grep -nO less foo', 'git grep --open-files-in-pager=less foo'];
+  for (const c of bad) assert.notEqual(lead(c), null, c);
+  for (const c of ['git log -1 "--output=out.txt"', 'git grep -Oless foo']) assert.notEqual(reviewer(c), null, c);
+  for (const c of ['git switch -fC main', 'git checkout -fB main']) assert.match(eng(c), /차단/, c); // 자유 셸 역할도 출고 판정에 걸린다
+  const ok = ['git log -1 --format=%s', 'git diff main...HEAD --stat', 'git switch -c orbit/x', 'git merge --no-ff -m t1 orbit-wt/r1/t1', 'git log -S useEffect', 'git status -sb'];
+  for (const c of ok) assert.equal(lead(c), null, c);
+});
+
+test('lf2: 읽기 전용 셸에서 git grep·ls-files 허용(main 위 포함), 그 밖의 검색·파이프는 그대로 BLOCK', () => {
+  for (const branch of ['orbit/r1', 'main']) {
+    const root = shipProject(branch, 'standard');
+    const as = (agent_type) => (command) => decide({ ...bash(command, agent_type && 'a1'), agent_type, cwd: root }, root);
+    const read = ['git grep -n useEffect -- src', 'git ls-files src', 'git ls-files --others --exclude-standard .orbit'];
+    for (const who of [undefined, 'orbit:reviewer-maintainability', 'orbit:librarian', 'Explore'])
+      for (const c of read) assert.equal(as(who)(c), null, branch + ' ' + who + ' ' + c);
+    assert.equal(as('orbit:librarian')('git show --stat HEAD'), null, branch);
+    for (const c of ['git grep -n foo | head', 'git ls-files src > out.txt', 'ls src', 'grep -rn foo src']) assert.notEqual(as('orbit:reviewer-rules')(c), null, branch + ' ' + c);
+  }
+});

@@ -161,14 +161,18 @@ function commitFailure(run, target, dir) {
 // Lead는 관문 확인, 읽기 전용 git, run 브랜치 조율만. gate CLI는 이 파일의 실제 경로만 허용한다(아무 gate.mjs나 허용하면 .orbit/에 쓴 스크립트를 실행할 수 있다).
 const SELF = fileURLToPath(import.meta.url).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/(\\\\|\/)+/g, '[\\\\/]');
 const ARGS = String.raw`[^;&|<>\`$\r\n(]*$`;
-const LEAD_SHELL = new RegExp(String.raw`^\s*(node ["']?${SELF}["']? check\b|git (status|log|diff|show|worktree list|switch|merge)\b|git branch(\s+--show-current)?\s*$)` + ARGS);
-const LIBRARIAN_SHELL = new RegExp(String.raw`^\s*(node ["']?${SELF}["']? check\b|git (add|commit|switch|merge|status|log|diff)\b)` + ARGS);
+const LEAD_SHELL = new RegExp(String.raw`^\s*(node ["']?${SELF}["']? check\b|git (status|log|diff|show|grep|ls-files|worktree list|switch|merge)\b|git branch(\s+--show-current)?\s*$)` + ARGS);
+const LIBRARIAN_SHELL = new RegExp(String.raw`^\s*(node ["']?${SELF}["']? check\b|git (add|commit|switch|merge|status|log|diff|show|grep|ls-files)\b)` + ARGS);
 // S13: 관문·설정 파일을 가리키는 명령 중 읽기·테스트 실행 형태(리다이렉션·파이프·연결 없음). node --test는 옵션 아닌 경로 인자만.
 const INSPECT_SHELL = new RegExp(String.raw`^\s*(git (status|log|diff|show)\b|node --test(\s+[^-\s;&|<>\`$\r\n(][^\s;&|<>\`$\r\n(]*)*\s*$|node ["']?${SELF}["']? check\b|(grep|cat|Get-Content|Select-String)\b)` + ARGS);
-const READ_SHELL = new RegExp(String.raw`^\s*git (status|log|diff|show)\b` + ARGS);
+const READ_SHELL = new RegExp(String.raw`^\s*git (status|log|diff|show|grep|ls-files)\b` + ARGS);
 const PLAN_CHECKER_SHELL = [new RegExp(String.raw`^\s*grep\b` + ARGS), /^\s*claude plugin validate [^\s;&|<>`$\r\n(]+\s*$/]; // 2.8-2
-const WRITE_OPT = /\s(--output|--force|-[fCBD])\b/; // git이 파일을 쓰거나 브랜치를 옮기는 옵션
-const shellOk = (cmd, res) => res.some((re) => re.test(cmd)) && !(/^\s*git\b/.test(cmd) && WRITE_OPT.test(cmd));
+const WRITE_OPT = /\s(--out|--forc|--disc|--open|-[fCBD]\b)/; // git이 파일을 쓰거나 브랜치를 옮기거나 작업 트리 변경을 버리거나 프로그램을 여는 옵션(줄여 쓴 긴 옵션 포함)
+const CLUSTER_OPT = /^\s*git (switch|merge|add|commit|branch)\b.*\s-[a-zA-Z]*[fCBD][a-zA-Z]*\b|^\s*git grep\b.*\s-[a-zA-Z]*O/; // 묶어 쓴 짧은 옵션(-fC), grep -O<프로그램>
+const shellOk = (cmd, res) => {
+  const bare = cmd.replace(/["']/g, ''); // 따옴표로 감싼 옵션("--output=…")도 같은 옵션이다
+  return res.some((re) => re.test(cmd)) && !(/^\s*git\b/.test(cmd) && (WRITE_OPT.test(bare) || CLUSTER_OPT.test(bare)));
+};
 
 const branchOf = (cwd) => {
   try {
@@ -192,7 +196,7 @@ const branchOf = (cwd) => {
 const GIT = String.raw`\bgit(\.exe)?["']?\s+`; // 따옴표 형태도 잡는다
 const gitSub = (name) => new RegExp(`${GIT}(-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*${name}\\b`); // 옵션 뒤의 하위 명령만
 const FORCE_MOVE = new RegExp(
-  `${GIT}(-\\S+\\s+)*(branch\\b[^;&|\\n]*\\s(-[a-zA-Z]*[fMmCc]|--force|--move|--copy)(?![\\w-])|switch\\b[^;&|\\n]*\\s(-C|--force-create)(?![\\w-])|checkout\\b[^;&|\\n]*\\s-B\\b)`,
+  `${GIT}(-\\S+\\s+)*(branch\\b[^;&|\\n]*\\s(-[a-zA-Z]*[fMmCc]|--force|--move|--copy)(?![\\w-])|switch\\b[^;&|\\n]*\\s(-[a-zA-Z]*C[a-zA-Z]*|--force-c[a-z-]*)(?![\\w-])|checkout\\b[^;&|\\n]*\\s-[a-zA-Z]*B[a-zA-Z]*\\b)`,
 );
 // 위치 변경. 원문 전체에 적용한다(메시지 속 단어도 막힌다: 메시지는 -F <파일>). i: PowerShell은 대소문자를 가리지 않는다. -C(대문자만)는 -c(설정)와 구분한다.
 const locates = (c) => /\b(cd|pushd|chdir|sl|Set-Location|Push-Location)\b|--git-dir|--work-tree|\bGIT_(DIR|WORK_TREE)\b/i.test(c) || /\s-C\s/.test(c);
@@ -296,7 +300,7 @@ function stateFailure(next, file) {
 const GIT_INV = new RegExp(`${GIT}(?:-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*([^;&|\\n]*)`, 'g');
 const CONFIG_READ = /\s(--get[\w-]*|--list|-l)(?=\s|=|$)/;
 // main/master 위에서 허용하는 git. merge는 앞의 출고 판정(관문·COMMIT 대조)을 통과한 것만 여기 온다.
-const MAIN_READ = /^((status|log|diff|show|rev-parse|ls-files|blame|merge)\b|worktree list\b|branch(\s+--show-current)?\s*$|fetch\b(?!.*:\+?(refs\/heads\/)?(main|master)(?![\w./-]))|switch(\s+-c)?\s+[^\s-]\S*\s*$)/; // checkout은 브랜치 이동과 경로 체크아웃(작업 트리 변경 버림)을 구분할 수 없어 main에서는 막는다
+const MAIN_READ = /^((status|log|diff|show|rev-parse|ls-files|blame|grep|merge)\b|worktree list\b|branch(\s+--show-current)?\s*$|fetch\b(?!.*:\+?(refs\/heads\/)?(main|master)(?![\w./-]))|switch(\s+-c)?\s+[^\s-]\S*\s*$)/; // checkout은 브랜치 이동과 경로 체크아웃(작업 트리 변경 버림)을 구분할 수 없어 main에서는 막는다
 
 // 막아야 하면 사유(문자열), 아니면 null.
 export function decide(p, root = ROOT) {
@@ -386,9 +390,9 @@ export function decide(p, root = ROOT) {
       if (fails.length) return `머지/푸시/배포 차단 — 관문 미통과: ${fails.join('; ')}`;
     }
     if (isLead && !shellOk(cmd, [LEAD_SHELL]))
-      return `Lead는 관문 확인(node ${fileURLToPath(import.meta.url)} check …)과 git status/log/diff/show/branch(목록·--show-current만)/switch/merge만 직접 실행. 나머지는 서브에이전트에게 맡길 것`;
+      return `Lead는 관문 확인(node ${fileURLToPath(import.meta.url)} check …)과 git status/log/diff/show/grep/ls-files/branch(목록·--show-current만)/switch/merge만 직접 실행. 나머지는 서브에이전트에게 맡길 것`;
     if (!isLead && !FREE_SHELL.includes(role) && !shellOk(cmd, role === 'librarian' ? [LIBRARIAN_SHELL] : [READ_SHELL, ...(role === 'plan-checker' ? PLAN_CHECKER_SHELL : [])]))
-      return `${p.agent_type ?? '이 에이전트'}의 셸은 ${role === 'librarian' ? '관문 확인과 git add/commit/switch/merge/status/log/diff만 허용(LIBRARIAN_SHELL)' : `git status/log/diff/show만 허용(READ_SHELL${role === 'plan-checker' ? ', grep, claude plugin validate' : ''})`}. 리다이렉션·파이프·다른 명령은 차단`;
+      return `${p.agent_type ?? '이 에이전트'}의 셸은 ${role === 'librarian' ? '관문 확인과 git add/commit/switch/merge/status/log/diff/show/grep/ls-files만 허용(LIBRARIAN_SHELL)' : `git status/log/diff/show/grep/ls-files만 허용(READ_SHELL${role === 'plan-checker' ? ', grep, claude plugin validate' : ''})`}. 리다이렉션·파이프·다른 명령은 차단`;
     // N4-S·N2-b: 명령 안의 git 호출마다 하위명령 + 인자를 모은다. git이 없는 명령(빌드·테스트)에서는 git을 실행하지 않는다.
     const subs = [...cmd.matchAll(GIT_INV)].map((m) => m.at(-1).trim());
     if (subs.some((s) => /^config\b/.test(s) && !CONFIG_READ.test(s.replace(/"[^"]*"|'[^']*'/g, ''))))
