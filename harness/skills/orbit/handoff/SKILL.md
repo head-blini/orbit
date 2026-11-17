@@ -42,16 +42,17 @@ DONE WHEN: <끝났다고 볼 조건>
 | plan-checker | BRIEF.md, DESIGN.md, DATA.md, PLAN.md | PLAN_CHECK.md |
 | engineer | PLAN.md의 자기 태스크 | 코드 + 커밋, 최종 메시지로 SUMMARY 내용 |
 | debugger | VERIFY.md의 실패, 코드 | 수정 + DEBUG.md |
-| reviewer-correctness · reviewer-tests · reviewer-maintainability · reviewer-rules | PLAN.md, run 브랜치 diff | `reviews/<역할>.md`(Lead가 REVIEW.md로 병합), 최종 메시지는 경로와 차단 요약 |
-| reviewer-performance · reviewer-accessibility · reviewer-data · reviewer-idiom | PLAN.md, diff, profile.json | `reviews/<역할>.md`(Lead가 REVIEW.md로 병합), 최종 메시지는 경로와 차단 요약 |
+| reviewer-correctness · reviewer-tests | PLAN.md, run 브랜치 diff | `reviews/<역할>.md`(Lead가 REVIEW.md로 병합), 최종 메시지는 경로와 차단 요약 |
+| reviewer-maintainability · reviewer-rules | PLAN.md, run 브랜치 diff | Write 없음. 최종 메시지로 반환(Lead가 REVIEW.md로 병합). 30줄을 넘으면 차단·수정 권고부터, 남은 참고는 건수만 |
+| reviewer-performance · reviewer-accessibility · reviewer-data · reviewer-idiom | PLAN.md, diff, profile.json | Write 없음. 최종 메시지로 반환(Lead가 REVIEW.md로 병합). 30줄을 넘으면 차단·수정 권고부터, 남은 참고는 건수만 |
 | qa | BRIEF.md/PLAN.md의 목표, 실행 중인 앱 | VERIFY.md, 시각 리뷰 동반 시 `APP_URL` |
 | security | diff, 설정 파일, DATA.md | SECURITY.md |
 | devops | PLAN.md, DATA.md, 빌드·CI 설정 | RELEASE.md(배포 절차·롤백 방법), 배포 명령은 사람 승인 뒤에만 |
 | librarian | run 폴더 전체 | CHANGELOG, `docs/solutions/*.md`, 머지 |
-| lead | 모든 산출물 | STATE.json, REVIEW.md, `.orbit/current`, 시각 리뷰 전 `APP_URL`·`VISUAL_DONE` 초기화, 리뷰 전 `reviews/<역할>.md` 비우기 |
+| lead | 모든 산출물 | STATE.json, REVIEW.md, `.orbit/current`, 시각 리뷰 전 `APP_URL`·`VISUAL_DONE` 초기화, 리뷰 전 correctness·tests의 `reviews/<역할>.md` 비우기 |
 
 - 역할별 쓰기 주체는 관문이 강제한다. PLAN_CHECK.md는 plan-checker, VERIFY.md는 qa, SECURITY.md는 security, profile.json은 researcher만 쓴다. team.yaml은 어떤 에이전트도 못 쓴다.
-- engineer는 파일 대신 **최종 메시지**로 결과를 돌려준다(worktree에서는 RUN_DIR에 쓸 수 없을 수 있다). Lead가 받아서 `tasks/<task>/SUMMARY.md`로 저장한다. 내용은 고치지 않고 그대로 옮긴다. reviewer는 상세를 `reviews/<역할>.md`에 쓰고, Lead가 그 파일들을 gate 스킬의 병합 규칙으로 REVIEW.md에 합친다.
+- engineer는 파일 대신 **최종 메시지**로 결과를 돌려준다(worktree에서는 RUN_DIR에 쓸 수 없을 수 있다). Lead가 받아서 `tasks/<task>/SUMMARY.md`로 저장한다. 내용은 고치지 않고 그대로 옮긴다. reviewer-correctness·reviewer-tests는 상세를 `reviews/<역할>.md`에 쓰고, 나머지 reviewer는 최종 메시지로 돌려준다. Lead가 그 파일과 메시지를 gate 스킬의 병합 규칙으로 REVIEW.md에 합친다.
 - 판정이 필요한 산출물(PLAN_CHECK, REVIEW, VERIFY, SECURITY)은 마지막 줄을 `VERDICT: PASS` 또는 `VERDICT: FAIL`로 끝낸다. 관문 스크립트가 이 줄을 읽는다.
 
 ## 산출물 최소 형식
