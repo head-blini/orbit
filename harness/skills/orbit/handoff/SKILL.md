@@ -48,7 +48,7 @@ DONE WHEN: <끝났다고 볼 조건>
 | security | diff, 설정 파일, DATA.md | SECURITY.md |
 | devops | PLAN.md, DATA.md, 빌드·CI 설정 | RELEASE.md(배포 절차·롤백 방법), 배포 명령은 사람 승인 뒤에만 |
 | librarian | run 폴더 전체 | CHANGELOG, `docs/solutions/*.md`, 머지 |
-| lead | 모든 산출물 | STATE.json, REVIEW.md, `.orbit/current` |
+| lead | 모든 산출물 | STATE.json, REVIEW.md, `.orbit/current`, 시각 리뷰 전 `APP_URL`·`VISUAL_DONE` 초기화, 리뷰 전 `reviews/<역할>.md` 비우기 |
 
 - 역할별 쓰기 주체는 관문이 강제한다. PLAN_CHECK.md는 plan-checker, VERIFY.md는 qa, SECURITY.md는 security, profile.json은 researcher만 쓴다. team.yaml은 어떤 에이전트도 못 쓴다.
 - engineer는 파일 대신 **최종 메시지**로 결과를 돌려준다(worktree에서는 RUN_DIR에 쓸 수 없을 수 있다). Lead가 받아서 `tasks/<task>/SUMMARY.md`로 저장한다. 내용은 고치지 않고 그대로 옮긴다. reviewer는 상세를 `reviews/<역할>.md`에 쓰고, Lead가 그 파일들을 gate 스킬의 병합 규칙으로 REVIEW.md에 합친다.
