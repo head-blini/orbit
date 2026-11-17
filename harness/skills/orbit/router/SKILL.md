@@ -93,11 +93,12 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
   - 기본: 같은 웨이브의 태스크는 서로 다른 파일만 건드리므로 같은 체크아웃(run 브랜치)에서 병렬로 돌린다.
   - worktree 격리(같은 파일을 병렬로 건드려야 하거나 태스크가 클 때만, 의존성 설치와 첫 빌드가 worktree마다 필요해 비싸다): handoff에 `WORKTREE: .orbit/wt/<task>`와 `BRANCH: orbit-wt/<run-id>/<task>`를 준다. WORKTREE가 없으면 engineer가 만든다. 웨이브가 끝나면 Lead가 run 브랜치에서 `git merge --no-ff orbit-wt/<run-id>/<task>`. 충돌은 engineer에게 맡긴다.
   - 정리: 웨이브 머지 뒤 Lead가 engineer를 불러 루트(run 브랜치)에서 `git worktree remove <WORKTREE>` → `git branch -d orbit-wt/<run-id>/<task>` 순서로 정리한다. 정리 호출에는 WORKTREE를 주지 않는다(GOAL에 경로만 적는다). `worktree remove`가 거부되면 `--force`를 쓰지 말고 사유를 보고한다.
-- review: diff에 맞는 리뷰어만 병렬 호출 → `gate` 스킬의 병합 규칙으로 REVIEW.md 작성.
+- review: diff에 맞는 리뷰어만 병렬 호출(각 호출의 WRITE는 `RUN_DIR/reviews/<역할>.md`) → 그 파일들을 `gate` 스킬의 병합 규칙으로 REVIEW.md에 합친다.
   - **[REVIEW-MAX2]** standard 트랙의 리뷰는 최대 2명이다: reviewer-correctness와, diff에 가장 맞는 리뷰어 1명. 전체 패널(기본 4 + 조건부)은 full 트랙에서만 돌린다.
   - full 트랙 기본 패널: reviewer-correctness, reviewer-tests, reviewer-maintainability, reviewer-rules.
   - 조건부(full 트랙에서 켜진 것만 추가): reviewer-performance(성능 민감 코드), reviewer-accessibility(UI 변경), reviewer-data(DB·마이그레이션 변경, data 역할이 꺼져 있을 때 최소 점검), reviewer-idiom(`profile.json`의 `stack`에 맞는 언어·프레임워크 관용구).
 - designer·data·devops·security-deep·qa-mobile은 §1 병합 결과가 켜짐일 때만 부른다.
+- 시각 리뷰(designer): 호출 전에 Lead가 `RUN_DIR/APP_URL`을 빈 내용으로, `RUN_DIR/VISUAL_DONE`을 `waiting` 한 줄로 Write한다. 그다음 qa와 designer를 한 메시지에서 병렬로 호출하고, 두 GOAL에 `시각 리뷰 동반`을 적는다. qa가 앱을 띄워 APP_URL에 주소를 적는다. designer는 끝나면 VISUAL_DONE을 `done`으로 쓴다. qa는 `done`을 기다린 뒤(최대 15분) 자기가 띄운 프로세스를 정리한다. 서브에이전트가 끝난 뒤에도 그 프로세스가 살아 있다고 가정하지 않는다.
 
 ## 6. 루프와 한도
 
@@ -116,4 +117,4 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 
 ## 8. 끝내기
 
-`check ship`은 VERIFY(full은 SECURITY도)의 COMMIT과 run 브랜치 해시를 대조한다. librarian의 기록 커밋은 `CHANGELOG*`·`docs/**`만 바꾼다. 키트 run은 사람의 적용 커밋 뒤에 qa·security가 COMMIT을 적는다. `check ship`이 전부 PASS면 librarian을 불러 main 머지·문서·배운 것 기록을 맡긴다(quick 트랙은 librarian 없이 사용자에게 머지 여부를 묻는다). 배포가 포함되면 `deploy` 승인 뒤에만 진행한다. 사용자에게는 결과, 증거 위치(VERIFY.md), 남은 위험을 세 줄 안으로 보고한다. push는 사용자가 요청했을 때만.
+`check ship`은 VERIFY(full은 SECURITY도)의 COMMIT과 run 브랜치 해시를 대조한다. librarian의 기록 커밋은 `CHANGELOG*`·`docs/**`만 바꾼다. 키트 run은 사람의 적용 커밋 뒤에 qa·security가 COMMIT을 적는다. `check ship`이 전부 PASS면 librarian을 불러(GOAL에 Lead가 방금 실행해 PASS를 본 `check ship` 명령을 `$`·변수 없는 절대 경로 그대로 적는다. 그 경로는 체크포인트 막힘 메시지에도 적혀 있다. librarian 셸은 이 형태만 허용된다) main 머지·문서·배운 것 기록을 맡긴다(quick 트랙은 librarian 없이 사용자에게 머지 여부를 묻는다). 배포가 포함되면 `deploy` 승인 뒤에만 진행한다. 사용자에게는 결과, 증거 위치(VERIFY.md), 남은 위험을 세 줄 안으로 보고한다. push는 사용자가 요청했을 때만.
