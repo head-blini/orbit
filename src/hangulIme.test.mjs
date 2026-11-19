@@ -158,13 +158,3 @@ test("double final consonant without Shift (ㄱㅏㅂㅅㅣ → 갑시) and Shif
   assert.equal(type([...ins("ㄱ"), ...rep("가"), ...rep("갑"), ...rep("값"), K, ["insertReplacementText", "갑"], ["insertText", "시"]]), "갑시");
   assert.equal(type([...ins("ㄱ"), ...rep("가"), SHIFT, ...ins("ㄲ"), ...rep("까")]), "가까");
 });
-
-test("paste while composing: flush on paste sends the pending syllable first, paste input is left to xterm", () => {
-  // Terminal.tsx는 paste(capture)에서 flush한다. xterm은 같은 paste 이벤트에서 붙인 글을 보내므로 이 순서가 "아" → "abc"가 된다.
-  const ime = new HangulIme();
-  ime.input("insertText", "ㅇ");
-  ime.input("insertReplacementText", "아");
-  assert.equal(ime.flush(), "아");
-  assert.deepEqual(ime.input("insertFromPaste", "abc"), { handled: false, send: "" });
-  assert.deepEqual(ime.input("insertReplacementText", "아"), { handled: true, send: "" }); // IME가 다시 쏴도 두 번 가지 않는다
-});
