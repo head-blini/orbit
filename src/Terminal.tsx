@@ -150,6 +150,7 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
       fontFamily: 'Menlo, "Cascadia Mono", Consolas, monospace', fontSize: fontRef.current, lineHeight: 1,
       cursorStyle: "block", cursorBlink: false, drawBoldTextInBrightColors: false,
       minimumContrastRatio: MIN_CONTRAST, allowTransparency: false, theme: THEME,
+      macOptionClickForcesSelection: true, // claude가 마우스를 잡아도 Option+드래그는 xterm 선택(⌘C로 복사). claude 안내 "option+click to native select"와 같다
     });
     const fit = new FitAddon();
     t.loadAddon(fit);
@@ -184,6 +185,7 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
       if (r.handled) ev.stopPropagation();
     }, { capture: true, signal: ac.signal });
     t.textarea?.addEventListener("blur", () => { send(rt.ime.flush()); preview(); }, { signal: ac.signal }); // xterm#5704: 병합 후 삭제
+    box.addEventListener("paste", () => { send(rt.ime.flush()); preview(); }, { capture: true, signal: ac.signal }); // xterm#5704: 병합 후 삭제. xterm보다 먼저 조합 중 음절을 보낸다
     t.onRender(() => { if (rt.ime.active) preview(); }); // xterm#5704: 병합 후 삭제. 앞 음절 에코로 커서가 옮겨 가면 따라간다
     t.attachCustomKeyEventHandler((e) => {
       if (e.type === "keydown" && rt.ime.active) { // xterm#5704: 병합 후 삭제
