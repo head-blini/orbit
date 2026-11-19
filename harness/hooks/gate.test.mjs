@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { resolve as resolvePath } from 'node:path';
 import { memorySlug } from './gate.mjs';
 import { basename } from 'node:path';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 
 function project(track, files = {}, state = {}) {
   const root = mkdtempSync(join(tmpdir(), 'orbit-gate-'));
@@ -92,7 +92,7 @@ test('Lead는 .orbit/ 에만 쓰고, 허용된 명령만 실행', () => {
   assert.match(decide(bash('node .orbit/x/gate.mjs check'), root), /Lead/);
   assert.match(decide(bash('node .claude/hooks/gate.mjs check ship'), root), /Lead/);
   assert.equal(decide(bash('git status'), root), null);
-  assert.match(decide(bash('npm run build'), root), /Lead/);
+  assert.equal(decide(bash('npm run build'), root), null); // 고정 목록의 빌드는 Lead가 직접
   assert.match(decide(bash('git status; echo x > src/a.ts'), root), /Lead/);
   assert.equal(decide(bash('npm run build', 'agent-1'), root), null);
   assert.match(decide({ tool_name: 'PowerShell', tool_input: { command: 'Set-Content a b' } }, root), /Lead/);
@@ -528,7 +528,7 @@ test('R3·R9·R10: S13은 대소문자를 구분하지 않고, disableAllHooks·
 test('R4: 막힌 사유가 실제 허용 목록을 말한다', () => {
   const root = gitProject('main', 'quick');
   assert.match(reasonOf(root, 'npm test', 'orbit:librarian'), /git add\/commit\/switch\/merge\/status\/log\/diff/);
-  assert.match(reasonOf(root, 'npm test'), /branch\(목록·--show-current만\)/);
+  assert.match(reasonOf(root, 'npm install'), /branch\(목록·--show-current만\)/);
 });
 
 test('R7: S3 사유까지 확인 — Lead는 branch 이동·삭제·생성 차단, engineer는 브랜치 강제 이동을 출고로 차단', () => {
@@ -583,7 +583,10 @@ function advance(root, files) {
   gitIn(root, 'switch', '-q', 'orbit/r1');
   for (const [p, body] of Object.entries(files)) {
     if (body === null) rmSync(join(root, p));
-    else {
+    else if (body && typeof body === 'object') {
+      mkdirSync(dirname(join(root, p)), { recursive: true });
+      symlinkSync(body.link, join(root, p)); // { link } = 심볼릭 링크(모드 120000)
+    } else {
       mkdirSync(dirname(join(root, p)), { recursive: true });
       writeFileSync(join(root, p), body);
     }
@@ -895,4 +898,211 @@ test('lf2: 읽기 전용 셸에서 git grep·ls-files 허용(main 위 포함), �
     assert.equal(as('orbit:librarian')('git show --stat HEAD'), null, branch);
     for (const c of ['git grep -n foo | head', 'git ls-files src > out.txt', 'ls src', 'grep -rn foo src']) assert.notEqual(as('orbit:reviewer-rules')(c), null, branch + ' ' + c);
   }
+});
+
+// ---- gate-relax T1: Lead 읽기·빌드·테스트 셸, .orbit/ 쓰기 확장자 허용 목록 ----
+const leadAt = (root, c) => decide(sh(root, c), root);
+
+test('Lead 읽기·빌드·테스트: 고정 목록은 허용', () => {
+  const root = gitRoot('quick');
+  for (const c of [
+    'find src -name "*.ts"', 'grep -rn foo src', 'ls -la', 'cat README.md', 'head -n 5 README.md', 'tail -n 5 log', 'wc -l a.txt', 'pwd',
+    'npm run build', 'npm test', 'npm run lint', 'yarn test', 'pnpm test', 'cargo test', 'cargo build', 'cargo check',
+    'cargo test --manifest-path src-tauri/Cargo.toml', 'cargo test --manifest-path=src-tauri/Cargo.toml', 'pytest', 'pytest tests/a.py', 'python3 -m pytest', 'go test ./...', 'cargo test foo',
+    'node --test src/a.test.mjs', 'git show HEAD~1', 'git log --oneline -5', `node "${GATE}" check plan`, `node ${GATE} check ship`,
+  ])
+    assert.equal(leadAt(root, c), null, c);
+});
+
+test('Lead 읽기·빌드·테스트: 옵션·경로 우회·셸 해석 문자는 차단', () => {
+  const root = gitRoot('quick');
+  const bad = [
+    // 옵션·.orbit/.claude 실행·.env
+    'npm test -- --x', 'npm --prefix .orbit/x test', 'node --test .orbit/a.test.mjs', 'node --test', 'go test -exec rm ./...', 'cargo test --config a=b',
+    'node --test /Users/x/.claude/projects/p/memory/x.test.mjs', 'node --test .claude/x.test.mjs', // RUN_BAD의 .claude
+    'find . -fls x', 'grep --include="*.ts" foo src', // READ_BAD의 fls, OPT_TOKEN만 막는 옵션
+    'cat .env', 'tail -f log', 'find . -fprint x', 'find src -name "*.ts" -delete', 'npm run build-x', 'npm build x', 'pnpm lint',
+    'cargo test --manifest-path ../x/Cargo.toml', 'cargo test --manifest-path=/tmp/Cargo.toml',
+    // S1(SECURITY): 절대 경로·.. 인자와 위치 인자 있는 npm 계열, 테스트 파일 모양이 아닌 node --test 인자, 숫자 붙은 tail follow
+    'node --test /private/tmp/claude-501/p/s/tasks/b1.output', 'npm test /private/tmp/claude-501/p/s/tasks/b1.output', 'npm run build foo', 'pnpm test foo', 'yarn test x',
+    'node --test ../x.test.mjs', 'node --test /tmp/x/a.test.mjs', 'node --test C:/x/a.test.mjs', 'node --test src', 'node --test src/a.mjs', 'node --test src/a.test.mjs src',
+    'pytest /tmp/x', 'pytest ../x', 'go test /tmp/x', 'cargo test ../x', 'python3 -m pytest /tmp/x',
+    'tail -5f README.md', 'tail -n5f README.md', 'tail -5F README.md',
+    // 셸 해석 우회: 백슬래시·중괄호·글롭·따옴표 결합
+    'find . -de\\lete', 'find . -\\exec rm {} +', 'find . -e{xec,xec} rm {} +', 'npm test \\-\\-prefix x', 'node --test \\--import=x a.test.mjs',
+    'cat .e\\nv', 'cargo test \\-\\-config a=b', 'find . -d*', 'find . -de""lete', 'cat .e"n"v', 'find . *',
+    // 개행·제어 문자
+    'npm test\nrm foo.txt', 'npm run build\ncp a b', 'cargo test\nnode x.js', 'pytest\ntouch x', 'node --test a.test.mjs\nrm foo', 'npm test\r\nrm foo',
+    'npm test\u000brm foo', 'tail x\u2028-f log', 'tail\u2028x -f log', 'git status\u2028rm x', 'git log\nrm x', `node "${GATE}" check plan\nrm x`,
+    // LEAD_SHELL 경로의 \ · {}
+    'git diff \\--output=x', 'git diff {--output=x,HEAD}', 'git switch -\\f main',
+  ];
+  for (const c of bad) assert.match(leadAt(root, c) ?? '', /^Lead는/, JSON.stringify(c));
+});
+
+test('Lead가 아닌 역할의 셸 기대는 그대로(reviewer git 읽기, engineer 자유 셸)', () => {
+  const root = gitRoot('quick');
+  const at = (c, t) => decide(sh(root, c, t), root);
+  assert.equal(at('git status', 'orbit:reviewer-rules'), null);
+  assert.notEqual(at('npm test', 'orbit:reviewer-rules'), null);
+  assert.equal(at('npm test -- --x', 'orbit:engineer'), null);
+});
+
+test('.orbit/ 쓰기 확장자 허용 목록: Lead·읽기 전용 역할은 문서·데이터만', () => {
+  const root = project('quick');
+  for (const who of [undefined, 'orbit:reviewer-rules']) {
+    for (const f of ['.orbit/runs/r1/x.test.js', '.orbit/x.sh', '.orbit/runs/r1/kit.mjs', '.orbit/runs/r1/.hidden'])
+      assert.match(decide(wr(root, f, who), root) ?? '', /\.orbit\/에는/, `${who} ${f}`);
+    for (const f of ['.orbit/runs/r1/NOTES.md', '.orbit/x.json', '.orbit/a.txt', '.orbit/a.yaml', '.orbit/a.yml', '.orbit/APP_URL'])
+      assert.equal(decide(wr(root, f, who), root), null, `${who} ${f}`);
+  }
+  assert.equal(decide(wr(root, '.orbit/current', undefined, { content: 'r1\n' }), root), null);
+  assert.equal(decide(wr(root, '.orbit/runs/r1/kit/apply.sh', 'orbit:engineer'), root), null);
+  assert.equal(decide(wr(root, '.orbit/runs/r1/x.test.js', 'orbit:qa'), root), null);
+});
+
+// ---- T2: quick 문서 전용 출고 ----
+// base 파일이 있는 main에서 갈라진 orbit/r1에 files를 커밋한다(null이면 삭제). 작업 트리는 main.
+function docProject(track, files, base = {}) {
+  const root = project(track);
+  gitIn(root, 'init', '-q', '-b', 'main');
+  for (const [p, body] of Object.entries(base)) {
+    mkdirSync(dirname(join(root, p)), { recursive: true });
+    writeFileSync(join(root, p), body);
+  }
+  gitIn(root, 'add', '-A', '--', ':(exclude).orbit');
+  gitIn(root, 'commit', '-q', '--allow-empty', '-m', 'base');
+  gitIn(root, 'switch', '-q', '-c', 'orbit/r1');
+  advance(root, files);
+  gitIn(root, 'switch', '-q', 'main');
+  return root;
+}
+const DOCS = { 'README.md': 'x', 'docs/a.md': 'x', 'CHANGELOG.md': 'x' };
+const STATE_FILE = '.orbit/runs/r1/STATE.json';
+const DONE = { content: '{"track":"quick","stage":"done"}' };
+
+test('T2 기준5: quick·VERIFY 없음·문서만 바뀐 run은 Lead·librarian 머지, check ship, stage done이 열린다(머지 전·--no-ff 머지 뒤)', () => {
+  const root = docProject('quick', DOCS);
+  for (const who of [undefined, 'orbit:librarian']) assert.equal(exitOf(root, MERGE, who), 0, String(who));
+  assert.equal(decide(wr(root, STATE_FILE, undefined, DONE), root), null); // 머지 전
+  const before = spawnGate(['check', 'ship'], { root });
+  assert.equal(before.status, 0, before.stdout);
+  assert.match(before.stdout, /PASS docs-only/);
+  assert.match(before.stdout, /run=r1 track=quick/);
+  gitIn(root, 'merge', '-q', '--no-ff', '-m', 'merge', 'orbit/r1');
+  assert.equal(decide(wr(root, STATE_FILE, undefined, DONE), root), null); // 머지 뒤: 기준점은 머지 커밋의 첫 부모
+  const after = spawnGate(['check', 'ship'], { root });
+  assert.equal(after.status, 0, after.stdout);
+  assert.match(after.stdout, /PASS docs-only/);
+});
+
+test('T2 기준6: 코드·에이전트 지시 문서가 섞였거나 이름 바꾸기·빈 diff·standard·full은 기존 사유로 막힌다', () => {
+  const mixed = [
+    [{ ...DOCS, 'src/a.ts': 'x' }, {}],
+    [{ ...DOCS, 'harness/agents/qa.md': 'x' }, {}],
+    [{ ...DOCS, 'CLAUDE.md': 'x' }, {}],
+    [{ ...DOCS, '.claude/agents/x.md': 'x' }, {}],
+    [{ 'docs/a.md': 'x', 'src/a.ts': null }, { 'src/a.ts': 'x' }], // src → docs 이름 바꾸기
+  ];
+  for (const [files, base] of mixed) {
+    const root = docProject('quick', files, base);
+    const tag = Object.keys(files).join(',');
+    assert.equal(exitOf(root, MERGE), 2, tag);
+    assert.match(reasonOf(root, MERGE), /관문 미통과/, tag);
+    assert.match(decide(wr(root, STATE_FILE, undefined, DONE), root) ?? '', /done/, tag);
+    const c = spawnGate(['check', 'ship'], { root });
+    assert.equal(c.status, 1, tag);
+    assert.doesNotMatch(c.stdout, /docs-only/, tag);
+  }
+  const empty = shipProject('main', 'quick'); // 빈 diff
+  assert.equal(exitOf(empty, MERGE), 2);
+  assert.equal(spawnGate(['check', 'ship'], { root: empty }).status, 1);
+  for (const track of ['standard', 'full']) {
+    const root = docProject(track, DOCS);
+    assert.equal(exitOf(root, MERGE), 2, track);
+    assert.match(reasonOf(root, MERGE), /관문 미통과/, track);
+    assert.equal(spawnGate(['check', 'ship'], { root }).status, 1, track);
+    assert.match(decide(wr(root, STATE_FILE, undefined, { content: `{"track":"${track}","stage":"done"}` }), root) ?? '', /done/, track); // stateFailure의 quick 조건
+  }
+});
+
+test('T2 기준7: 문서 전용이어도 push·다른 run·남의 ref가 섞인 머지는 막힌다', () => {
+  const root = docProject('quick', DOCS);
+  assert.equal(exitOf(root, MERGE), 0); // 대조
+  assert.equal(exitOf(root, `${G} ${P}`), 2);
+  assert.equal(exitOf(root, `${G} merge --no-ff orbit/r2`), 2);
+  assert.equal(exitOf(root, `${G} merge --no-ff orbit/r1 feat`), 2);
+  assert.equal(exitOf(root, `${G} merge orbit/r1 && ${G} ${P}`, ENG), 2);
+  assert.equal(exitOf(root, `${G} merge orbit/r1; ${G} ${P} origin main`, ENG), 2);
+  assert.equal(exitOf(root, `${G} merge orbit/r1/x`, ENG), 2); // 뒤꼬리 ref
+  assert.equal(exitOf(root, `${G} -C /tmp/elsewhere merge --no-ff orbit/r1`, ENG), 2); // 다른 저장소: 위치 변경 가드(whereOf)
+});
+
+test('T7 quick (4) 기록: 검토 뒤 docs/solutions만 더하면 Lead 머지·check ship 통과, src가 섞이면 검토한 커밋과 다름으로 차단', () => {
+  const root = shipProject('main', 'quick', QUICK);
+  advance(root, { 'docs/solutions/x.md': 'x' });
+  assert.equal(exitOf(root, MERGE), 0);
+  assert.equal(spawnGate(['check', 'ship'], { root }).status, 0);
+  const mixed = shipProject('main', 'quick', QUICK);
+  advance(mixed, { 'docs/solutions/x.md': 'x', 'src/b.ts': 'x' });
+  assert.equal(exitOf(mixed, MERGE), 2);
+  assert.match(reasonOf(mixed, MERGE), /검토한 커밋과 다름/);
+});
+
+// T8: 저장소의 harness/hooks 경로도 check 명령으로 허용(앱 번들 훅과 저장소 훅이 같이 돌 때)
+test('T8: Lead·librarian은 root의 harness/hooks 관문 경로로도 check를 실행할 수 있다', async () => {
+  const { realpathSync, symlinkSync } = await import('node:fs');
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'orbit-gate-')));
+  const hook = `${root}/harness/hooks/gate.mjs`;
+  const lead = (c, r = root) => decide({ ...bash(c), cwd: r }, r);
+  const lib = (c) => decide({ ...bash(c, 'a1'), agent_type: 'orbit:librarian', cwd: root }, root);
+  assert.equal(lead(`node ${hook} check ship`), null); // ①
+  assert.equal(lib(`node ${hook} check ship`), null); // ②
+  assert.equal(lead(`node "${hook}" check plan`), null); // ③ 따옴표 형태
+  assert.match(lead(`node ${root}/.orbit/x/gate.mjs check`) ?? '', /Lead/); // ④
+  assert.match(lead('node /tmp/other/harness/hooks/gate.mjs check') ?? '', /Lead/); // ⑤
+  const linkDir = mkdtempSync(join(tmpdir(), 'orbit-gate-link-')); // ⑥ 실제 경로와 다른 문자열의 root
+  const link = join(linkDir, 'l');
+  try {
+    symlinkSync(root, link);
+    assert.equal(lead(`node ${link}/harness/hooks/gate.mjs check ship`, link), null);
+  } finally {
+    rmSync(linkDir, { recursive: true, force: true });
+  }
+  assert.match(lead(`node ${hook} check ship\nrm x`) ?? '', /Lead/); // ⑦ 제어 문자
+  assert.match(lead(`node ${hook} check ship; rm x`) ?? '', /Lead/);
+  // 머리의 경로만 NO_META에서 빠진다: 인자의 {}·\ 는 그대로 차단, Windows 경로(\)는 머리에서만 허용
+  assert.match(lead(`node "${hook}" check plan {a,b}`) ?? '', /Lead/);
+  assert.match(lead(`node "${hook}" check plan \\x`) ?? '', /Lead/);
+  assert.equal(lead('node "C:\\r\\harness\\hooks\\gate.mjs" check plan', 'C:\\r'), null);
+});
+
+test('S1 재현 3단계: .orbit/ 텍스트 쓰기는 허용돼도 follow·절대 경로 실행·npm 위치 인자가 막혀 임의 실행이 닫힌다', () => {
+  const root = gitRoot('quick');
+  const out = '/private/tmp/claude-501/-Users-x-orbit/s1/tasks/b2b8ueau0.output';
+  assert.equal(decide(wr(root, '.orbit/runs/r1/payload.txt', undefined, { content: 'x' }), root), null); // 1단계는 허용 그대로
+  assert.match(leadAt(root, 'tail -5f .orbit/runs/r1/payload.txt') ?? '', /^Lead는/); // 2단계
+  assert.match(leadAt(root, 'tail -n5f .orbit/runs/r1/payload.txt') ?? '', /^Lead는/);
+  assert.match(leadAt(root, `node --test ${out}`) ?? '', /^Lead는/); // 3단계
+  assert.match(leadAt(root, `npm test ${out}`) ?? '', /^Lead는/);
+  assert.equal(leadAt(root, 'tail -n 5 README.md'), null); // 대조
+  assert.equal(leadAt(root, 'node --test src/a.test.mjs'), null);
+});
+
+test('S4: docs/는 대소문자를 구분하고, 심볼릭 링크·gitlink는 문서가 아니다', () => {
+  for (const files of [{ 'Docs/a.test.mjs': 'x' }, { 'DOCS/conftest.py': 'x' }, { 'docs/link.md': { link: '../src/a.ts' } }, { 'docs/dir': { link: 'x' } }]) {
+    const root = docProject('quick', files);
+    const tag = Object.keys(files).join(',');
+    assert.equal(exitOf(root, MERGE), 2, tag);
+    assert.equal(spawnGate(['check', 'ship'], { root }).status, 1, tag);
+  }
+  const root = docProject('quick', { 'docs/a.md': 'x', 'docs/b.js': 'x', 'Readme.md': 'x' }); // 대조: 일반 파일은 그대로 문서
+  assert.equal(exitOf(root, MERGE), 0);
+  // 160000(gitlink)
+  const g = docProject('quick', { 'docs/a.md': 'x' });
+  gitIn(g, 'switch', '-q', 'orbit/r1');
+  gitIn(g, 'update-index', '--add', '--cacheinfo', '160000,' + gitIn(g, 'rev-parse', 'HEAD') + ',docs/sub');
+  gitIn(g, 'commit', '-q', '-m', 'gitlink');
+  gitIn(g, 'switch', '-q', 'main');
+  assert.equal(exitOf(g, MERGE), 2, 'gitlink');
 });
