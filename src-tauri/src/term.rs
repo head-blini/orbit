@@ -19,6 +19,14 @@ pub const NOT_FOUND: &str = "claude를 찾을 수 없습니다 — Claude Code�
 /// 터미널 종류만 알린다(Finder 실행 시 TERM 부재 대비). 색 설정이 아니다.
 const TERM_ENV: &str = "xterm-256color";
 
+/// Finder로 띄운 앱에는 LANG·LC_*가 없다. 그대로 물려주면 claude가 복사할 때 부르는 pbcopy가 C 로캘로 돌아
+/// 한글·선 문자가 든 글을 버리고 클립보드를 비운다. 로캘이 하나도 없을 때만 문자 인코딩(LC_CTYPE)만 채운다.
+#[cfg(target_os = "macos")]
+fn locale_fill(get: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<(&'static str, &'static str)> {
+    let set = |k: &str| get(k).is_some_and(|v| !v.is_empty());
+    (!set("LC_ALL") && !set("LC_CTYPE") && !set("LANG")).then_some(("LC_CTYPE", "UTF-8"))
+}
+
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "t", rename_all = "lowercase")]
 pub enum TermOut {
@@ -415,6 +423,10 @@ impl Term {
         cmd.args(args);
         cmd.cwd(cwd);
         cmd.env("TERM", TERM_ENV);
+        #[cfg(target_os = "macos")]
+        if let Some((k, v)) = locale_fill(|k| std::env::var_os(k)) {
+            cmd.env(k, v);
+        }
         // Finder로 띄운 앱의 PATH에는 Homebrew가 없어 훅의 node를 못 찾는다.
         // 내장 node는 쓸 만한 사용자 node가 있으면 맨 뒤, 없거나 낡았으면 맨 앞(claude_dirs).
         if let Ok(p) = std::env::join_paths(claude_dirs()) {
@@ -614,6 +626,18 @@ mod tests {
         let d = std::env::temp_dir().join(format!("orbit-term-{}-{tag}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn locale_fill_sets_utf8_only_when_no_locale() {
+        use std::ffi::OsString;
+        let none = |_: &str| -> Option<OsString> { None };
+        assert_eq!(locale_fill(none), Some(("LC_CTYPE", "UTF-8"))); // Finder 실행: pbcopy가 C 로캘이 되어 한글을 버린다
+        assert_eq!(locale_fill(|k: &str| (k == "LANG").then(|| OsString::new())), Some(("LC_CTYPE", "UTF-8"))); // 빈 값은 없는 것과 같다
+        for k in ["LANG", "LC_CTYPE", "LC_ALL"] {
+            assert_eq!(locale_fill(|x: &str| (x == k).then(|| OsString::from("ko_KR.UTF-8"))), None, "{k}");
+        }
     }
 
     #[test]
