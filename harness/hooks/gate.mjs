@@ -6,6 +6,7 @@
 // 보장 범위: Claude Code가 이 훅을 실행해 exit 2를 받을 때만 막는다. node가 없거나 시간 초과,
 // 2가 아닌 종료 코드면 Claude Code가 도구를 허용하므로 이 스크립트로는 막을 수 없다.
 // 출고는 VERIFY(full은 SECURITY도)의 COMMIT 줄과 출고 대상 커밋을 대조하고, main/master 위에서는 읽기 git·브랜치 이동·관문을 통과한 merge만 허용한다.
+// Lead는 읽기(ls·cat·head·tail·wc·pwd·grep·find)와 고정 목록의 빌드·테스트(옵션 없음)도 직접 실행한다(leadOk). 그 경로는 개행·제어 문자·\·{}를 거부한다(shellSafe).
 // 셸은 문자열 검사라서 완전히 가둘 수 없다: 테스트·스캐너를 돌리는 역할(FREE_SHELL)은 출고 검사와 관문·설정 파일 쓰기 문자열 검사(S13)만 받고, librarian은 허용 목록(LIBRARIAN_SHELL)만 쓴다.
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -150,21 +151,68 @@ function commitFailure(run, target, dir) {
   }
   try {
     // --no-renames: 이름 바꾸기가 양쪽 경로로 보여야 src → docs 우회가 잡힌다. -z: 비ASCII 경로가 따옴표로 바뀌지 않게.
-    const out = gitOut(dir, ['diff', '--no-renames', '--name-only', '-z', b, target]).split('\0').filter((f) => f && !/^(CHANGELOG[^/]*|docs\/.+)$/i.test(f));
+    const out = rawChanges(dir, b, target).filter((e) => !(e.plain && /^(CHANGELOG[^/]*|docs\/.+)$/.test(e.f))).map((e) => e.f);
     return out.length ? `${head}: 그 뒤 커밋이 CHANGELOG*·docs/** 밖을 바꿈 (${out.slice(0, 5).join(', ')})` : null;
   } catch {
     return `${head}: 변경 파일을 알 수 없음`;
   }
 }
 
+// git diff --raw -z: 바뀐 파일과 모드. 일반 파일(100644·100755)·삭제 외의 모드(심볼릭 링크 120000, gitlink 160000)는 plain=false.
+function rawChanges(dir, a, b) {
+  const t = gitOut(dir, ['diff', '--raw', '--no-renames', '-z', a, b]).split('\0');
+  const ok = (m) => ['000000', '100644', '100755'].includes(m);
+  const out = [];
+  for (let i = 0; i + 1 < t.length; i += 2) {
+    const m = /^:(\d{6}) (\d{6}) /.exec(t[i]);
+    out.push({ f: t[i + 1], plain: !!m && ok(m[1]) && ok(m[2]) });
+  }
+  return out;
+}
+
+// quick 문서 전용 출고: main 대비 바뀐 파일이 모두 문서(에이전트 지시 문서 제외)면 VERIFY·COMMIT 대조 없이 출고한다.
+const DOC = (f) =>
+  (/\.md$/.test(f) || /^docs\//.test(f) || /^CHANGELOG[^/]*$/.test(f)) && !/(^|\/)CLAUDE(\.local)?\.md$/i.test(f) && !/^harness\//i.test(f) && !/(^|\/)\.claude\//i.test(f);
+// 기준점: T가 main에 아직 없으면 merge-base(main, T). 이미 --no-ff로 머지됐으면 T를 둘째 이후 부모로 가진 main의 first-parent 머지 M을 찾아 merge-base(M^1, T). 못 찾으면(ff·squash 등) null.
+function docBase(dir, T) {
+  const main = rev(dir, 'main') ?? rev(dir, 'master');
+  if (!main) return null;
+  try {
+    gitOut(dir, ['merge-base', '--is-ancestor', T, main]);
+  } catch {
+    return gitOut(dir, ['merge-base', main, T]).trim() || null;
+  }
+  // 최근 머지 50개까지만 본다(오래된 머지의 T를 찾느라 히스토리 전체를 훑지 않게). 못 찾으면 null이고 문서 전용 판정은 닫힌다.
+  for (const m of gitOut(dir, ['rev-list', '--first-parent', '--merges', '--max-count=50', main, `^${T}`]).split('\n').filter(Boolean)) {
+    const [p1, ...rest] = gitOut(dir, ['rev-parse', `${m}^@`]).split('\n').filter(Boolean);
+    if (rest.includes(T)) return gitOut(dir, ['merge-base', p1, T]).trim() || null;
+  }
+  return null;
+}
+function docsOnly(dir, T) {
+  if (!T) return false;
+  try {
+    const base = docBase(dir, T);
+    if (!base) return false;
+    const files = rawChanges(dir, base, T);
+    return files.length > 0 && files.every((e) => e.plain && DOC(e.f));
+  } catch {
+    return false;
+  }
+}
+
 // 셸 허용 모양: 줄바꿈·'('·리다이렉션·파이프·명령 치환·명령 연결 금지(H3).
-// Lead는 관문 확인, 읽기 전용 git, run 브랜치 조율만. gate CLI는 이 파일의 실제 경로만 허용한다(아무 gate.mjs나 허용하면 .orbit/에 쓴 스크립트를 실행할 수 있다).
-const SELF = fileURLToPath(import.meta.url).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/(\\\\|\/)+/g, '[\\\\/]');
+// Lead는 관문 확인, 읽기 전용 git, run 브랜치 조율, 읽기 명령, 고정 목록의 빌드·테스트(leadOk). gate CLI는 이 파일의 실제 경로(SELF)와 root의 harness/hooks 사본만 허용한다(아무 gate.mjs나 허용하면 .orbit/에 쓴 스크립트를 실행할 수 있다).
+const pathRx = (p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/(\\\\|\/)+/g, '[\\\\/]');
+const SELF = pathRx(fileURLToPath(import.meta.url));
+// 허용하는 관문 경로 둘: 이 파일 자신(SELF)과 root의 harness/hooks 사본. 앱 번들 훅과 저장소 훅이 같이 돌 때 각자 상대 경로를 허용해야 check 명령이 둘 다 통과한다.
+// root는 정규화하지 않고 받은 문자열 그대로 쓴다(판정 대상 명령도 정규화하지 않는다).
+const gatePath = (root) => `(?:${SELF}|${pathRx(join(root, 'harness/hooks/gate.mjs'))})`;
 const ARGS = String.raw`[^;&|<>\`$\r\n(]*$`;
-const LEAD_SHELL = new RegExp(String.raw`^\s*(node ["']?${SELF}["']? check\b|git (status|log|diff|show|grep|ls-files|worktree list|switch|merge)\b|git branch(\s+--show-current)?\s*$)` + ARGS);
-const LIBRARIAN_SHELL = new RegExp(String.raw`^\s*(node ["']?${SELF}["']? check\b|git (add|commit|switch|merge|status|log|diff|show|grep|ls-files)\b)` + ARGS);
+const leadShell = (g) => new RegExp(String.raw`^\s*(node ["']?${g}["']? check\b|git (status|log|diff|show|grep|ls-files|worktree list|switch|merge)\b|git branch(\s+--show-current)?\s*$)` + ARGS);
+const librarianShell = (g) => new RegExp(String.raw`^\s*(node ["']?${g}["']? check\b|git (add|commit|switch|merge|status|log|diff|show|grep|ls-files)\b)` + ARGS);
 // S13: 관문·설정 파일을 가리키는 명령 중 읽기·테스트 실행 형태(리다이렉션·파이프·연결 없음). node --test는 옵션 아닌 경로 인자만.
-const INSPECT_SHELL = new RegExp(String.raw`^\s*(git (status|log|diff|show)\b|node --test(\s+[^-\s;&|<>\`$\r\n(][^\s;&|<>\`$\r\n(]*)*\s*$|node ["']?${SELF}["']? check\b|(grep|cat|Get-Content|Select-String)\b)` + ARGS);
+const inspectShell = (g) => new RegExp(String.raw`^\s*(git (status|log|diff|show)\b|node --test(\s+[^-\s;&|<>\`$\r\n(][^\s;&|<>\`$\r\n(]*)*\s*$|node ["']?${g}["']? check\b|(grep|cat|Get-Content|Select-String)\b)` + ARGS);
 const READ_SHELL = new RegExp(String.raw`^\s*git (status|log|diff|show|grep|ls-files)\b` + ARGS);
 const PLAN_CHECKER_SHELL = [new RegExp(String.raw`^\s*grep\b` + ARGS), /^\s*claude plugin validate [^\s;&|<>`$\r\n(]+\s*$/]; // 2.8-2
 const WRITE_OPT = /\s(--out|--forc|--disc|--open|-[fCBD]\b)/; // git이 파일을 쓰거나 브랜치를 옮기거나 작업 트리 변경을 버리거나 프로그램을 여는 옵션(줄여 쓴 긴 옵션 포함)
@@ -173,6 +221,33 @@ const shellOk = (cmd, res) => {
   const bare = cmd.replace(/["']/g, ''); // 따옴표로 감싼 옵션("--output=…")도 같은 옵션이다
   return res.some((re) => re.test(cmd)) && !(/^\s*git\b/.test(cmd) && (WRITE_OPT.test(bare) || CLUSTER_OPT.test(bare)));
 };
+
+// Lead 읽기·빌드·테스트. 셸은 공백·탭으로 단어를, 개행으로 명령을 가른다. 아래 정규식은 그 구분자만 쓴다.
+const PLAIN = String.raw`[^-\s;&|<>\`$\r\n("'*?[\]{}~\\][^\s;&|<>\`$\r\n("'*?[\]{}~\\]*`; // 옵션(-로 시작)·따옴표·글롭·~·백슬래시·구분자 없는 인자
+const SEP = String.raw`[ \t]+`;
+const MANIFEST = String.raw`(?!/)(?![A-Za-z]:)(?![^ \t]*\.\.)${PLAIN}`; // 상대 경로만, .. 없음
+const LEAD_READ = new RegExp(String.raw`^[ \t]*(ls|cat|head|tail|wc|pwd|grep|find)(?=[ \t]|$)` + ARGS);
+// \s는 개행·\v·U+2028 등도 잡는다(BAD_CHAR가 먼저 막지만 이중 방어). fls·fprint*는 파일을 쓰는 find 동작이고 tail -f/-F/--follow/--retry는 끝나지 않는다.
+const READ_BAD = /\s-(exec|execdir|ok|okdir|delete|fprint\w*|fls)(?=\s|$)|^\s*tail\b.*\s(-[0-9a-zA-Z]*[fF][0-9a-zA-Z]*|--follow\S*|--retry)(?=\s|$)|\.env\b/i; // 따옴표를 벗긴 명령에 적용
+// 위치 인자는 모두 상대 경로만(MANIFEST). node --test는 테스트 파일 모양만, npm 계열은 위치 인자 없음, go는 ./...도 받는다.
+const TEST_FILE = String.raw`(?!/)(?![A-Za-z]:)(?![^ \t]*\.\.)(?=[^ \t]*\.test\.(?:mjs|cjs|js)(?=[ \t]|$))${PLAIN}`;
+const LEAD_RUN = new RegExp(String.raw`^[ \t]*(?:(?:npm|pnpm|yarn)${SEP}(?:test|run${SEP}(?:test|build|lint))|cargo${SEP}(?:test|build|check)(?:${SEP}--manifest-path(?:=|${SEP})${MANIFEST})?(?:${SEP}${MANIFEST})*|(?:pytest|python3?${SEP}-m${SEP}pytest)(?:${SEP}${MANIFEST})*|go${SEP}test(?:${SEP}(?:\./\.\.\.|${MANIFEST}))*|node${SEP}--test(?:${SEP}${TEST_FILE})+)[ \t]*$`);
+const RUN_BAD = /\.orbit|\.claude/i; // Lead가 쓸 수 있는 곳의 파일을 실행하지 못하게
+const BAD_CHAR = /[^\S \t]|[\x00-\x08\x0e-\x1f\x7f-\x9f]/; // 공백·탭 밖의 공백류(개행·\v·\f·NBSP·U+2028 …)와 제어 문자
+const NO_META = /[\\{}]/; // 셸이 푸는 \x·{a,b}: 검사가 보는 모양과 실제 인자가 달라진다
+const gateCheck = (g) => new RegExp(String.raw`^[ \t]*node ["']?${g}["']?(?=[ \t]+check\b)`); // 관문 파일 경로의 \(Windows)만 NO_META에서 뺀다
+const shellSafe = (cmd, g) => !BAD_CHAR.test(cmd) && !NO_META.test(cmd.replace(gateCheck(g), ''));
+const UNQUOTED_GLOB = /[*?[\]~]/; // 따옴표 구간을 지운 뒤에 적용
+const OPT_TOKEN = /^-[A-Za-z0-9_=.-]+$/; // 따옴표를 벗긴 토큰 중 -로 시작하는 것은 이 모양만
+const readOk = (cmd) => {
+  const bare = cmd.replace(/["']/g, '');
+  return LEAD_READ.test(cmd)
+    && !UNQUOTED_GLOB.test(cmd.replace(/"[^"]*"|'[^']*'/g, ''))
+    && !READ_BAD.test(bare)
+    && bare.trim().split(/[ \t]+/).every((t) => !t.startsWith('-') || OPT_TOKEN.test(t));
+};
+const runOk = (cmd) => LEAD_RUN.test(cmd) && !RUN_BAD.test(cmd);
+const leadOk = (cmd, g) => shellSafe(cmd, g) && (shellOk(cmd, [leadShell(g)]) || readOk(cmd) || runOk(cmd)); // shellSafe는 세 형태 모두에 걸린다
 
 const branchOf = (cwd) => {
   try {
@@ -212,6 +287,10 @@ const MERGE_ARGS = new RegExp(`${GIT}(?:-[Cc]\\s+\\S+\\s+|-\\S+\\s+)*merge\\b([^
 const foreignMerge = (cmd) =>
   [...cmd.replace(/\s-[mF]\s+("[^"]*"|'[^']*'|\S+)/g, '').matchAll(MERGE_ARGS)].some((m) =>
     m.at(-1).split(/\s+/).some((t) => t && !t.startsWith('-') && !/^(["']?)orbit\/[\w.-]+\1$/.test(t)));
+// 머지만 하는 명령인가: merge가 있고 push·pull·rebase·reset·update-ref·fetch, 브랜치 강제 이동, gh pr merge, 별칭·git 설정 환경변수가 없다.
+const mergeOnly = (cmd) =>
+  gitSub('merge').test(cmd) && !['push', 'pull', 'rebase', 'reset', 'update-ref', 'fetch'].some((n) => gitSub(n).test(cmd))
+  && !FORCE_MOVE.test(cmd) && !GH_MERGE.test(cmd) && !/\balias\./.test(cmd) && !/\bGIT_CONFIG_/.test(cmd);
 function isShip(cmd, cwd) {
   if (gitSub('push').test(cmd) || gitSub('update-ref').test(cmd) || FORCE_MOVE.test(cmd) || GH_MERGE.test(cmd)) return true;
   if (/\bgit(\.exe)?\b[^\n]*\balias\./.test(cmd) || /\bGIT_CONFIG_(COUNT|KEY_|VALUE_|PARAMETERS)/.test(cmd)) return true; // 별칭·환경변수 설정으로 push를 감추는 우회
@@ -273,7 +352,7 @@ function afterWrite(tool, input, file) {
 }
 
 // STATE.json 쓰기 검사: track 하향 금지, verify 등이 실패한 채 stage "done" 금지.
-function stateFailure(next, file) {
+function stateFailure(next, file, root) {
   let st;
   try {
     st = JSON.parse(next);
@@ -290,7 +369,7 @@ function stateFailure(next, file) {
     if (cur < 0) return '현재 STATE.json을 읽을 수 없음';
     if (rank < cur) return `track 하향 차단 (${TRACKS[cur]} → ${TRACKS[rank]})`;
   }
-  if (st.stage === 'done') {
+  if (st.stage === 'done' && !(st.track === 'quick' && docsOnly(root, rev(root, `orbit/${basename(dirname(file))}`)))) {
     const fails = SHIP[st.track].map((g) => gateFailure(dirname(file), g)).filter(Boolean);
     if (fails.length) return `stage "done" 차단 — 관문 미통과: ${fails.join('; ')}`;
   }
@@ -342,13 +421,15 @@ export function decide(p, root = ROOT) {
     if (inside(orbit, file)) {
       const rel = posixRel(orbit, file);
       if (/^wt\//i.test(rel) && !CODERS.includes(role)) return '.orbit/wt/는 engineer·debugger·devops만 쓸 수 있음';
+      // 셸을 제한 없이 못 쓰는 쓰기 주체(Lead 포함)는 실행될 만한 파일(.js·.sh 등)을 .orbit/에 못 둔다
+      if (!FREE_SHELL.includes(role) && !/(^|\/)[^/.]+$|\.(md|json|txt|ya?ml)$/i.test(rel)) return '.orbit/에는 .md·.json·.txt·.yaml·확장자 없는 파일만 쓸 수 있음 (Lead·읽기 전용 역할)';
       const owner = OWNERS.find(([re]) => re.test(rel));
       if (owner) {
         if (owner[1] === null || (owner[1] === 'lead' ? !isLead : role !== owner[1]))
           return `.orbit/${rel}는 ${owner[1] ?? '사람'}만 쓸 수 있음`;
         if (/^runs\/[^/]+\/STATE\.json$/i.test(rel)) {
           const next = afterWrite(tool, input, file);
-          return next === null ? 'STATE.json의 새 내용을 해석할 수 없음' : stateFailure(next, file);
+          return next === null ? 'STATE.json의 새 내용을 해석할 수 없음' : stateFailure(next, file, root);
         }
         if (/^current$/i.test(rel)) {
           const next = afterWrite(tool, input, file);
@@ -374,14 +455,21 @@ export function decide(p, root = ROOT) {
     const ship = isShip(cmd, cwd);
     if (publish || ship) {
       const ids = shipRunId(cmd, cwd, (publish || gitSub('push').test(cmd)) && !refForm(cmd));
-      const fails = shipFailures(root, ids);
+      const at = whereOf(cmd, cwd, root); // null: 명령이 위치를 바꿈(위치를 모름)
+      const dir = at ?? cwd;
+      const clean = [...cmd.matchAll(ORBIT_REF)].length;
+      const idCount = [...cmd.matchAll(ORBIT_ID)].length;
+      const run = currentRun(root);
+      // quick 문서 전용: 머지만 하는 명령이 현재 run의 브랜치만 가리키고 main 대비 문서만 바뀌었으면 VERIFY·COMMIT 대조를 건너뛴다(push·배포는 예외 없음)
+      const docShip = !publish && run?.track === 'quick' && at !== null && mergeOnly(cmd)
+        && clean > 0 && clean === idCount && ids?.length > 0 && ids.every((i) => i === run.id)
+        && docsOnly(dir, rev(dir, `orbit/${run.id}`));
+      const fails = docShip ? [] : shipFailures(root, ids);
       // 관문을 통과했으면 출고 대상 커밋(명령 안의 orbit/<id>, 없으면 HEAD)이 VERIFY·SECURITY의 COMMIT과 맞아야 한다
-      if (!fails.length) {
-        const dir = whereOf(cmd, cwd, root) ?? cwd;
-        const clean = [...cmd.matchAll(ORBIT_REF)].length;
-        if (clean !== [...cmd.matchAll(ORBIT_ID)].length) fails.push('orbit/<id> 뒤에 ~·/ 등이 붙은 ref는 run 브랜치가 아님');
+      if (!fails.length && !docShip) {
+        if (clean !== idCount) fails.push('orbit/<id> 뒤에 ~·/ 등이 붙은 ref는 run 브랜치가 아님');
         else {
-          const why = commitFailure(currentRun(root), rev(dir, clean ? `orbit/${ids[0]}` : 'HEAD'), dir);
+          const why = commitFailure(run, rev(dir, clean ? `orbit/${ids[0]}` : 'HEAD'), dir);
           if (why) fails.push(why + NEXT);
         }
       }
@@ -389,9 +477,10 @@ export function decide(p, root = ROOT) {
       if (publish && !approved(currentRun(root), 'deploy')) fails.push('deploy 승인 없음');
       if (fails.length) return `머지/푸시/배포 차단 — 관문 미통과: ${fails.join('; ')}`;
     }
-    if (isLead && !shellOk(cmd, [LEAD_SHELL]))
-      return `Lead는 관문 확인(node ${fileURLToPath(import.meta.url)} check …)과 git status/log/diff/show/grep/ls-files/branch(목록·--show-current만)/switch/merge만 직접 실행. 나머지는 서브에이전트에게 맡길 것`;
-    if (!isLead && !FREE_SHELL.includes(role) && !shellOk(cmd, role === 'librarian' ? [LIBRARIAN_SHELL] : [READ_SHELL, ...(role === 'plan-checker' ? PLAN_CHECKER_SHELL : [])]))
+    const g = gatePath(root);
+    if (isLead && !leadOk(cmd, g))
+      return `Lead는 관문 확인(node ${fileURLToPath(import.meta.url)} check … 또는 node ${join(root, 'harness/hooks/gate.mjs')} check …)과 git status/log/diff/show/grep/ls-files/branch(목록·--show-current만)/switch/merge, 읽기(ls/cat/head/tail/wc/pwd/grep/find), 옵션 없는 빌드·테스트(npm/pnpm/yarn test·run build·lint, cargo test/build/check, pytest, go test, node --test <경로>)만 직접 실행(개행·\\·{} 불가). 나머지는 서브에이전트에게 맡길 것`;
+    if (!isLead && !FREE_SHELL.includes(role) && !shellOk(cmd, role === 'librarian' ? [librarianShell(g)] : [READ_SHELL, ...(role === 'plan-checker' ? PLAN_CHECKER_SHELL : [])]))
       return `${p.agent_type ?? '이 에이전트'}의 셸은 ${role === 'librarian' ? '관문 확인과 git add/commit/switch/merge/status/log/diff/show/grep/ls-files만 허용(LIBRARIAN_SHELL)' : `git status/log/diff/show/grep/ls-files만 허용(READ_SHELL${role === 'plan-checker' ? ', grep, claude plugin validate' : ''})`}. 리다이렉션·파이프·다른 명령은 차단`;
     // N4-S·N2-b: 명령 안의 git 호출마다 하위명령 + 인자를 모은다. git이 없는 명령(빌드·테스트)에서는 git을 실행하지 않는다.
     const subs = [...cmd.matchAll(GIT_INV)].map((m) => m.at(-1).trim());
@@ -404,7 +493,7 @@ export function decide(p, root = ROOT) {
     }
     // S13: 모든 역할 공통. 문자열 검사라 우회 가능(gate 스킬 참조).
     if (/disableAllHooks|ORBIT_GATE/i.test(cmd)) return '관문을 끄는 설정(disableAllHooks·ORBIT_GATE)은 셸에서 쓸 수 없음';
-    if (/gate\.mjs|hooks\.json|\.claude-plugin|\.claude[\\/]+settings|settings\.local\.json/i.test(cmd) && !shellOk(cmd, [INSPECT_SHELL]))
+    if (/gate\.mjs|hooks\.json|\.claude-plugin|\.claude[\\/]+settings|settings\.local\.json/i.test(cmd) && !shellOk(cmd, [inspectShell(g)]))
       return '관문·설정 파일을 가리키는 셸 명령은 읽기·테스트 실행(git status/log/diff/show, node --test, grep, cat 등)만 허용';
     return null;
   }
@@ -421,6 +510,10 @@ function cli(args) {
   if (!run) return console.log('FAIL 활성 run 없음'), 1;
   const gates = what === 'ship' ? SHIP[run.track] : [what];
   if (!gates.every((g) => Object.hasOwn(GATES, g))) return console.error(`모르는 관문: ${what}`), 64;
+  if (what === 'ship' && run.track === 'quick') {
+    const t = rev(ROOT, `orbit/${run.id}`);
+    if (docsOnly(ROOT, t)) return console.log(`PASS docs-only ${t.slice(0, 7)}: main 대비 문서만 바뀜(VERIFY·COMMIT 생략)\nrun=${run.id} track=${run.track}`), 0;
+  }
   let code = 0;
   for (const g of gates) {
     const why = gateFailure(run.dir, g);

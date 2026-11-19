@@ -32,7 +32,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 
 | 트랙 | 언제 | 순서 |
 |---|---|---|
-| quick | 버그 하나, 작은 수정, 파일 1~3개 | architect(간단 계획) → engineer → qa (UI 수정이면 designer 시각 리뷰 추가) |
+| quick | 버그 하나, 작은 수정, 파일 1~3개 | architect(간단 계획) → engineer → qa → (배운 것이 있으면) engineer가 `docs/solutions/<주제>.md` 기록 (UI 수정이면 designer 시각 리뷰 추가). main 대비 문서만 바뀐 run은 qa를 생략할 수 있다: Lead가 `git merge --no-ff orbit/<id>` 뒤 `check ship`의 `PASS docs-only`를 확인하고 done으로 쓴다 |
 | standard | 일반 기능 | (researcher) → architect ⇄ plan-checker → engineer ×N → reviewer(최대 2명) → qa → librarian. 프로필·작업에 따라 designer·data·devops 추가 |
 | full | 새 프로젝트, 큰 기능, 보안 민감(인증·결제·개인정보·외부 입력·토큰·에이전트 설정) | 전체: (researcher) → product → designer/data(병렬) → architect ⇄ plan-checker → engineer ×N → reviewer 패널 → qa → security → devops(배포가 있을 때) → librarian |
 
@@ -117,4 +117,4 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 
 ## 8. 끝내기
 
-`check ship`은 VERIFY(full은 SECURITY도)의 COMMIT과 run 브랜치 해시를 대조한다. librarian의 기록 커밋은 `CHANGELOG*`·`docs/**`만 바꾼다. 키트 run은 사람의 적용 커밋 뒤에 qa·security가 COMMIT을 적는다. `check ship`이 전부 PASS면 librarian을 불러(GOAL에 Lead가 방금 실행해 PASS를 본 `check ship` 명령을 `$`·변수 없는 절대 경로 그대로 적는다. 그 경로는 체크포인트 막힘 메시지에도 적혀 있다. librarian 셸은 이 형태만 허용된다) main 머지·문서·배운 것 기록을 맡긴다(quick 트랙은 librarian 없이 사용자에게 머지 여부를 묻는다). 배포가 포함되면 `deploy` 승인 뒤에만 진행한다. 사용자에게는 결과, 증거 위치(VERIFY.md), 남은 위험을 세 줄 안으로 보고한다. push는 사용자가 요청했을 때만.
+`check ship`은 VERIFY(full은 SECURITY도)의 COMMIT과 run 브랜치 해시를 대조한다. librarian의 기록 커밋은 `CHANGELOG*`·`docs/**`만 바꾼다. 키트 run은 사람의 적용 커밋 뒤에 qa·security가 COMMIT을 적는다. `check ship`이 전부 PASS면 librarian을 불러(GOAL에 Lead가 방금 실행해 PASS를 본 `check ship` 명령을 `$`·변수 없는 절대 경로 그대로 적는다. 그 경로는 체크포인트 막힘 메시지에도 적혀 있다. librarian 셸은 이 형태만 허용된다) main 머지·문서·배운 것 기록을 맡긴다(quick 트랙은 librarian 없이 사용자에게 머지 여부를 묻는다). quick 트랙의 배운 것 기록: DEBUG.md가 있거나 qa FAIL·되돌림이 있었으면, `check ship` 전에 engineer를 불러 handoff WRITE를 `docs/solutions/<주제>.md` 하나로 하고 librarian 형식(같은 주제면 덧붙임)으로 쓰게 한다. 토큰·비밀값·개인 경로는 지운다. 그다음 그 파일만 커밋한다. 문서만 바뀐 quick은 VERIFY·COMMIT 없이 Lead가 `git merge --no-ff orbit/<id>` 뒤 `check ship`의 `PASS docs-only`를 확인하고 `stage: "done"`으로 쓴다(ff·squash 머지는 기준점이 없어 done이 막힌다). 배포가 포함되면 `deploy` 승인 뒤에만 진행한다. 사용자에게는 결과, 증거 위치(VERIFY.md), 남은 위험을 세 줄 안으로 보고한다. push는 사용자가 요청했을 때만.
