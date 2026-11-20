@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- 진행 칸(run 20261120-flow-panel): 가운데 그래프 칸을 "진행" 칸으로 바꿨다. 단계 줄, 종류별 되돌림 수, 지금 도는 에이전트, 끝난 합계를 보여 주고 그래프 표시는 없앴다. 알려진 한계: 실제 앱에서 세션을 고른 뒤의 화면은 사용자가 위험을 수용하고 확인하지 않았다(USER_ACCEPT). 배운 것은 `docs/solutions/qa-gui-automation-focus.md`·`ui-reference-fidelity.md`·`case-insensitive-import.md`.
 - 로드맵 실시간 반영(run 20261120-roadmap-live): 로드맵 칸이 `ROADMAP.md` 변경을 약 1초 안에 반영한다. 파일 감시가 멈춰도 30초마다 다시 읽는 동작은 그대로다. 로드맵 칸 스크롤이 이중 테두리 선을 덮던 문제를 고쳤다(안쪽 래퍼가 스크롤을 맡는다). 새 의존성 없음(메타데이터 폴링). 배운 것은 `docs/solutions/session-log-watch.md`·`tauri-dev-restart-kills-session.md`.
 - 세션 칸 주의 표시(run 20261120-ui-attention): 세션 칸 위에 '대기 n · 에러 n' 요약 줄이 생겼고, 누르거나 ⌘J를 누르면 다음 대기 세션으로 이동한다. 대기 이유가 표시된다. 실행 중 세션에 토큰 숫자가 보인다. 로드맵에서 다음 할 일에 ▶가 붙는다. 지난 세션은 폴더별로 묶여 펼치고 접을 수 있다. 세션 칸이 넘쳐 스크롤될 때 내용이 이중 테두리 안쪽 선을 덮던 문제를 고쳤다(스크롤은 안쪽 래퍼가 맡는다). 알려진 한계: 화면 동작은 사용자 실기 점검으로 확인했고, 로드맵 칸(`.detail`)에는 같은 래퍼를 아직 적용하지 않았다. 배운 것은 `docs/solutions/ui-reference-fidelity.md`·`qa-gui-automation-focus.md`.
 - 체크포인트 완화(run 20261120-gate-relax): 대화창(Lead)에서 읽기·빌드·테스트 명령을 막힘 없이 쓸 수 있다(`ls`·`cat` 같은 읽기, `npm run build`, `cargo test`, `node --test` 등. 셸 해석 문자·개행·`\`가 든 명령은 거절). quick 트랙은 문서만 바꾸는 run을 바로 출고할 수 있다. 같은 오류를 다시 만나지 않게 기록을 먼저 찾고, 체크포인트에 정당한 일이 막히면 `.orbit/HARNESS_ISSUES.md`에 남기도록 에이전트 지시문을 보강했다. 앱 번들과 저장소 하네스가 동시에 도는 세션에서 확인 명령이 두 훅에 번갈아 막히던 경로를 풀었다. 알려진 한계: `tail +5f` 같은 읽기 명령 변형이 통과할 수 있고, Lead 밖의 역할(읽기 전용 리뷰어·librarian 셸)에는 `\` 끼워 넣기 우회가 남아 있다(후속, HARNESS_ISSUES). 앱을 다시 설치하기 전에는 앱 번들 쪽 옛 규칙이 그대로라 반영되지 않는다. 배운 것은 `docs/solutions/harness-gate-string-detection.md`.
