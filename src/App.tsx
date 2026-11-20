@@ -341,6 +341,7 @@ export default function App() {
         e.preventDefault();
         ctl.current?.jump(n);
       }}>
+        <div className="panel-scroll">
         <h2 id="h-sessions" className="px">세션</h2>
         <span className="sr" role="status">{note}</span>
         {showSum && (
@@ -441,6 +442,7 @@ export default function App() {
               })}
             </ul>
           )}
+        </div>
       </section>
 
       {handle("l")}
