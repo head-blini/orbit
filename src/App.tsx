@@ -455,8 +455,10 @@ export default function App() {
       {handle("r")}
 
       <section className="panel detail" aria-labelledby="h-roadmap">
+        <div className="panel-scroll">
         <h2 id="h-roadmap" className="px">로드맵</h2>
         {pickId ? <RoadmapView rm={roadmap} make={{ off: makeOff(live.tabs.find((t) => t.id === live.active)), onClick: () => { if (live.active !== null) ctl.current?.send(live.active, ASK_ROADMAP); } }} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
+        </div>
       </section>
 
       {handle("b")}

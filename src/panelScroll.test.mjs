@@ -56,3 +56,16 @@ test("래퍼를 넣어도 내용 위치는 그대로다(음수 margin과 padding
   assert.equal(mar.inline + pad.inline, 0);
   assert.match(css, /\.panel > h2, \.panel-scroll > h2 \{/, "제목 여백 규칙이 래퍼 안 h2에도 걸려야 함");
 });
+
+// 로드맵 칸(.detail)도 같은 방식: 칸은 스크롤하지 않고 .panel-scroll 래퍼가 스크롤한다.
+test("로드맵 칸 자체는 스크롤하지 않고, 안의 .panel-scroll이 스크롤한다", () => {
+  assert.equal(rule(".detail").overflow, "hidden");
+  assert.match(rule(".detail").display, /flex/);
+  const start = tsx.indexOf('<section className="panel detail"');
+  assert.ok(start >= 0, "로드맵 section을 찾지 못함");
+  const end = tsx.indexOf("</section>", start);
+  const sec = tsx.slice(start, end + "</section>".length);
+  const body = sec.slice(sec.indexOf(">") + 1).trimStart(); // 여는 태그의 > 까지만 자른다
+  assert.match(body, /^<div className="panel-scroll">/, "section의 첫 자식이 .panel-scroll이어야 함");
+  assert.match(body, /<\/div>\s*<\/section>$/, ".panel-scroll이 section 끝까지 감싸야 함");
+});
