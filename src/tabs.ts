@@ -46,7 +46,7 @@ export type LiveTab = { id: number; name: string; phase: Phase; wait: boolean; c
 export type TermCtl = {
   pick: (id: number | null) => void;
   close: (id: number, from: "row" | "x") => void;
-  jump: (n: number) => void;
+  jump: (n: number, err?: boolean) => void;
   send: (id: number, text: string) => boolean; // 실행 중 터미널의 claude 입력 줄에 text를 넣고 Enter. 보냈으면 true
   settle: () => void; // App이 줄을 다시 그린 뒤 부른다: 스크롤·포커스 이동
 };
@@ -111,7 +111,7 @@ export const waitText = (w: WaitReason | null | undefined): string => {
 };
 
 export const ctxShort = (n: number): string =>
-  n < 1000 ? `${n}` : n < 1_000_000 ? `${Math.round(n / 1000)}k` : `${(n / 1e6).toFixed(1)}M`;
+  n < 1000 ? `${n}` : n < 999_500 ? `${Math.round(n / 1000)}k` : `${(n / 1e6).toFixed(1)}M`;
 
 // 지난 세션을 cwd별로. 순서는 처음 나온 순서
 export const groupPast = (past: Session[]): { key: string; cwd: string | null; items: Session[] }[] => {

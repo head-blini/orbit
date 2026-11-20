@@ -183,6 +183,8 @@ test("ctxShort", () => {
   assert.equal(ctxShort(1000), "1k");
   assert.equal(ctxShort(142499), "142k");
   assert.equal(ctxShort(1_500_000), "1.5M");
+  assert.equal(ctxShort(999_499), "999k");
+  assert.equal(ctxShort(999_500), "1.0M");
 });
 
 test("liveRow: 대기 이유·토큰", () => {

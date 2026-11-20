@@ -468,7 +468,7 @@ impl Store {
                 .iter()
                 .filter_map(|k| u?.get(*k)?.as_u64())
                 .reduce(u64::saturating_add);
-            if let (Some(n), Some(s)) = (n, self.sessions.get_mut(session)) {
+            if let (Some(n), Some(s)) = (n.filter(|n| *n > 0), self.sessions.get_mut(session)) { // 합성 줄은 전부 0이라 무시
                 s.ctx_tokens = Some(n);
             }
         }
@@ -1515,6 +1515,15 @@ mod tests {
     }
     fn ctx(st: &Store) -> Option<u64> {
         st.get(S).unwrap().ctx_tokens
+    }
+
+    #[test]
+    fn c0_zero_usage_keeps_previous_ctx() {
+        let mut st = Store::default();
+        st.ingest_log(S, &usage_line(json!({"input_tokens":5,"cache_read_input_tokens":1000}), false), 1);
+        assert_eq!(ctx(&st), Some(1005));
+        st.ingest_log(S, &usage_line(json!({"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}), false), 2);
+        assert_eq!(ctx(&st), Some(1005));
     }
 
     #[test]

@@ -187,6 +187,7 @@ export default function App() {
   const [live, setLive] = useState<{ tabs: LiveTab[]; active: number | null }>({ tabs: [], active: null });
   const ctl = useRef<TermCtl | null>(null);
   useEffect(() => { ctl.current?.settle(); }, [live]); // 줄 DOM이 바뀐 뒤 포커스·스크롤
+  const autoOpen = useRef(new Set<string>());
   const [folds, setFolds] = useState<Map<string, boolean>>(new Map()); // 지난 세션 묶음 펼침(사용자가 누른 값, 저장 안 함)
   const [note, setNote] = useState("");
   const noteTimer = useRef<number | undefined>(undefined);
@@ -294,8 +295,17 @@ export default function App() {
   const goNext = () => {
     const i = nextAttention(syms, activeIdx < 0 ? null : activeIdx);
     if (i === null) say("기다리는 터미널이 없습니다");
-    else ctl.current?.jump(i);
+    else ctl.current?.jump(i, syms[i] === "error");
   };
+
+  // ⌘J: 포커스가 body여도 동작하도록 window 한 곳에서만 처리(.shell·터미널에는 핸들러 없음)
+  const goNextRef = useRef(goNext);
+  goNextRef.current = goNext;
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (nextKey(e, MAC)) { e.preventDefault(); goNextRef.current(); } };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   // 손잡이는 각 경계 근처에 둔다(Tab 순서가 화면 위치를 따르도록). 위치는 CSS grid가 정한다.
   const handle = (k: Kind) => {
@@ -311,8 +321,7 @@ export default function App() {
   };
 
   return (
-    <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}
-      onKeyDown={(e) => { if (nextKey(e, MAC)) { e.preventDefault(); goNext(); } }}>
+    <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}>
       <header className="panel topbar">
         <h1>ORBIT</h1>
         <span className="tb-result" role="status" title={shownResult}>{shownResult}</span>
@@ -336,7 +345,7 @@ export default function App() {
         <span className="sr" role="status">{note}</span>
         {showSum && (
           <button type="button" className="sum px"
-            aria-label={`${[att.wait ? `대기 ${att.wait}` : "", att.error ? `에러 ${att.error}` : ""].filter(Boolean).join(", ")} — 다음 대기 터미널로 이동`}
+            aria-label={`${[att.wait ? `대기 ${att.wait}` : "", att.error ? `에러 ${att.error}` : ""].filter(Boolean).join(", ")} — 다음 ${att.wait ? "대기" : "에러"} 터미널로 이동`}
             aria-keyshortcuts={MAC ? "Meta+J" : undefined} onClick={goNext}>
             <span>▶ {[att.wait ? `대기 ${att.wait}` : "", att.error ? `에러 ${att.error}` : ""].filter(Boolean).join(" · ")}</span>
             {MAC && <span className="sum-key" aria-hidden="true">⌘J 다음</span>}
@@ -390,8 +399,10 @@ export default function App() {
               {groups.map((g, gi) => {
                 const name = g.cwd ? folderName(g.items[0]) : "(폴더 모름)";
                 const dup = groups.some((o, oi) => oi !== gi && o.cwd && g.cwd && folderName(o.items[0]) === name);
-                const open = folds.get(g.key) ?? (gi === 0 || g.items.some((x) => x.id === selected));
-                const label = `${name}, 세션 ${g.items.length}개, ${open ? "펼침" : "접힘"}`;
+                const auto = gi === 0 || g.items.some((x) => x.id === selected);
+                if (auto) autoOpen.current.add(g.key); // 한 번 펼쳐진 묶음은 순서가 바뀌어도 접지 않는다
+                const open = folds.get(g.key) ?? autoOpen.current.has(g.key);
+                const label = `${name}, 세션 ${g.items.length}개`;
                 return (
                   <li key={g.key} className="grp">
                     <button type="button" className="grp-head px" aria-expanded={open} aria-label={label}
@@ -417,8 +428,8 @@ export default function App() {
                                 onClick={() => { setSelected(x.id); setNode(null); ctl.current?.pick(null); }}>
                                 <span className="cur px" aria-hidden="true">▶</span>
                                 <span className="name px">{fmtTime(x.last_ms, now)}</span>
-                                <span className="sr">{name}, </span>
-                                {out ? <span className="sym"><span className="sr">, 끝남</span></span> : <Sym state={st} />}
+                                <span className="sr">{name}, {fmtTime(x.last_ms, now)}, {out ? "끝남" : STATE_LABEL[st]}</span>
+                                {out ? <span className="sym" /> : <span aria-hidden="true"><Sym state={st} /></span>}
                               </button>
                             </li>
                           );
