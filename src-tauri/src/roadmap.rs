@@ -174,9 +174,10 @@ pub fn stamp(cwd: Option<&str>) -> Stamp {
         return Stamp::Rejected;
     }
     match locate(Path::new(cwd)) {
-        Ok(f) => match std::fs::metadata(&f) {
-            Ok(m) => Stamp::File { len: m.len(), modified: m.modified().ok() },
-            Err(_) => Stamp::Rejected,
+        // 링크를 따라가지 않는다: locate 이후 바꿔치기돼도 일반 파일이 아니면 거부
+        Ok(f) => match std::fs::symlink_metadata(&f) {
+            Ok(m) if m.is_file() && !m.file_type().is_symlink() => Stamp::File { len: m.len(), modified: m.modified().ok() },
+            _ => Stamp::Rejected,
         },
         Err(Roadmap::Missing) => Stamp::Missing,
         Err(_) => Stamp::Rejected,
