@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
-import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, liveRow, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
+import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, attention, liveRow, nextAttention, nextKey, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
 import { createGate } from "./roadmapGate";
 import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
@@ -186,6 +186,10 @@ export default function App() {
   const [live, setLive] = useState<{ tabs: LiveTab[]; active: number | null }>({ tabs: [], active: null });
   const ctl = useRef<TermCtl | null>(null);
   useEffect(() => { ctl.current?.settle(); }, [live]); // 줄 DOM이 바뀐 뒤 포커스·스크롤
+  const [note, setNote] = useState("");
+  const noteTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
+  const say = (m: string) => { clearTimeout(noteTimer.current); setNote(""); noteTimer.current = window.setTimeout(() => setNote(m), 50); };
 
   // 화면이 쓰는 지금 세션: 터미널을 골랐으면 그 터미널의 세션(임시 줄이면 null), 아니면 마지막으로 고른 지난 세션
   const pickId = live.active !== null
@@ -279,6 +283,16 @@ export default function App() {
   const { live: liveRows, past } = splitSessions(live.tabs, list);
   const liveSids = new Set(liveRows.flatMap((x) => (x.sid ? [x.sid] : [])));
   const cur = pickId ? sessions.get(pickId) ?? null : null;
+  const rows = liveRows.map(({ view: v, sid }) => liveRow(v, sid ? sessions.get(sid) ?? null : null));
+  const syms = rows.map((r) => r.sym);
+  const att = attention(syms);
+  const activeIdx = liveRows.findIndex((x) => x.view.id === live.active);
+  const showSum = loaded && !sessionsError && !status?.projects_error && liveRows.length > 0 && att.wait + att.error > 0;
+  const goNext = () => {
+    const i = nextAttention(syms, activeIdx < 0 ? null : activeIdx);
+    if (i === null) say("기다리는 터미널이 없습니다");
+    else ctl.current?.jump(i);
+  };
 
   // 손잡이는 각 경계 근처에 둔다(Tab 순서가 화면 위치를 따르도록). 위치는 CSS grid가 정한다.
   const handle = (k: Kind) => {
@@ -294,7 +308,8 @@ export default function App() {
   };
 
   return (
-    <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}>
+    <div className={dragging ? `shell dragging drag-${dragging}` : "shell"} ref={shellRef} style={gridStyle(sizes)}
+      onKeyDown={(e) => { if (nextKey(e, MAC)) { e.preventDefault(); goNext(); } }}>
       <header className="panel topbar">
         <h1>ORBIT</h1>
         <span className="tb-result" role="status" title={shownResult}>{shownResult}</span>
@@ -315,13 +330,22 @@ export default function App() {
         ctl.current?.jump(n);
       }}>
         <h2 id="h-sessions" className="px">세션</h2>
+        <span className="sr" role="status">{note}</span>
+        {showSum && (
+          <button type="button" className="sum px"
+            aria-label={`${[att.wait ? `대기 ${att.wait}` : "", att.error ? `에러 ${att.error}` : ""].filter(Boolean).join(", ")} — 다음 대기 터미널로 이동`}
+            aria-keyshortcuts={MAC ? "Meta+J" : undefined} onClick={goNext}>
+            <span>▶ {[att.wait ? `대기 ${att.wait}` : "", att.error ? `에러 ${att.error}` : ""].filter(Boolean).join(" · ")}</span>
+            {MAC && <span className="sum-key" aria-hidden="true">⌘J 다음</span>}
+          </button>
+        )}
         {liveRows.length > 0 && (
           <>
             <h3 id="h-live" className="px">실행 중 {liveRows.length}/{MAX_TABS}</h3>
             <ul className="list live" aria-labelledby="h-live">
               {liveRows.map(({ view: v, sid }, i) => {
                 const s = sid ? sessions.get(sid) ?? null : null;
-                const r = liveRow(v, s);
+                const r = rows[i];
                 const hm = r.time && s ? fmtTime(s.last_ms, now) : "";
                 const st = r.sym === "working" || r.sym === "error" || r.sym === "stalled" ? ` ${STATE_LABEL[r.sym]}` : "";
                 const x = v.phase === "ended" ? "화면 닫기" : "터미널 닫기";
@@ -339,8 +363,8 @@ export default function App() {
                       <span className="cur px" aria-hidden="true">▶</span>
                       <span className="name px">{v.name}</span>
                       {r.sym ? <LiveSym sym={r.sym} /> : <span className="sym" />}
-                      <span className="sr">{st}{r.sr}{hm && `, ${hm}`}</span>
-                      <span className="time" aria-hidden="true">{hm ? `${r.status} · ${hm}` : r.status}</span>
+                      <span className="sr">{st}{r.sr}{hm && `, ${hm}`}{r.ctxSr}</span>
+                      <span className="time" aria-hidden="true">{r.status}{hm && ` · ${hm}`}{r.ctx && ` · ${r.ctx}`}</span>
                     </button>
                     <button type="button" className="btn sess-x" tabIndex={-1}
                       aria-label={`${x}: ${v.name}`} title={v.phase === "ended" ? x : "터미널 닫기 — claude도 종료됩니다"}
