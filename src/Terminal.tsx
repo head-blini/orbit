@@ -9,7 +9,7 @@ import { HangulIme } from "./hangulIme"; // xterm#5704: 병합 후 삭제
 import { termWaiting, staleWaiting, pruneStale } from "./waiting";
 import { THEME, MIN_CONTRAST } from "./termTheme";
 import { fontStep, loadFont, saveFont, FONT } from "./layout";
-import { MAX_TABS, MAC, SAME, rowId, tabKey, tabSessions, folderTab, newTabId, nextActive, canResume, quickExit, type Phase, type LiveTab, type TermCtl } from "./tabs";
+import { MAX_TABS, MAC, SAME, rowId, tabKey, nextKey, tabSessions, folderTab, newTabId, nextActive, canResume, quickExit, type Phase, type LiveTab, type TermCtl } from "./tabs";
 import "./Terminal.css";
 
 type TermOut = { t: "data"; d: string } | { t: "exit" };
@@ -193,6 +193,7 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
       }
       if (fontKey(e)) return false; // 글자 크기 단축키는 xterm이 먹지 않는다. section onKeyDown이 처리한다
       if (tabKey(e, MAC) !== null) return false; // ⌘1~8도 PTY로 보내지 않는다
+      if (nextKey(e, MAC)) return false; // ⌘J도 PTY로 보내지 않는다(⌃J는 claude 줄바꿈이라 그대로 간다)
       if (e.key !== "F6") return true;
       if (e.type === "keydown") {
         const h = headRef.current;
@@ -348,9 +349,9 @@ export default function Terminal({ session, sessions, onTabs, ctl }: Props) {
     go(next);
     say(`${name} 터미널을 닫았습니다`);
   };
-  const jump = (n: number) => {
+  const jump = (n: number, err = false) => {
     const t = tabsRef.current[n];
-    if (t) { select(t.id, "xterm"); say(`${nameOf(t)} 터미널${waitOf(t) ? ", 답을 기다리는 중" : ""}`); }
+    if (t) { select(t.id, "xterm"); say(`${nameOf(t)} 터미널${err ? ", 에러" : waitOf(t) ? ", 답을 기다리는 중" : ""}`); }
   };
   const sendAsk = (id: number, text: string): boolean => {
     const rt = rts.current.get(id);

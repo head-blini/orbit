@@ -52,6 +52,17 @@ pub struct Event {
     pub source: Source,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WaitKind { Permission, Question }
+
+/// 기다리는 이유. 훅 `message` 원문은 담지 않는다.
+#[derive(Clone, PartialEq, Debug, serde::Serialize)]
+pub struct Wait {
+    pub kind: WaitKind,
+    pub tool: Option<String>,
+}
+
 #[derive(Clone, serde::Serialize)]
 pub struct Session {
     pub id: String,
@@ -69,6 +80,10 @@ pub struct Session {
     pub tool: Option<String>,
     /// 이 세션이 묶인 터미널 탭. 스냅숏에만 채운다(Store 안은 None).
     pub tab: Option<u32>,
+    /// 상태가 Waiting인 이유(훅에서만).
+    pub wait: Option<Wait>,
+    /// 메인 줄 마지막 usage의 input + cache_creation + cache_read.
+    pub ctx_tokens: Option<u64>,
     #[serde(skip)]
     pub run_gen: u32,
     /// 내부 중복 제거 전용. 화면으로 보내지 않는다.
@@ -349,6 +364,8 @@ impl Store {
             run: None,
             tool: None,
             tab: None,
+            wait: None,
+            ctx_tokens: None,
             run_gen: 0,
             events: Vec::new(),
         });
@@ -400,6 +417,13 @@ impl Store {
         };
         if let (Some(st), Some(s)) = (state, self.sessions.get_mut(sid)) {
             s.state = st;
+            if st != State::Waiting {
+                s.wait = None;
+            } else if name == Some("PreToolUse") {
+                s.wait = Some(Wait { kind: WaitKind::Question, tool: None });
+            } else if !matches!(&s.wait, Some(w) if w.kind == WaitKind::Permission) || name == Some("PermissionRequest") {
+                s.wait = Some(Wait { kind: WaitKind::Permission, tool: tool_name(v.get("tool_name")) });
+            }
         }
         if name == Some("PreToolUse") && v.get("agent_id").is_none() {
             if let Some(s) = self.sessions.get_mut(sid) {
@@ -438,6 +462,16 @@ impl Store {
         self.touch(session, Source::Log, obj.get("cwd").and_then(Value::as_str).filter(|c| c.len() <= MAX_CWD), ts.unwrap_or(0), ts);
         let sidechain = obj.get("isSidechain").and_then(Value::as_bool) == Some(true);
         let uuid = id_str(obj.get("uuid"));
+        if !sidechain {
+            let u = obj.get("message").and_then(|m| m.get("usage")).and_then(Value::as_object);
+            let n = ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]
+                .iter()
+                .filter_map(|k| u?.get(*k)?.as_u64())
+                .reduce(u64::saturating_add);
+            if let (Some(n), Some(s)) = (n.filter(|n| *n > 0), self.sessions.get_mut(session)) { // 합성 줄은 전부 0이라 무시
+                s.ctx_tokens = Some(n);
+            }
+        }
         let blocks = obj.get("message").and_then(|m| m.get("content")).and_then(Value::as_array);
         for (i, b) in blocks.into_iter().flatten().enumerate() {
             let (phase, id) = match b.get("type").and_then(Value::as_str) {
@@ -1468,5 +1502,132 @@ mod tests {
         st.ingest_hook(&sub("SubagentStart", "a9", json!("x")), 2);
         let v = serde_json::to_value(snapshot(st.get(S).unwrap(), 2)).unwrap();
         assert!(v["agents"][0].as_object().unwrap().contains_key("tool"));
+    }
+
+    fn wait_of(st: &Store) -> Option<Wait> {
+        st.get(S).unwrap().wait.clone()
+    }
+    fn perm(tool: Value) -> Value {
+        json!({"hook_event_name":"PermissionRequest","session_id":S,"tool_name":tool})
+    }
+    fn usage_line(u: Value, side: bool) -> Value {
+        json!({"isSidechain":side,"message":{"usage":u}})
+    }
+    fn ctx(st: &Store) -> Option<u64> {
+        st.get(S).unwrap().ctx_tokens
+    }
+
+    #[test]
+    fn c0_zero_usage_keeps_previous_ctx() {
+        let mut st = Store::default();
+        st.ingest_log(S, &usage_line(json!({"input_tokens":5,"cache_read_input_tokens":1000}), false), 1);
+        assert_eq!(ctx(&st), Some(1005));
+        st.ingest_log(S, &usage_line(json!({"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}), false), 2);
+        assert_eq!(ctx(&st), Some(1005));
+    }
+
+    #[test]
+    fn w1_permission_wait_has_tool() {
+        let mut st = Store::default();
+        st.ingest_hook(&perm(json!("Bash")), 1);
+        assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Permission, tool: Some("Bash".into()) }));
+    }
+
+    #[test]
+    fn w2_bad_tool_names_drop_tool_only() {
+        let long = "a".repeat(65);
+        for t in [json!("<img src=x>"), json!(long), json!(5), Value::Null] {
+            let mut st = Store::default();
+            st.ingest_hook(&perm(t.clone()), 1);
+            assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Permission, tool: None }), "{t}");
+        }
+        let mut st = Store::default();
+        st.ingest_hook(&h("PermissionRequest"), 1);
+        assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Permission, tool: None }));
+    }
+
+    #[test]
+    fn w3_ask_user_question() {
+        let mut st = Store::default();
+        st.ingest_hook(&json!({"hook_event_name":"PreToolUse","session_id":S,"tool_name":"AskUserQuestion"}), 1);
+        assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Question, tool: None }));
+    }
+
+    #[test]
+    fn w4_notification_keeps_permission_tool() {
+        let mut st = Store::default();
+        st.ingest_hook(&perm(json!("Bash")), 1);
+        st.ingest_hook(&notif(json!("permission_prompt")), 2);
+        assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Permission, tool: Some("Bash".into()) }));
+        let mut st = Store::default();
+        st.ingest_hook(&json!({"hook_event_name":"Notification","session_id":S,"notification_type":"permission_prompt","tool_name":"Edit"}), 1);
+        assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Permission, tool: Some("Edit".into()) }));
+    }
+
+    #[test]
+    fn w5_state_change_clears_wait() {
+        for ev in ["PostToolUse", "Stop", "StopFailure", "UserPromptSubmit"] {
+            let mut st = Store::default();
+            st.ingest_hook(&perm(json!("Bash")), 1);
+            st.ingest_hook(&h(ev), 2);
+            assert_eq!(wait_of(&st), None, "{ev}");
+        }
+    }
+
+    #[test]
+    fn w6_non_state_events_keep_wait() {
+        let mut st = Store::default();
+        st.ingest_hook(&perm(json!("Bash")), 1);
+        st.ingest_hook(&h("SubagentStart"), 2);
+        st.ingest_hook(&h("Zzz"), 3);
+        assert_eq!(wait_of(&st), Some(Wait { kind: WaitKind::Permission, tool: Some("Bash".into()) }));
+    }
+
+    #[test]
+    fn w7_message_never_stored_and_keys_serialized() {
+        let mut st = Store::default();
+        st.ingest_hook(&json!({"hook_event_name":"PermissionRequest","session_id":S,"tool_name":"Bash","message":"SECRET <b>x</b>"}), 1);
+        let j = serde_json::to_string(&snapshot(st.get(S).unwrap(), 1)).unwrap();
+        assert!(!j.contains("SECRET") && !j.contains("<b>"), "{j}");
+        assert!(j.contains("\"wait\"") && j.contains("\"ctx_tokens\""), "{j}");
+        let v: Value = serde_json::from_str(&j).unwrap();
+        assert_eq!(v["wait"], json!({"kind":"permission","tool":"Bash"}));
+        assert_eq!(v["ctx_tokens"], Value::Null);
+    }
+
+    #[test]
+    fn w8_usage_sums_three_fields() {
+        let mut st = Store::default();
+        st.ingest_log(S, &usage_line(json!({"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":30,"output_tokens":99}), false), 1);
+        assert_eq!(ctx(&st), Some(60));
+    }
+
+    #[test]
+    fn w9_sidechain_usage_ignored() {
+        let mut st = Store::default();
+        st.ingest_log(S, &usage_line(json!({"input_tokens":5}), false), 1);
+        st.ingest_log(S, &usage_line(json!({"input_tokens":500}), true), 2);
+        assert_eq!(ctx(&st), Some(5));
+    }
+
+    #[test]
+    fn w10_odd_usage_keeps_previous() {
+        let mut st = Store::default();
+        st.ingest_log(S, &usage_line(json!({"input_tokens":7}), false), 1);
+        for u in [json!("x"), json!([1]), json!({"input_tokens":"5"}), json!({"input_tokens":-1}), json!({"input_tokens":1.5}), json!({})] {
+            st.ingest_log(S, &usage_line(u.clone(), false), 2);
+            assert_eq!(ctx(&st), Some(7), "{u}");
+        }
+        let m = u64::MAX;
+        st.ingest_log(S, &usage_line(json!({"input_tokens":m,"cache_read_input_tokens":m}), false), 3);
+        assert_eq!(ctx(&st), Some(u64::MAX));
+    }
+
+    #[test]
+    fn w11_line_without_usage_keeps_value() {
+        let mut st = Store::default();
+        st.ingest_log(S, &usage_line(json!({"input_tokens":7}), false), 1);
+        st.ingest_log(S, &use_line("t1", "Read"), 2);
+        assert_eq!(ctx(&st), Some(7));
     }
 }

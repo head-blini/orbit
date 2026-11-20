@@ -74,7 +74,7 @@ body {
   min-height: 0;
   overflow: auto;
 }
-.panel > h2 { margin: 0 0 var(--s-2); font-weight: normal; }
+.panel > h2, .panel-scroll > h2 { margin: 0 0 var(--s-2); font-weight: normal; }
 .empty { color: var(--c-dark); margin: 0; }
 
 /* 상단 바: ORBIT | 결과(남는 폭, 넘치면 말줄임) | 서버 상태 · 훅 상태 [설치] [게임보이 화면] — 한 줄 고정 (run 20261114-roadmap-panel) */
@@ -201,3 +201,22 @@ body {
 .shell.dragging.drag-b { cursor: row-resize; }
 .shell.dragging.drag-l .rz-l::after, .shell.dragging.drag-r .rz-r::after, .shell.dragging.drag-b .rz-b::after { background: var(--c-ink); }
 .rm li .note { display: block; }
+
+/* 세션 칸 맨 위 요약: ▶ 대기 n · 에러 m, 맥이면 오른쪽에 ⌘J 안내(좁으면 먼저 잘림) */
+.sum { width: 100%; min-height: 24px; display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; cursor: pointer; }
+.sum:hover { background: var(--c-light); }
+.sum:hover .sum-key { color: var(--c-ink); }
+.sum .sum-key { color: var(--c-dark); font-size: var(--fs-meta); }
+.sessions { container-type: inline-size; }
+@container (max-width: 280px) { .sum .sum-key { display: none; } }
+
+/* 지난 세션 묶음 머리: 폴더별 접기·펼치기 */
+.grp-head { width: 100%; min-height: 24px; display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; border-bottom: var(--b-chip); cursor: pointer; }
+.grp-head:hover { background: var(--c-light); }
+.grp-head .grp-name { overflow: hidden; text-overflow: ellipsis; }
+.grp > .list { margin-top: var(--s-1); }
+
+/* 세션 칸 스크롤: .panel의 안쪽 선(inset box-shadow)은 배경이라 스크롤 내용 아래에 칠해지고, 내용은 padding 상자에서만 잘린다.
+   그래서 칸 자체는 스크롤하지 않고, 안쪽 선 바로 안에 놓인 래퍼가 스크롤한다. 음수 margin = padding이라 내용 위치는 그대로. */
+.sessions { overflow: hidden; display: flex; flex-direction: column; }
+.panel-scroll { flex: 1; min-height: 0; overflow: auto; margin: calc(-1 * var(--s-2)) calc(-1 * var(--s-3)); padding: var(--s-2) var(--s-3); }
