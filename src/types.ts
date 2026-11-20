@@ -12,7 +12,10 @@ export type Session = { id: string; cwd: string | null; started_ms: number | nul
 export type Verdict = "missing" | "pending" | "pass" | "fail";
 export type Track = "quick" | "standard" | "full";
 export type Raid = { kind: "none" }
-  | { kind: "run"; track: Track | null; stage: string | null; loops: number; gates: Record<"plan" | "review" | "verify" | "security", Verdict> };
+  | { kind: "run"; track: Track | null; stage: string | null; loops: number;
+      loops_by: Record<"plan" | "review" | "debug" | "security", number>;
+      tasks: { done: number; total: number } | null;
+      gates: Record<"plan" | "review" | "verify" | "security", Verdict> };
 
 export type RoadmapLine = { mark: "heading" | "done" | "todo"; text: string };
 export type Roadmap = { kind: "missing" } | { kind: "toobig"; max_bytes: number; max_entries: number }
