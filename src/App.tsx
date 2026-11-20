@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
-import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, attention, liveRow, nextAttention, nextKey, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
+import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, attention, groupPast, liveRow, nextAttention, nextKey, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
 import { createGate } from "./roadmapGate";
 import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
@@ -67,14 +67,15 @@ function RoadmapView({ rm, make }: { rm: Roadmap | null; make: Make }) {
   const done = items.filter((l) => l.mark === "done").length;
   // 줄을 차례로 묶는다: 제목은 h3, 이어지는 항목은 ul
   const out: ReactNode[] = [];
+  const firstTodo = rm.lines.find((l) => l.mark === "todo");
   let group: RoadmapLine[] = [];
   const flush = (k: number) => {
     if (group.length) out.push(
       <ul className="rm" key={`u${k}`}>
         {group.map((l, i) => (
           <li key={i}>
-            <span className="mk" aria-hidden="true">{l.mark === "done" ? "✓" : "·"}</span>
-            <span><span className="sr">{l.mark === "done" ? "완료: " : "미완료: "}</span>{l.text}</span>
+            <span className="mk" aria-hidden="true">{l.mark === "done" ? "✓" : l === firstTodo ? "▶" : "·"}</span>
+            <span><span className="sr">{l.mark === "done" ? "완료: " : l === firstTodo ? "다음 할 일: " : "미완료: "}</span>{l.text}</span>
           </li>
         ))}
       </ul>,
@@ -186,6 +187,7 @@ export default function App() {
   const [live, setLive] = useState<{ tabs: LiveTab[]; active: number | null }>({ tabs: [], active: null });
   const ctl = useRef<TermCtl | null>(null);
   useEffect(() => { ctl.current?.settle(); }, [live]); // 줄 DOM이 바뀐 뒤 포커스·스크롤
+  const [folds, setFolds] = useState<Map<string, boolean>>(new Map()); // 지난 세션 묶음 펼침(사용자가 누른 값, 저장 안 함)
   const [note, setNote] = useState("");
   const noteTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => clearTimeout(noteTimer.current), []);
@@ -281,6 +283,7 @@ export default function App() {
 
   const list = [...sessions.values()].sort((a, b) => b.last_ms - a.last_ms);
   const { live: liveRows, past } = splitSessions(live.tabs, list);
+  const groups = groupPast(past);
   const liveSids = new Set(liveRows.flatMap((x) => (x.sid ? [x.sid] : [])));
   const cur = pickId ? sessions.get(pickId) ?? null : null;
   const rows = liveRows.map(({ view: v, sid }) => liveRow(v, sid ? sessions.get(sid) ?? null : null));
@@ -384,20 +387,44 @@ export default function App() {
           : past.length === 0 ? null
           : (
             <ul className="list" aria-labelledby={liveRows.length > 0 ? "h-past" : undefined}>
-              {past.map((x) => {
-                const cu = live.active === null && x.id === selected;
-                const out = pushedOut(x, live.tabs, liveSids);
-                const st = shownState(x);
+              {groups.map((g, gi) => {
+                const name = g.cwd ? folderName(g.items[0]) : "(폴더 모름)";
+                const dup = groups.some((o, oi) => oi !== gi && o.cwd && g.cwd && folderName(o.items[0]) === name);
+                const open = folds.get(g.key) ?? (gi === 0 || g.items.some((x) => x.id === selected));
+                const label = `${name}, 세션 ${g.items.length}개, ${open ? "펼침" : "접힘"}`;
                 return (
-                  <li key={x.id}>
-                    <button type="button" className={past.length >= CHIP_AT && !cu ? "sess chip" : "sess"}
-                      aria-current={cu ? "true" : undefined}
-                      onClick={() => { setSelected(x.id); setNode(null); ctl.current?.pick(null); }}>
-                      <span className="cur px" aria-hidden="true">▶</span>
-                      <span className="name px">{folderName(x)}</span>
-                      {out ? <span className="sym"><span className="sr">, 끝남</span></span> : <Sym state={st} />}
-                      <span className="time">{fmtTime(x.last_ms, now)}</span>
+                  <li key={g.key} className="grp">
+                    <button type="button" className="grp-head px" aria-expanded={open} aria-label={label}
+                      title={dup && g.cwd ? g.cwd : undefined}
+                      onClick={(e) => {
+                        const el = e.currentTarget;
+                        if (open && el.parentElement?.contains(document.activeElement)) el.focus();
+                        setFolds((p) => new Map(p).set(g.key, !open));
+                      }}>
+                      <span aria-hidden="true">{open ? "−" : "+"}</span>
+                      <span className="grp-name">{name} ({g.items.length})</span>
                     </button>
+                    {open && (
+                      <ul className="list">
+                        {g.items.map((x) => {
+                          const cu = live.active === null && x.id === selected;
+                          const out = pushedOut(x, live.tabs, liveSids);
+                          const st = shownState(x);
+                          return (
+                            <li key={x.id}>
+                              <button type="button" className={past.length >= CHIP_AT && !cu ? "sess chip" : "sess"}
+                                aria-current={cu ? "true" : undefined}
+                                onClick={() => { setSelected(x.id); setNode(null); ctl.current?.pick(null); }}>
+                                <span className="cur px" aria-hidden="true">▶</span>
+                                <span className="name px">{fmtTime(x.last_ms, now)}</span>
+                                <span className="sr">{name}, </span>
+                                {out ? <span className="sym"><span className="sr">, 끝남</span></span> : <Sym state={st} />}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </li>
                 );
               })}

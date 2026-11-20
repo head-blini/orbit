@@ -206,3 +206,9 @@ body {
 .sum { width: 100%; min-height: 24px; display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; }
 .sum:hover { background: var(--c-light); }
 .sum .sum-key { color: var(--c-dark); font-size: var(--fs-meta); }
+
+/* 지난 세션 묶음 머리: 폴더별 접기·펼치기 */
+.grp-head { width: 100%; min-height: 24px; display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; cursor: pointer; }
+.grp-head:hover { background: var(--c-light); }
+.grp-head .grp-name { overflow: hidden; text-overflow: ellipsis; }
+.grp > .list { margin-top: var(--s-1); }
