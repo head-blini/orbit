@@ -1,5 +1,5 @@
 /* 진행 칸: 단계·되돌림은 위에 고정, 에이전트 목록만 스크롤(.panel 안쪽 padding 안이라 안쪽 선을 덮지 않는다) */
-.graph { overflow: hidden; display: flex; flex-direction: column; }
+.panel.graph { overflow: hidden; display: flex; flex-direction: column; }
 .flow-steps { list-style: none; margin: var(--s-1) 0 0; padding: 0; display: flex; flex-wrap: wrap; row-gap: var(--s-1); }
 .flow-steps li { white-space: nowrap; }
 .fs-arrow { margin: 0 var(--s-1); }
@@ -11,6 +11,7 @@
 .flow-list ul { list-style: none; margin: 0; padding: 0; }
 .flow-row { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; column-gap: var(--s-2); align-items: center; min-height: 24px; }
 .flow-row.is-wait { background: var(--c-light); }
+.flow-row.is-wait .fl-meta { color: var(--c-ink); }
 .fl-name { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-desc { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .fl-meta { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--c-dark); font-size: var(--fs-meta); justify-content: flex-end; }

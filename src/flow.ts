@@ -26,7 +26,7 @@ export const steps = (raid: Run): { steps: Step[]; note: string | null; ended: b
   });
   if (!raid.track) {
     if (!raid.stage) return { steps: [], note: "트랙 모름 · 단계 모름", ended };
-    return { steps: [mk(LABEL[raid.stage] ?? raid.stage, "now")], note: "트랙 모름", ended };
+    return { steps: [mk(LABEL[raid.stage] ?? raid.stage, "now")], note: "트랙 모름", ended: false }; // stage done이면 단계 칸이 이미 "끝남"이라 ended로 한 번 더 말하지 않는다
   }
   const list = STEPS[raid.track];
   if (!raid.stage) return { steps: list.map(([l]) => mk(l, "todo")), note: "단계 모름", ended };

@@ -323,7 +323,7 @@ pub fn raid(cwd: Option<&str>, run: Option<&str>) -> Raid {
                 done += 1;
             }
         }
-        (total > 0).then_some(Tasks { done: done.min(99), total: total.min(99) })
+        (total > 0 && total <= 99).then_some(Tasks { done, total })
     });
     let gates = Gates {
         plan: verdict(&run_dir, "PLAN_CHECK.md"),
@@ -790,6 +790,8 @@ mod tests {
         assert_eq!(tasks_of(&proj, "d", r#"{"tasks":["T1"]}"#).0, None);
         assert_eq!(tasks_of(&proj, "e", r#"{"tasks":"T1"}"#).0, None);
         assert_eq!(tasks_of(&proj, "f", r#"{"tasks":{"merge":"done","t1":"done"}}"#).0, None);
+        let many: String = (1..=100).map(|i| format!("\"T{i}\":\"done\"")).collect::<Vec<_>>().join(",");
+        assert_eq!(tasks_of(&proj, "h", &format!("{{\"tasks\":{{{many}}}}}")).0, None);
         mk_run(&proj, "g", r#"{"loops":{"plan":500,"security":3,"zzz":7}}"#, 0);
         match raid_at(&proj, "g") {
             Raid::Run { loops_by, .. } => assert_eq!(loops_by, Loops { plan: 99, review: 0, debug: 0, security: 3 }),

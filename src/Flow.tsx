@@ -25,13 +25,14 @@ function Agents({ session, now }: { session: Session; now: number }) {
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild); // 목록 내용 높이 변화(글자 줄바꿈 등)도 본다
     return () => ro.disconnect();
-  }, [rows.length]);
+  }, [session.id, rows.length]);
   return (
     <>
       <h3 id="h-agents" className="px">지금 도는 에이전트 {live}</h3>
-      <div className="flow-list" ref={listRef} tabIndex={over ? 0 : undefined} aria-label={over ? "에이전트 목록" : undefined}>
-        <ul aria-labelledby="h-agents">
+      <div className="flow-list" ref={listRef} role="region" tabIndex={over ? 0 : -1} aria-label="에이전트 목록">
+        <ul role="list" aria-labelledby="h-agents">
           {rows.map((r, i) => (
             <li key={i} className={r.wait ? "flow-row is-wait" : "flow-row"}>
               <span className="fl-name px" title={r.name}>{r.name}</span>
@@ -88,7 +89,7 @@ export default function Flow({ session, now }: { session: Session | null; now: n
     top = (
       <>
         <p className="note">run {run}{raid.track ? ` · ${raid.track}` : ""}</p>
-        <ol className="flow-steps" aria-label="단계">
+        <ol className="flow-steps" role="list" aria-label="단계">
           {s.steps.map((x, i) => (
             <li key={i} className={`fs-${x.mark}`} aria-current={x.mark === "now" ? "step" : undefined}>
               {i > 0 && <span className="fs-arrow px" aria-hidden="true">→ </span>}

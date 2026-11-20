@@ -69,6 +69,9 @@ test("트랙·단계 모름", () => {
   assert.equal(a.steps[0].label, "구현");
   assert.equal(a.steps[0].mark, "now");
   assert.equal(a.note, "트랙 모름");
+  const d = steps(run(null, "done"));
+  assert.equal(d.steps[0].label, "끝남");
+  assert.equal(d.ended, false);
   const b = steps(run(null, null));
   assert.deepEqual(b.steps, []);
   assert.equal(b.note, "트랙 모름 · 단계 모름");
