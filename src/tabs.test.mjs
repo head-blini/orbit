@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tabKey, tabSessions, tabSid, newTabId, nextActive, canResume, quickExit, MAX_TABS, QUICK_EXIT_MS,
-  rowId, SAME, splitSessions, pushedOut, folderTab, liveRow, makeOff, ASK_ROADMAP } from "./tabs.ts";
+  rowId, SAME, splitSessions, pushedOut, folderTab, liveRow, makeOff, ASK_ROADMAP,
+  nextKey, attention, nextAttention, waitText, ctxShort, groupPast } from "./tabs.ts";
 
 const k = (key, o = {}) => ({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...o });
 const s = (id, tab, last_ms, source = "hook") => ({ id, tab, last_ms, source });
@@ -137,4 +138,75 @@ test("ASK_ROADMAP", () => {
   assert.ok(ASK_ROADMAP.length > 0);
   assert.ok(!/[\r\n]/.test(ASK_ROADMAP));
   for (const w of ["ROADMAP.md", "- [ ]", "- [x]", "## "]) assert.ok(ASK_ROADMAP.includes(w), w);
+});
+
+test("nextKey: 맥 ⌘J만", () => {
+  assert.equal(nextKey(k("j", { metaKey: true }), true), true);
+  assert.equal(nextKey(k("J", { metaKey: true }), true), true);
+  assert.equal(nextKey(k("ㅓ", { metaKey: true, code: "KeyJ" }), true), true);
+  assert.equal(nextKey(k("j", { ctrlKey: true }), true), false);
+  assert.equal(nextKey(k("j", { metaKey: true, shiftKey: true }), true), false);
+  assert.equal(nextKey(k("j", { metaKey: true, altKey: true }), true), false);
+  assert.equal(nextKey(k("j", { metaKey: true, ctrlKey: true }), true), false);
+  assert.equal(nextKey(k("j", { metaKey: true }), false), false);
+  assert.equal(nextKey(k("k", { metaKey: true }), true), false);
+});
+
+test("attention: 대기·에러만 센다", () => {
+  assert.deepEqual(attention(["!", "error", "stalled", "working", null, "…", "—", "!"]), { wait: 2, error: 1 });
+  assert.deepEqual(attention([]), { wait: 0, error: 0 });
+});
+
+test("nextAttention", () => {
+  assert.equal(nextAttention(["!", "working", "!"], 0), 2);
+  assert.equal(nextAttention(["!", "working", "!"], 2), 0);
+  assert.equal(nextAttention(["!", "working", "!"], 1), 2);
+  assert.equal(nextAttention(["working", "error", "error"], 1), 2);
+  assert.equal(nextAttention(["error", "!", "error"], 1), 1);
+  assert.equal(nextAttention(["working", "!"], 1), 1);
+  assert.equal(nextAttention(["working", "stalled", null], 0), null);
+  assert.equal(nextAttention([], null), null);
+  assert.equal(nextAttention(["working", "!", "!"], null), 1);
+});
+
+test("waitText", () => {
+  assert.equal(waitText({ kind: "permission", tool: "Bash" }), "권한 요청: Bash");
+  assert.equal(waitText({ kind: "permission", tool: null }), "권한 요청");
+  assert.equal(waitText({ kind: "question", tool: null }), "질문에 답을 기다림");
+  assert.equal(waitText(null), "답을 기다리는 중");
+  assert.equal(waitText(undefined), "답을 기다리는 중");
+  assert.equal(waitText({ kind: "zzz", tool: null }), "답을 기다리는 중");
+});
+
+test("ctxShort", () => {
+  assert.equal(ctxShort(999), "999");
+  assert.equal(ctxShort(1000), "1k");
+  assert.equal(ctxShort(142499), "142k");
+  assert.equal(ctxShort(1_500_000), "1.5M");
+});
+
+test("liveRow: 대기 이유·토큰", () => {
+  const ss = (o) => ({ ...s("a", 1, 10), state: "working", stalled: false, ...o });
+  let r = liveRow(v(1, { wait: true }), ss({ wait: { kind: "permission", tool: "Bash" } }));
+  assert.deepEqual([r.sym, r.status, r.sr, r.title], ["!", "권한 요청: Bash", ", 권한 요청: Bash", "t1 — 권한 요청: Bash"]);
+  assert.equal(liveRow(v(1, { wait: true }), ss({})).status, "답을 기다리는 중");
+  assert.equal(liveRow(v(1, { wait: true }), null).status, "답을 기다리는 중");
+  r = liveRow(v(1), ss({ ctx_tokens: 142000 }));
+  assert.deepEqual([r.ctx, r.ctxSr], ["142k", ", 컨텍스트 142,000 토큰"]);
+  for (const bad of [null, "x", -1, undefined, NaN]) {
+    r = liveRow(v(1), ss({ ctx_tokens: bad }));
+    assert.deepEqual([r.ctx, r.ctxSr], [null, ""]);
+  }
+  for (const phase of ["starting", "ended"]) assert.equal(liveRow(v(1, { phase }), ss({ ctx_tokens: 5000 })).ctx, null);
+  assert.equal(liveRow(v(1), null).ctx, null);
+});
+
+test("groupPast", () => {
+  const p = (id, cwd) => ({ id, cwd });
+  const g = groupPast([p("a", "/w/x"), p("b", "/v/x"), p("c", "/w/x/"), p("d", null), p("e", ""), p("f", "/v/x")]);
+  assert.deepEqual(g.map((x) => x.key), ["p:/w/x", "p:/v/x", ""]);
+  assert.deepEqual(g.map((x) => x.items.map((i) => i.id)), [["a", "c"], ["b", "f"], ["d", "e"]]);
+  assert.equal(g[0].cwd, "/w/x");
+  assert.equal(g[2].cwd, null);
+  assert.deepEqual(groupPast([]), []);
 });

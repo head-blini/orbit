@@ -1,4 +1,4 @@
-import type { Session } from "./types";
+import type { Session, WaitReason } from "./types";
 
 export const MAX_TABS = 8;
 export const QUICK_EXIT_MS = 2000;
@@ -11,6 +11,10 @@ export const tabKey = (e: KeyLike, mac: boolean): number | null => {
   const n = /^[1-8]$/.test(e.key) ? Number(e.key) : 0;
   return n ? n - 1 : null;
 };
+
+// 맥에서 ⌘+J만(⌃J는 claude 줄바꿈이라 가로채지 않는다). 한글 자판은 key가 ㅓ라 code도 본다.
+export const nextKey = (e: KeyLike & { code?: string }, mac: boolean): boolean =>
+  mac && e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === "KeyJ" || e.key.toLowerCase() === "j");
 
 export const tabSessions = (list: Session[], tab: number): Session[] => list.filter((s) => s.tab === tab);
 
@@ -80,13 +84,53 @@ export const folderTab = (views: LiveTab[], list: Session[], cwd: string | null)
   return null;
 };
 
-type Sym = "…" | "—" | "!" | "working" | "error" | "stalled";
+export type Sym = "…" | "—" | "!" | "working" | "error" | "stalled";
+
+export const attention = (syms: (Sym | null)[]): { wait: number; error: number } => ({
+  wait: syms.filter((x) => x === "!").length,
+  error: syms.filter((x) => x === "error").length,
+});
+
+// 대기(!)가 있으면 대기들, 없으면 에러들 중에서 active 다음부터 순환해 첫 index
+export const nextAttention = (syms: (Sym | null)[], activeIdx: number | null): number | null => {
+  const want = syms.includes("!") ? "!" : syms.includes("error") ? "error" : null;
+  if (want === null) return null;
+  const n = syms.length;
+  const from = activeIdx === null ? 0 : activeIdx + 1;
+  for (let i = 0; i < n; i++) {
+    const j = (from + i) % n;
+    if (syms[j] === want) return j;
+  }
+  return null;
+};
+
+export const waitText = (w: WaitReason | null | undefined): string => {
+  if (w?.kind === "permission") return w.tool ? `권한 요청: ${w.tool}` : "권한 요청";
+  if (w?.kind === "question") return "질문에 답을 기다림";
+  return "답을 기다리는 중";
+};
+
+export const ctxShort = (n: number): string =>
+  n < 1000 ? `${n}` : n < 1_000_000 ? `${Math.round(n / 1000)}k` : `${(n / 1e6).toFixed(1)}M`;
+
+// 지난 세션을 cwd별로. 순서는 처음 나온 순서
+export const groupPast = (past: Session[]): { key: string; cwd: string | null; items: Session[] }[] => {
+  const out: { key: string; cwd: string | null; items: Session[] }[] = [];
+  const at = new Map<string, number>();
+  for (const s of past) {
+    const key = s.cwd ? "p:" + trimEnd(s.cwd) : "";
+    let i = at.get(key);
+    if (i === undefined) { i = out.length; at.set(key, i); out.push({ key, cwd: s.cwd || null, items: [] }); }
+    out[i].items.push(s);
+  }
+  return out;
+};
 
 // shownState와 같은 판정(types.ts 값 import 불가)
 export const liveRow = (
   v: LiveTab,
   s: Session | null,
-): { sym: Sym | null; status: string; sr: string; title: string; time: boolean } => {
+): { sym: Sym | null; status: string; sr: string; title: string; time: boolean; ctx: string | null; ctxSr: string } => {
   let sym: Sym | null = null;
   let status: string;
   let sr: string;
@@ -98,7 +142,7 @@ export const liveRow = (
   } else if (v.phase === "ended") {
     sym = "—"; status = "종료됨"; sr = ", 종료됨"; tt = "종료됨";
   } else if (v.wait) {
-    sym = "!"; status = "답을 기다리는 중"; sr = ", 답을 기다리는 중"; tt = status;
+    sym = "!"; status = waitText(s?.wait); sr = ", " + status; tt = status;
   } else if (!s) {
     status = "실행 중 · 세션 연결 전"; sr = ", 실행 중, 세션 연결 전"; tt = "세션 연결 전";
   } else {
@@ -108,7 +152,11 @@ export const liveRow = (
     const st = s.stalled ? "stalled" : s.state;
     if (st === "working" || st === "error" || st === "stalled") sym = st;
   }
+  const n = s?.ctx_tokens;
+  const ok = v.phase === "running" && typeof n === "number" && Number.isFinite(n) && n >= 0;
   return {
+    ctx: ok ? ctxShort(n) : null,
+    ctxSr: ok ? `, 컨텍스트 ${n.toLocaleString("ko-KR")} 토큰` : "",
     sym, status, sr, title: `${v.name} — ${tt}`,
     time: s !== null && v.phase !== "starting" && v.phase !== "stopping",
   };
