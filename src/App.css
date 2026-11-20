@@ -138,7 +138,7 @@ body {
 @keyframes bar { from { left: -35%; } to { left: 100%; } }
 
 /* 로드맵 (오른쪽 위, 칸은 .detail 그대로). 묶음 제목 = 기존 h3(픽셀 + 1px 밑줄), 항목 본문 = 일반 글꼴 */
-.sessions h3, .detail h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; overflow-wrap: anywhere; }
+.sessions h3, .detail h3, .graph h3 { margin: var(--s-3) 0 var(--s-1); padding-bottom: 2px; border-bottom: var(--b-chip); font-weight: normal; overflow-wrap: anywhere; }
 .sessions h3 ~ h3 { margin-top: var(--s-4); }
 .sessions h3:first-of-type, .detail h3:first-of-type { margin-top: 0; }
 .rm-sum { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }

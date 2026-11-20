@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import Graph from "./Graph";
+import Flow from "./Flow.tsx";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
 import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, attention, groupPast, liveRow, nextAttention, nextKey, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
@@ -182,7 +182,6 @@ export default function App() {
   const [sessionsError, setSessionsError] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [selected, setSelected] = useState<string | null>(null);
-  const [node, setNode] = useState<string | null>(null);
   const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
   const [live, setLive] = useState<{ tabs: LiveTab[]; active: number | null }>({ tabs: [], active: null });
   const ctl = useRef<TermCtl | null>(null);
@@ -234,7 +233,7 @@ export default function App() {
 
   // 세션을 새로 고르면 비우고(불러오는 중…), 30초 타이머(now)마다 이전 내용을 둔 채 다시 읽는다. 세션 미선택이면 부르지 않는다.
   // 로드맵 파일이 바뀌면 Rust가 roadmap-changed(세션 id)를 보내고, 지금 고른 세션이면 바로 다시 읽는다(bump). 30초 재읽기는 안전망으로 둔다.
-  useEffect(() => { setRoadmap(null); setNode(null); }, [pickId]);
+  useEffect(() => { setRoadmap(null); }, [pickId]);
   const gate = useRef(createGate());
   const selRef = useRef(pickId);
   selRef.current = pickId;
@@ -438,7 +437,7 @@ export default function App() {
                             <li key={x.id}>
                               <button type="button" className={past.length >= CHIP_AT && !cu ? "sess chip" : "sess"}
                                 aria-current={cu ? "true" : undefined}
-                                onClick={() => { setSelected(x.id); setNode(null); ctl.current?.pick(null); }}>
+                                onClick={() => { setSelected(x.id); ctl.current?.pick(null); }}>
                                 <span className="cur px" aria-hidden="true">▶</span>
                                 <span className="name px">{fmtTime(x.last_ms, now)}</span>
                                 <span className="sr">{name}, {fmtTime(x.last_ms, now)}, {out ? "끝남" : STATE_LABEL[st]}</span>
@@ -460,8 +459,8 @@ export default function App() {
       {handle("l")}
 
       <section className="panel graph" aria-labelledby="h-graph">
-        <h2 id="h-graph" className="px">에이전트 그래프</h2>
-        <Graph session={cur} selected={node} onSelect={setNode} />
+        <h2 id="h-graph" className="px">진행</h2>
+        <Flow session={cur} now={now} />
       </section>
 
       {handle("r")}
