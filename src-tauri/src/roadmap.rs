@@ -20,6 +20,20 @@ pub struct Line {
     pub text: String,
 }
 
+#[derive(serde::Serialize, Debug, PartialEq, Clone, Default)]
+pub struct Loops {
+    pub plan: u64,
+    pub review: u64,
+    pub debug: u64,
+    pub security: u64,
+}
+
+#[derive(serde::Serialize, Debug, PartialEq, Clone)]
+pub struct Tasks {
+    pub done: u64,
+    pub total: u64,
+}
+
 #[derive(serde::Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Roadmap {
@@ -293,13 +307,31 @@ pub fn raid(cwd: Option<&str>, run: Option<&str>) -> Raid {
         .and_then(|x| x.as_object())
         .map(|m| m.values().filter_map(|x| x.as_u64()).fold(0u64, |a, n| a.saturating_add(n)).min(99))
         .unwrap_or(0);
+    let kind = |k: &str| {
+        o.get("loops").and_then(|x| x.as_object()).and_then(|m| m.get(k)).and_then(|x| x.as_u64()).unwrap_or(0).min(99)
+    };
+    let loops_by = Loops { plan: kind("plan"), review: kind("review"), debug: kind("debug"), security: kind("security") };
+    let tasks = o.get("tasks").and_then(|x| x.as_object()).and_then(|m| {
+        let (mut done, mut total) = (0u64, 0u64);
+        for (k, val) in m {
+            let b = k.as_bytes();
+            if !(2..=4).contains(&b.len()) || b[0] != b'T' || !b[1..].iter().all(u8::is_ascii_digit) {
+                continue;
+            }
+            total += 1;
+            if val.as_str()?.starts_with("done") {
+                done += 1;
+            }
+        }
+        (total > 0).then_some(Tasks { done: done.min(99), total: total.min(99) })
+    });
     let gates = Gates {
         plan: verdict(&run_dir, "PLAN_CHECK.md"),
         review: verdict(&run_dir, "REVIEW.md"),
         verify: verdict(&run_dir, "VERIFY.md"),
         security: verdict(&run_dir, "SECURITY.md"),
     };
-    Raid::Run { track, stage, loops, gates }
+    Raid::Run { track, stage, loops, loops_by, tasks, gates }
 }
 
 #[derive(serde::Serialize, Debug, PartialEq, Clone, Copy)]
@@ -323,7 +355,14 @@ pub struct Gates {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Raid {
     None,
-    Run { track: Option<&'static str>, stage: Option<&'static str>, loops: u64, gates: Gates },
+    Run {
+        track: Option<&'static str>,
+        stage: Option<&'static str>,
+        loops: u64,
+        loops_by: Loops,
+        tasks: Option<Tasks>,
+        gates: Gates,
+    },
 }
 
 #[cfg(test)]
@@ -685,6 +724,8 @@ mod tests {
                 track: Some("standard"),
                 stage: Some("build"),
                 loops: 3,
+                loops_by: Loops { plan: 1, review: 0, debug: 2, security: 0 },
+                tasks: None,
                 gates: Gates { plan: Verdict::Missing, review: Verdict::Missing, verify: Verdict::Missing, security: Verdict::Missing },
             }
         );
@@ -708,7 +749,7 @@ mod tests {
         let r = raid_at(&proj, "a");
         assert_eq!(
             r,
-            Raid::Run { track: None, stage: None, loops: 0, gates: gates_of(&r) }
+            Raid::Run { track: None, stage: None, loops: 0, loops_by: Loops::default(), tasks: None, gates: gates_of(&r) }
         );
         mk_run(&proj, "b", r#"{"track":5,"stage":["build"]}"#, 0);
         match raid_at(&proj, "b") {
@@ -719,6 +760,41 @@ mod tests {
         assert_eq!(raid_at(&proj, "c"), Raid::None);
         mk_run(&proj, "d", "{broken", 0);
         assert_eq!(raid_at(&proj, "d"), Raid::None);
+    }
+
+    fn tasks_of(proj: &Path, id: &str, body: &str) -> (Option<Tasks>, serde_json::Value) {
+        mk_run(proj, id, body, 0);
+        let r = raid_at(proj, id);
+        let v = serde_json::to_value(&r).unwrap();
+        match r {
+            Raid::Run { tasks, .. } => (tasks, v),
+            o => panic!("{:?}", o),
+        }
+    }
+
+    #[test]
+    fn raid_counts_tasks_and_loop_kinds() {
+        let root = tmp();
+        let proj = root.join("proj");
+        let (t, v) = tasks_of(
+            &proj,
+            "a",
+            r#"{"tasks":{"T1":"done 9ea","t2":"pending","T3":"done(x)","T4":"pending","t0":"done","R1":"done","merge":"main","T":"done","T1a":"done","TT1":"done"}}"#,
+        );
+        assert_eq!(t, Some(Tasks { done: 2, total: 3 }));
+        assert_eq!(v["tasks"], serde_json::json!({"done":2,"total":3}));
+        assert!(v["loops_by"]["debug"].is_number());
+        let (t, v) = tasks_of(&proj, "b", r#"{"tasks":{"T1":5,"T2":"done"}}"#);
+        assert_eq!((t, v["tasks"].is_null()), (None, true));
+        assert_eq!(tasks_of(&proj, "c", r#"{"tasks":{"T1":{"x":1}}}"#).0, None);
+        assert_eq!(tasks_of(&proj, "d", r#"{"tasks":["T1"]}"#).0, None);
+        assert_eq!(tasks_of(&proj, "e", r#"{"tasks":"T1"}"#).0, None);
+        assert_eq!(tasks_of(&proj, "f", r#"{"tasks":{"merge":"done","t1":"done"}}"#).0, None);
+        mk_run(&proj, "g", r#"{"loops":{"plan":500,"security":3,"zzz":7}}"#, 0);
+        match raid_at(&proj, "g") {
+            Raid::Run { loops_by, .. } => assert_eq!(loops_by, Loops { plan: 99, review: 0, debug: 0, security: 3 }),
+            o => panic!("{:?}", o),
+        }
     }
 
     #[test]
