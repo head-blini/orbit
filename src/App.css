@@ -203,13 +203,15 @@ body {
 .rm li .note { display: block; }
 
 /* 세션 칸 맨 위 요약: ▶ 대기 n · 에러 m, 맥이면 오른쪽에 ⌘J 안내(좁으면 먼저 잘림) */
-.sum { width: 100%; min-height: 24px; display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; }
+.sum { width: 100%; min-height: 24px; display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; cursor: pointer; }
 .sum:hover { background: var(--c-light); }
 .sum:hover .sum-key { color: var(--c-ink); }
 .sum .sum-key { color: var(--c-dark); font-size: var(--fs-meta); }
+.sessions { container-type: inline-size; }
+@container (max-width: 280px) { .sum .sum-key { display: none; } }
 
 /* 지난 세션 묶음 머리: 폴더별 접기·펼치기 */
-.grp-head { width: 100%; min-height: 24px; display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; cursor: pointer; }
+.grp-head { width: 100%; min-height: 24px; display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2); overflow: hidden; white-space: nowrap; text-align: left; color: var(--c-ink); background: var(--c-paper); border: 0; border-bottom: var(--b-chip); cursor: pointer; }
 .grp-head:hover { background: var(--c-light); }
 .grp-head .grp-name { overflow: hidden; text-overflow: ellipsis; }
 .grp > .list { margin-top: var(--s-1); }
