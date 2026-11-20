@@ -32,6 +32,8 @@ struct AppState {
     resuming: Mutex<std::collections::HashSet<String>>,
     /// 시작하는 중인 폴더(정규화 cwd). 같은 폴더의 동시 시작을 막는다.
     launching: Mutex<std::collections::HashSet<String>>,
+    /// 로드맵 파일을 지켜볼 세션 id. 감시 스레드가 읽는다.
+    roadmap_target: Arc<Mutex<Option<String>>>,
 }
 
 /// 같은 폴더에서 이미 실행 중인 터미널이 있을 때의 거부 문구(프론트 `SAME`과 같은 글).
@@ -197,6 +199,19 @@ fn get_status(state: State<AppState>) -> Status {
 fn get_roadmap(state: State<AppState>, id: String) -> roadmap::Roadmap {
     let cwd = lock(&state.store).get(&id).and_then(|s| s.cwd.clone());
     roadmap::for_cwd(cwd.as_deref())
+}
+
+#[tauri::command]
+fn watch_roadmap(state: State<AppState>, id: Option<String>) {
+    *state.roadmap_target.lock().unwrap_or_else(|e| e.into_inner()) = id;
+}
+
+/// 감시 한 번. 바뀐 것이 확정되면 보낼 세션 id. lock을 잡은 채 fs를 부르지 않는다.
+fn roadmap_tick(f: &mut roadmap::Follow, target: &Mutex<Option<String>>, store: &Mutex<sessions::Store>) -> Option<String> {
+    let id = target.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let cwd = id.as_ref().and_then(|i| lock(store).get(i).and_then(|s| s.cwd.clone()));
+    let now = roadmap::stamp(cwd.as_deref());
+    f.step(id.as_deref(), now).then_some(id).flatten()
 }
 
 #[tauri::command(async)]
@@ -510,6 +525,19 @@ pub fn run() {
                     }
                 });
             }
+            let roadmap_target = Arc::new(Mutex::new(None));
+            {
+                let (target, store, handle) = (roadmap_target.clone(), store.clone(), app.handle().clone());
+                let _ = std::thread::Builder::new().name("roadmap-watch".into()).spawn(move || {
+                    let mut f = roadmap::Follow::default();
+                    loop {
+                        if let Some(id) = roadmap_tick(&mut f, &target, &store) {
+                            let _ = handle.emit("roadmap-changed", id);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                });
+            }
             let screens_dir = app.path().app_data_dir().map(|d| d.join("screens")).map_err(|e| e.to_string());
             let plugin = if cfg!(debug_assertions) {
                 Ok(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../harness")))
@@ -521,12 +549,13 @@ pub fn run() {
                 .filter(|p| p.is_dir())
                 .and_then(|p| p.to_str().map(|s| term::strip_verbatim_disk(s).to_string()));
             let observer = app.path().app_data_dir().map(|d| d.join("orbit-hooks.json")).ok();
-            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None), resuming: Mutex::new(Default::default()), launching: Mutex::new(Default::default()) });
+            app.manage(AppState { cfg, server, settings_path, store, projects_dir, screens_dir, tabs, owned, plugin_dir, observer, picked: Mutex::new(None), resuming: Mutex::new(Default::default()), launching: Mutex::new(Default::default()), roadmap_target });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_status,
             get_roadmap,
+            watch_roadmap,
             get_raid,
             get_sessions,
             list_screens,
@@ -566,6 +595,35 @@ mod tests {
         format!(
             "{{\"uuid\":\"u-{id}\",\"message\":{{\"content\":[{{\"type\":\"tool_use\",\"id\":\"{id}\",\"name\":\"Read\"}}]}}}}\n"
         )
+    }
+
+    #[test]
+    fn roadmap_tick_emits_after_change() {
+        let dir = std::env::temp_dir()
+            .join(format!("orbit-tick-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.to_str().unwrap().to_string();
+        let mut st = sessions::Store::default();
+        st.ingest_hook(&serde_json::json!({"session_id":"s1","cwd":cwd,"hook_event_name":"SessionStart"}), 1);
+        let store = Mutex::new(st);
+        let target = Mutex::new(Some("s1".to_string()));
+        let mut f = roadmap::Follow::default();
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        std::fs::write(dir.join(roadmap::FILE), "- [ ] a\n").unwrap();
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        assert_eq!(roadmap_tick(&mut f, &target, &store), Some("s1".to_string()));
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        *target.lock().unwrap() = None;
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        std::fs::write(dir.join(roadmap::FILE), "- [ ] a\n- [ ] bb\n").unwrap();
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        *target.lock().unwrap() = Some("unknown".to_string());
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        std::fs::write(dir.join(roadmap::FILE), "x").unwrap();
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        assert_eq!(roadmap_tick(&mut f, &target, &store), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

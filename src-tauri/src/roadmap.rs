@@ -79,19 +79,19 @@ pub fn parse(bytes: &[u8]) -> Roadmap {
     Roadmap::Found { lines, skipped }
 }
 
-/// dir/ROADMAP.md 하나를 읽는다. 링크·정션·폴더·범위 밖은 Error, 없으면 Missing.
-pub fn read(dir: &Path) -> Roadmap {
+/// dir/ROADMAP.md의 검사된 경로를 돌려준다. 링크·정션·폴더·범위 밖은 Error, 없으면 Missing.
+fn locate(dir: &Path) -> Result<std::path::PathBuf, Roadmap> {
     let file = dir.join(FILE);
     let meta = match std::fs::symlink_metadata(&file) {
         Ok(m) => m,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Roadmap::Missing,
-        Err(e) => return err(&e.kind().to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Roadmap::Missing),
+        Err(e) => return Err(err(&e.kind().to_string())),
     };
     if meta.file_type().is_symlink() {
-        return err("링크·정션은 읽지 않습니다");
+        return Err(err("링크·정션은 읽지 않습니다"));
     }
     if !meta.is_file() {
-        return err("일반 파일이 아닙니다");
+        return Err(err("일반 파일이 아닙니다"));
     }
     // 심볼릭 링크·정션으로 폴더 밖을 가리키는 경우를 막는다
     let inside = match (file.canonicalize(), dir.canonicalize()) {
@@ -99,8 +99,17 @@ pub fn read(dir: &Path) -> Roadmap {
         _ => false,
     };
     if !inside {
-        return err("폴더 밖의 파일입니다");
+        return Err(err("폴더 밖의 파일입니다"));
     }
+    Ok(file)
+}
+
+/// dir/ROADMAP.md 하나를 읽는다. 링크·정션·폴더·범위 밖은 Error, 없으면 Missing.
+pub fn read(dir: &Path) -> Roadmap {
+    let file = match locate(dir) {
+        Ok(f) => f,
+        Err(r) => return r,
+    };
     let f = match std::fs::File::open(&file) {
         Ok(f) => f,
         Err(e) => return err(&e.kind().to_string()),
@@ -148,6 +157,64 @@ pub fn for_cwd(cwd: Option<&str>) -> Roadmap {
         return err("로컬 절대 경로가 아닙니다");
     }
     read(Path::new(cwd))
+}
+
+/// 로드맵 파일의 변경 감지용 지문. 파일을 열지 않고 검사된 경로의 metadata만 본다.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stamp {
+    Missing,
+    Rejected,
+    File { len: u64, modified: Option<std::time::SystemTime> },
+}
+
+/// `for_cwd`와 같은 검사(`local_abs`·`locate`)를 거친 뒤 지문을 만든다.
+pub fn stamp(cwd: Option<&str>) -> Stamp {
+    let Some(cwd) = cwd.filter(|c| !c.is_empty()) else { return Stamp::Missing };
+    if !local_abs(cwd) {
+        return Stamp::Rejected;
+    }
+    match locate(Path::new(cwd)) {
+        // 링크를 따라가지 않는다: locate 이후 바꿔치기돼도 일반 파일이 아니면 거부
+        Ok(f) => match std::fs::symlink_metadata(&f) {
+            Ok(m) if m.is_file() && !m.file_type().is_symlink() => Stamp::File { len: m.len(), modified: m.modified().ok() },
+            _ => Stamp::Rejected,
+        },
+        Err(Roadmap::Missing) => Stamp::Missing,
+        Err(_) => Stamp::Rejected,
+    }
+}
+
+/// 감시 대상별 디바운스. 바뀐 지문이 다음 step에서도 같을 때 한 번만 true.
+#[derive(Default)]
+pub struct Follow {
+    id: Option<String>,
+    base: Option<Stamp>,
+    pending: Option<Stamp>,
+}
+
+impl Follow {
+    pub fn step(&mut self, id: Option<&str>, now: Stamp) -> bool {
+        if self.id.as_deref() != id {
+            self.id = id.map(str::to_string);
+            self.base = Some(now);
+            self.pending = None;
+            return false;
+        }
+        if id.is_none() {
+            return false;
+        }
+        if self.base.as_ref() == Some(&now) {
+            self.pending = None;
+            return false;
+        }
+        if self.pending.as_ref() == Some(&now) {
+            self.base = Some(now);
+            self.pending = None;
+            return true;
+        }
+        self.pending = Some(now);
+        false
+    }
 }
 
 /// run id 패턴: 1~128바이트, ASCII 영숫자·`_`·`.`·`-`, `.`으로 시작 금지.
@@ -474,6 +541,80 @@ mod tests {
         let v = serde_json::to_value(parse(sample().as_bytes())).unwrap();
         assert_eq!(v["kind"], "found");
         assert_eq!(v["lines"][0]["mark"], "heading");
+    }
+
+    // ---- 파일 지문·디바운스 ----
+    fn file(len: u64) -> Stamp {
+        Stamp::File { len, modified: None }
+    }
+
+    #[test]
+    fn stamp_shapes() {
+        assert_eq!(stamp(None), Stamp::Missing);
+        assert_eq!(stamp(Some("")), Stamp::Missing);
+        assert_eq!(stamp(Some("rel/dir")), Stamp::Rejected);
+        #[cfg(windows)]
+        for bad in [r"\\server\share\p", r"\\?\C:\x", r"\\.\C:\x", r"\\?\UNC\s\x", "C:rel", r"\rooted"] {
+            assert_eq!(stamp(Some(bad)), Stamp::Rejected, "{bad}");
+        }
+        let root = tmp();
+        let dir = root.join("proj");
+        let d = dir.to_str();
+        assert_eq!(stamp(d), Stamp::Missing);
+        assert_eq!(stamp(root.join("nope").to_str()), Stamp::Missing);
+        std::fs::write(dir.join(FILE), "- [ ] a\n").unwrap();
+        let a = stamp(d);
+        assert!(matches!(a, Stamp::File { len: 8, .. }), "{:?}", a);
+        std::fs::write(dir.join(FILE), "- [ ] abc\n").unwrap();
+        let b = stamp(d);
+        assert!(matches!(b, Stamp::File { len: 10, .. }), "{:?}", b);
+        assert_ne!(a, b);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn stamp_rejects_links() {
+        let root = tmp();
+        let dir = root.join("proj");
+        std::fs::create_dir_all(dir.join(FILE)).unwrap();
+        assert_eq!(stamp(dir.to_str()), Stamp::Rejected);
+        std::fs::remove_dir_all(dir.join(FILE)).unwrap();
+        #[cfg(unix)]
+        {
+            std::fs::write(root.join("out.md"), "- [ ] x\n").unwrap();
+            std::os::unix::fs::symlink(root.join("out.md"), dir.join(FILE)).unwrap();
+            assert_eq!(stamp(dir.to_str()), Stamp::Rejected);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn follow_debounce() {
+        let mut f = Follow::default();
+        // 대상이 정해진 tick은 기준만 잡는다
+        assert!(!f.step(Some("a"), file(1)));
+        assert!(!f.step(Some("a"), file(1)));
+        // 바뀜 1회차 false, 2회차 true, 3회차 false
+        assert!(!f.step(Some("a"), file(2)));
+        assert!(f.step(Some("a"), file(2)));
+        assert!(!f.step(Some("a"), file(2)));
+        // 변경 중 또 바뀌면 연속 두 번 같을 때만 true
+        assert!(!f.step(Some("a"), file(3)));
+        assert!(!f.step(Some("a"), file(4)));
+        assert!(f.step(Some("a"), file(4)));
+        // 대상이 바뀐 tick은 기준만 다시 잡는다
+        assert!(!f.step(Some("b"), file(9)));
+        assert!(!f.step(Some("b"), file(9)));
+        // 대상 없음으로 바뀌어도 보내지 않는다
+        assert!(!f.step(None, Stamp::Missing));
+        assert!(!f.step(None, file(1)));
+        assert!(!f.step(None, file(1)));
+        // 파일이 없어졌다 생기는 것도 변경이다
+        assert!(!f.step(Some("c"), Stamp::Missing));
+        assert!(!f.step(Some("c"), file(1)));
+        assert!(f.step(Some("c"), file(1)));
+        assert!(!f.step(Some("c"), Stamp::Missing));
+        assert!(f.step(Some("c"), Stamp::Missing));
     }
 
     // ---- run 목록 ----

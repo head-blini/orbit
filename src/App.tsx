@@ -5,7 +5,7 @@ import Graph from "./Graph";
 import Screen from "./Screen";
 import Terminal from "./Terminal";
 import { ASK_ROADMAP, MAC, MAX_TABS, makeOff, attention, groupPast, liveRow, nextAttention, nextKey, pushedOut, rowId, splitSessions, tabKey, tabSid, type LiveTab, type TermCtl } from "./tabs";
-import { createGate } from "./roadmapGate";
+import { createGate, shouldReload } from "./roadmapGate";
 import { LIMITS, MID_MIN, TOP_MIN, clampSize, gridStyle, keyStep, loadSizes, saveSizes, type Kind, type Sizes } from "./layout";
 import { CHIP_AT, fmtTime, folderName, shownState, type Roadmap, type RoadmapLine, type Session } from "./types";
 import "./App.css";
@@ -233,18 +233,30 @@ export default function App() {
   }, []);
 
   // 세션을 새로 고르면 비우고(불러오는 중…), 30초 타이머(now)마다 이전 내용을 둔 채 다시 읽는다. 세션 미선택이면 부르지 않는다.
+  // 로드맵 파일이 바뀌면 Rust가 roadmap-changed(세션 id)를 보내고, 지금 고른 세션이면 바로 다시 읽는다(bump). 30초 재읽기는 안전망으로 둔다.
   useEffect(() => { setRoadmap(null); setNode(null); }, [pickId]);
   const gate = useRef(createGate());
   const selRef = useRef(pickId);
   selRef.current = pickId;
+  const [bump, setBump] = useState(0);
+  // 감시 대상은 선택 해제(null)와 gate 거절에 상관없이 항상 알린다.
+  useEffect(() => { invoke("watch_roadmap", { id: pickId ?? null }).catch(() => {}); }, [pickId, now]);
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    listen<string>("roadmap-changed", (e) => { if (shouldReload(e.payload, selRef.current)) setBump((b) => b + 1); })
+      .then((fn) => (cancelled ? fn() : (unlisten = fn)))
+      .catch(() => {});
+    return () => { cancelled = true; unlisten?.(); };
+  }, []);
   useEffect(() => {
     if (!pickId || !gate.current.begin(pickId)) return;
     const id = pickId;
     invoke<Roadmap>("get_roadmap", { id })
       .then((r) => { if (selRef.current === id) setRoadmap(r); })
       .catch((e) => { if (selRef.current === id) setRoadmap({ kind: "error", reason: String(e) }); })
-      .finally(() => gate.current.end(id));
-  }, [pickId, now]);
+      .finally(() => { if (gate.current.end(id)) setBump((b) => b + 1); });
+  }, [pickId, now, bump]);
 
   // 성공 문구는 10초 뒤 같은 문구일 때만 비운다. "✕"와 "처리 중…"은 남긴다.
   useEffect(() => {
@@ -455,8 +467,10 @@ export default function App() {
       {handle("r")}
 
       <section className="panel detail" aria-labelledby="h-roadmap">
+        <div className="panel-scroll">
         <h2 id="h-roadmap" className="px">로드맵</h2>
         {pickId ? <RoadmapView rm={roadmap} make={{ off: makeOff(live.tabs.find((t) => t.id === live.active)), onClick: () => { if (live.active !== null) ctl.current?.send(live.active, ASK_ROADMAP); } }} /> : <p className="empty">세션을 고르면 그 프로젝트의 로드맵이 보입니다</p>}
+        </div>
       </section>
 
       {handle("b")}

@@ -218,5 +218,5 @@ body {
 
 /* 세션 칸 스크롤: .panel의 안쪽 선(inset box-shadow)은 배경이라 스크롤 내용 아래에 칠해지고, 내용은 padding 상자에서만 잘린다.
    그래서 칸 자체는 스크롤하지 않고, 안쪽 선 바로 안에 놓인 래퍼가 스크롤한다. 음수 margin = padding이라 내용 위치는 그대로. */
-.sessions { overflow: hidden; display: flex; flex-direction: column; }
+.sessions, .detail { overflow: hidden; display: flex; flex-direction: column; }
 .panel-scroll { flex: 1; min-height: 0; overflow: auto; margin: calc(-1 * var(--s-2)) calc(-1 * var(--s-3)); padding: var(--s-2) var(--s-3); }
