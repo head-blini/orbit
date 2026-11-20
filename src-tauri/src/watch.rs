@@ -141,6 +141,18 @@ struct Top<'a> {
 struct Msg<'a> {
     #[serde(borrow)]
     content: Option<&'a RawValue>,
+    #[serde(borrow)]
+    usage: Option<&'a RawValue>,
+}
+
+#[derive(Deserialize)]
+struct Usage<'a> {
+    #[serde(borrow)]
+    input_tokens: Option<&'a RawValue>,
+    #[serde(borrow)]
+    cache_creation_input_tokens: Option<&'a RawValue>,
+    #[serde(borrow)]
+    cache_read_input_tokens: Option<&'a RawValue>,
 }
 
 #[derive(Deserialize)]
@@ -192,6 +204,13 @@ fn put_bool(m: &mut Map<String, Value>, k: &str, r: Option<&RawValue>) {
     }
 }
 
+/// 음이 아닌 정수(u64)일 때만 남긴다.
+fn put_u64(m: &mut Map<String, Value>, k: &str, r: Option<&RawValue>) {
+    if let Some(n) = r.and_then(|r| r.get().parse::<u64>().ok()) {
+        m.insert(k.to_string(), Value::from(n));
+    }
+}
+
 fn slim_block(r: &RawValue) -> Value {
     let Some(b) = Some(r).filter(|r| first(r) == b'{').and_then(|r| serde_json::from_str::<Blk>(r.get()).ok()) else {
         return Value::Null;
@@ -228,17 +247,35 @@ fn slim(line: &[u8]) -> Option<Value> {
     put_str(&mut m, "cwd", t.cwd);
     put_str(&mut m, "uuid", t.uuid);
     put_bool(&mut m, "isSidechain", t.is_sidechain);
-    let content = t
+    let msg = t
         .message
         .filter(|r| first(r) == b'{')
-        .and_then(|r| serde_json::from_str::<Msg>(r.get()).ok())
-        .and_then(|msg| msg.content)
+        .and_then(|r| serde_json::from_str::<Msg>(r.get()).ok());
+    let (content, usage) = match msg {
+        Some(msg) => (msg.content, msg.usage),
+        None => (None, None),
+    };
+    let content = content
         .filter(|r| first(r) == b'[')
         .and_then(|r| serde_json::from_str::<Vec<&RawValue>>(r.get()).ok());
-    if let Some(c) = content {
-        let blocks = c.into_iter().map(slim_block).collect();
+    let usage = usage
+        .filter(|r| first(r) == b'{')
+        .and_then(|r| serde_json::from_str::<Usage>(r.get()).ok())
+        .map(|u| {
+            let mut um = Map::new();
+            put_u64(&mut um, "input_tokens", u.input_tokens);
+            put_u64(&mut um, "cache_creation_input_tokens", u.cache_creation_input_tokens);
+            put_u64(&mut um, "cache_read_input_tokens", u.cache_read_input_tokens);
+            um
+        });
+    if content.is_some() || usage.is_some() {
         let mut msg = Map::new();
-        msg.insert("content".to_string(), Value::Array(blocks));
+        if let Some(c) = content {
+            msg.insert("content".to_string(), Value::Array(c.into_iter().map(slim_block).collect()));
+        }
+        if let Some(um) = usage {
+            msg.insert("usage".to_string(), Value::Object(um));
+        }
         m.insert("message".to_string(), Value::Object(msg));
     }
     Some(Value::Object(m))
@@ -555,6 +592,36 @@ mod tests {
         let mut w = Watcher::new(t.0.clone());
         let r = collect(&mut w);
         assert!(r[0].1["message"]["content"][0]["input"].get("content").is_none(), "다른 파일의 본문은 들고 오지 않는다");
+    }
+
+    #[test]
+    fn r_slim_keeps_only_usage_numbers() {
+        let t = Tmp::new();
+        append(&log(&t), concat!(
+            r#"{"uuid":"u","message":{"model":"m","usage":{"input_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3,"service_tier":"x"},"content":[]}}"#, "\n",
+        ).as_bytes());
+        let mut w = Watcher::new(t.0.clone());
+        let r = collect(&mut w);
+        let msg = &r[0].1["message"];
+        assert_eq!(msg["usage"], serde_json::json!({"input_tokens":1,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}));
+        assert!(msg.get("model").is_none());
+        assert!(msg["usage"].get("service_tier").is_none());
+    }
+
+    #[test]
+    fn s_slim_usage_odd_shapes() {
+        let t = Tmp::new();
+        let mut text = String::new();
+        for u in [r#""str""#, "[1]", r#"{"input_tokens":-1}"#, r#"{"input_tokens":1.5}"#, r#"{"input_tokens":"7"}"#] {
+            text.push_str(&format!("{{\"message\":{{\"usage\":{u}}}}}\n"));
+        }
+        append(&log(&t), text.as_bytes());
+        let mut w = Watcher::new(t.0.clone());
+        let r = collect(&mut w);
+        assert_eq!(r.len(), 5);
+        for (_, v) in &r {
+            assert!(v["message"]["usage"].get("input_tokens").is_none(), "{v}");
+        }
     }
 
     #[test]
