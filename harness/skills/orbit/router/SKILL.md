@@ -51,7 +51,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
   "track": "standard",
   "request": "사용자 요청 원문 요약",
   "stage": "plan",
-  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0 },
+  "loops": { "plan": 0, "review": 0, "debug": 0, "security": 0, "design": 0 },
   "roles": { "designer": "auto: profile designer(package.json: react 19) + UI 변경", "data": "off: team.yaml" },
   "approvals": [{ "gate": "plan", "result": "approved", "at": "2026-11-14T05:00:00Z", "via": "AskUserQuestion" }],
   "tasks": { "t1": "pending" },
@@ -63,7 +63,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 
 ## 4. 흐름과 사람 승인
 
-흐름: 요청 → Lead(트랙·역할 선택) → researcher(profile.json이 없거나 조사가 필요할 때) → product → designer · data(병렬) → architect ⇄ plan-checker → **PLAN 승인** → engineer ×N(웨이브) → reviewer → qa(실패 시 debugger → engineer) → security → devops(배포가 포함될 때) → librarian.
+흐름: 요청 → Lead(트랙·역할 선택) → researcher(profile.json이 없거나 조사가 필요할 때) → product → designer · data(병렬) → architect ⇄ plan-checker → **PLAN 승인** → engineer ×N(웨이브) → (UI 변경이면 디자인 루프: qa+designer ⇄ engineer, §5) → reviewer → qa(실패 시 debugger → engineer) → security → devops(배포가 포함될 때) → librarian.
 
 **[SCOPE] 범위 고정.**
 - BRIEF는 사용자 요청을 가장 작은 버전으로 자른다. 요청에 없던 기능·화면·명령·의존성은 "범위 밖"이나 쟁점으로만 둔다.
@@ -102,6 +102,18 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
   - 조건부(full 트랙에서 켜진 것만 추가): reviewer-performance(성능 민감 코드), reviewer-accessibility(UI 변경), reviewer-data(DB·마이그레이션 변경, data 역할이 꺼져 있을 때 최소 점검), reviewer-idiom(`profile.json`의 `stack`에 맞는 언어·프레임워크 관용구).
 - designer·data·devops·security-deep·qa-mobile은 §1 병합 결과가 켜짐일 때만 부른다.
 - 시각 리뷰(designer): 호출 전에 Lead가 `RUN_DIR/APP_URL`을 빈 내용으로, `RUN_DIR/VISUAL_DONE`을 `waiting` 한 줄로 Write한다(이전 값이 남지 않게). 그다음 qa와 designer를 한 메시지에서 병렬로 호출하고, 두 GOAL에 `시각 리뷰 동반`을 적는다. qa가 앱을 띄워 APP_URL에 주소를 적는다. designer는 끝나면 VISUAL_DONE을 `done`으로 쓴다. qa는 `done`을 기다린 뒤(최대 15분) 자기가 띄운 프로세스를 정리한다. 서브에이전트가 끝난 뒤에도 그 프로세스가 살아 있다고 가정하지 않는다.
+  - **디자인 루프**
+    - 조건: designer가 켜져 있고 이번 run에서 UI 파일(스타일·컴포넌트)이 바뀌었을 때 돈다. quick 포함 모든 트랙이 대상이다. 문서만 바뀐 run이나 UI 변경이 없는 run은 건너뛰고, 이유를 STATE `history`에 적는다.
+    - 시점: build의 마지막 UI 웨이브 직후, reviewer 전.
+    - 매 회차: APP_URL·VISUAL_DONE을 초기화한 뒤 qa와 designer를 병렬로 호출한다. 두 GOAL에 `시각 리뷰 동반`과 `디자인 루프 <n>회차 / 한도 <k>`를 적는다. `<n>`은 지금까지 engineer로 돌려보낸 횟수(= STATE `loops.design`, 0부터)다. `<k>`는 `budget.loops.design`(없으면 2)이다.
+    - 판정별 순서:
+      - 한도 조건: 판정이 `수정 요청`·`원복 요청`인데 `loops.design`이 이미 한도(`budget.loops.design`, 없으면 2) 이상이면 +1·engineer 호출을 하지 않는다. §6 표의 행동대로 멈추고 남은 지적과 DESIGN.md 회차 절 경로를 사용자에게 보고한다. designer가 `한도 도달` 표시를 달았을 때도 같다.
+      - `통과` → reviewer로 간다.
+      - `수정 요청` → `loops.design` +1, engineer를 부른다. READ는 DESIGN.md의 그 회차 절이다. engineer가 고친 뒤 다시 (qa+designer)를 부른다.
+      - `원복 요청` → `loops.design` +1, engineer가 그 회차 수정 커밋을 `git revert`한다. 한도가 남았으면 직전 회차 지적을 원복 사유와 함께 engineer에게 다시 보내고, 고친 뒤 (qa+designer)를 부른다.
+      - `못 봄` → 회차를 세지 않고 한 번 다시 부른다. 또 못 보면 사용자에게 보고한다.
+    - engineer의 수정은 PLAN.md 파일 칸 안에서만 한다. 밖이면 §4 범위 넓히기 절차를 따른다.
+    - qa 단계의 시각 리뷰는 루프의 마지막 확인이다. 미달이면 같은 순서로 engineer → (qa+designer)를 돌리고, 같은 `design` 카운터를 쓴다.
 
 ## 6. 루프와 한도
 
@@ -111,8 +123,9 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 | reviewer → engineer | 3회 | 멈추고 사용자에게 쟁점 보고 |
 | qa 실패 → debugger → engineer | 2회 | 멈추고 사용자에게 보고 |
 | security 차단 이슈 → engineer | 2회 | 멈추고 사용자에게 보고 |
+| qa+designer 디자인 미달 → engineer | 2회 | 멈추고 사용자에게 남은 지적과 DESIGN.md 회차 절 경로 보고 |
 
-한도는 `team.yaml`의 `budget.loops`(`plan`, `review`, `debug`, `security`)가 있으면 그 값이고, 없으면 위 기본값이다. 횟수는 STATE.json `loops`에 센다. 이것은 Lead가 지키는 지시 수준의 한도이며 훅이 강제하지 않는다. 한도를 넘겼는데 계속 돌리지 않는다. `budget.run_usd`·`day_usd`는 오르빗 엔진 몫이라 Lead는 읽기만 한다.
+한도는 `team.yaml`의 `budget.loops`(`plan`, `review`, `debug`, `security`, `design`)가 있으면 그 값이고, 없으면 위 기본값이다. 횟수는 STATE.json `loops`에 센다. 이것은 Lead가 지키는 지시 수준의 한도이며 훅이 강제하지 않는다. 한도를 넘겼는데 계속 돌리지 않는다. `budget.run_usd`·`day_usd`는 오르빗 엔진 몫이라 Lead는 읽기만 한다.
 
 ## 7. 관문 판정
 

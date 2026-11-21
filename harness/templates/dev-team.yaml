@@ -30,7 +30,7 @@ track: auto
 budget:
   run_usd: null
   day_usd: null
-  loops: { plan: 3, review: 3, debug: 2, security: 2 }
+  loops: { plan: 3, review: 3, debug: 2, security: 2, design: 2 }
 
 # 추가 규칙 문장(역할 호출 때 GOAL에 덧붙는다).
 rules: []

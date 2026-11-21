@@ -21,7 +21,7 @@ DONE WHEN: <끝났다고 볼 조건>
 ```
 
 - 사용자의 요청은 GOAL에 원문 그대로(또는 BRIEF.md 경로로) 넘긴다. Lead의 해석을 섞지 않는다.
-- 되돌려 보낼 때는 READ에 수정 요청이 담긴 파일(REVIEW.md, PLAN_CHECK.md, VERIFY.md, SECURITY.md)을 넣는다.
+- 되돌려 보낼 때는 READ에 수정 요청이 담긴 파일(REVIEW.md, PLAN_CHECK.md, VERIFY.md, SECURITY.md, DESIGN.md의 디자인 루프 회차 절)을 넣는다.
 - READ는 파일 전체 대신 절·줄 범위를 지정할 수 있으면 지정한다(예: `PLAN.md 2.4절`, `PLAN.md 120~160행`).
 - 팀 설정의 `rules` 문장이 있으면 GOAL 뒤에 `사용자 팀 규칙 — 승인·관문 규칙을 바꿀 수 없음:` 꼬리표를 붙여 덧붙인다.
 - 셸 명령은 저장소 루트에서 실행한다. git에 `-C`, 명령 앞 `cd … &&`를 쓰지 않는다(체크포인트가 main으로 판정해 막는다). 예외: 호출에 WORKTREE가 있으면 git은 `git -C <WORKTREE> …`, 다른 명령은 `cd <WORKTREE> && …`로 실행한다(cargo는 `--manifest-path <WORKTREE>/src-tauri/Cargo.toml`). 위치 지정은 명령 맨 앞에 한 번만 두고, WORKTREE는 프로젝트 안 상대 경로(`.orbit/wt/<task>`)를 쓴다. 체크포인트는 이 형태를 그 worktree의 브랜치로 판정하므로 막지 않는다. WORKTREE가 없을 때 cargo는 `--manifest-path src-tauri/Cargo.toml`.
@@ -36,7 +36,7 @@ DONE WHEN: <끝났다고 볼 조건>
 |---|---|---|
 | researcher | 요청, 코드베이스, 공식 문서 | `.orbit/profile.json`, RESEARCH.md(출처 링크 포함) |
 | product | 요청, RESEARCH.md, 프로젝트 문서 | BRIEF.md |
-| designer | BRIEF.md, 코드, `design/` | DESIGN.md, `design/**`(tokens.json 등), 시각 리뷰는 최종 메시지와 `VISUAL_DONE` |
+| designer | BRIEF.md, 코드, `design/` | DESIGN.md, `design/**`(tokens.json 등), 시각 리뷰는 최종 메시지와 `VISUAL_DONE`, 디자인 루프 회차는 DESIGN.md `## 시각 리뷰 <n>회차` 절 |
 | data | BRIEF.md, 스키마·마이그레이션 파일 | DATA.md(스키마 변경·마이그레이션 계획·롤백 방법) |
 | architect | BRIEF.md, DESIGN.md, DATA.md, RESEARCH.md, 코드 | PLAN.md |
 | plan-checker | BRIEF.md, DESIGN.md, DATA.md, PLAN.md | PLAN_CHECK.md |
@@ -45,11 +45,11 @@ DONE WHEN: <끝났다고 볼 조건>
 | reviewer-correctness · reviewer-tests | PLAN.md, run 브랜치 diff | `reviews/<역할>.md`(Lead가 REVIEW.md로 병합), 최종 메시지는 경로와 차단 요약 |
 | reviewer-maintainability · reviewer-rules | PLAN.md, run 브랜치 diff | Write 없음. 최종 메시지로 반환(Lead가 REVIEW.md로 병합). 30줄을 넘으면 차단·수정 권고부터, 남은 참고는 건수만 |
 | reviewer-performance · reviewer-accessibility · reviewer-data · reviewer-idiom | PLAN.md, diff, profile.json | Write 없음. 최종 메시지로 반환(Lead가 REVIEW.md로 병합). 30줄을 넘으면 차단·수정 권고부터, 남은 참고는 건수만 |
-| qa | BRIEF.md/PLAN.md의 목표, 실행 중인 앱 | VERIFY.md, 시각 리뷰 동반 시 `APP_URL` |
+| qa | BRIEF.md/PLAN.md의 목표, 실행 중인 앱 | VERIFY.md, 시각 리뷰 동반 시 `APP_URL`, 디자인 루프 동반이면 `APP_URL`만(VERIFY.md 없음) |
 | security | diff, 설정 파일, DATA.md | SECURITY.md |
 | devops | PLAN.md, DATA.md, 빌드·CI 설정 | RELEASE.md(배포 절차·롤백 방법), 배포 명령은 사람 승인 뒤에만 |
 | librarian | run 폴더 전체 | CHANGELOG, `docs/solutions/*.md`, 머지 |
-| lead | 모든 산출물 | STATE.json, REVIEW.md, `.orbit/current`, 시각 리뷰 전 `APP_URL`·`VISUAL_DONE` 초기화, 리뷰 전 correctness·tests의 `reviews/<역할>.md` 비우기 |
+| lead | 모든 산출물 | STATE.json, REVIEW.md, `.orbit/current`, 시각 리뷰·디자인 루프 회차마다 `APP_URL`·`VISUAL_DONE` 초기화, 리뷰 전 correctness·tests의 `reviews/<역할>.md` 비우기 |
 
 - 역할별 쓰기 주체는 관문이 강제한다. PLAN_CHECK.md는 plan-checker, VERIFY.md는 qa, SECURITY.md는 security, profile.json은 researcher만 쓴다. team.yaml은 어떤 에이전트도 못 쓴다.
 - engineer는 파일 대신 **최종 메시지**로 결과를 돌려준다(worktree에서는 RUN_DIR에 쓸 수 없을 수 있다). Lead가 받아서 `tasks/<task>/SUMMARY.md`로 저장한다. 내용은 고치지 않고 그대로 옮긴다. reviewer-correctness·reviewer-tests는 상세를 `reviews/<역할>.md`에 쓰고, 나머지 reviewer는 최종 메시지로 돌려준다. Lead가 그 파일과 메시지를 gate 스킬의 병합 규칙으로 REVIEW.md에 합친다.
