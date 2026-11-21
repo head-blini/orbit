@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- 디자인 루프(run 20261121-design-loop): 범용 UI 품질 스킬 `ui-quality`(Impeccable·Hallmark 규칙 텍스트, 출처는 `harness/skills/vendor/SOURCES.md`)와 디자인 루프를 추가했다. 화면을 바꾸면 스크린샷을 채점해 통과 / 수정 요청 / 원복을 정하고 한도는 2회다. 프로젝트 디자인 규칙은 `design/DESIGN.md`에 둔다. 알려진 한계: 실제 화면 품질 개선은 다음 UI run에서 처음 확인하고, 진행 칸에는 design 횟수가 아직 없다. 배운 것은 `docs/solutions/design-loop-skill-authoring.md`.
 - 범위 잠금(run 20261121-scope-lock): 계획(PLAN.md) 태스크 표의 파일 목록 밖에 쓰는 것을 구현 담당·디버거·배포 담당에게서 훅이 막는다. 계획은 설계 담당만 수정한다. 알려진 한계: 셸을 통한 쓰기는 막지 못한다. 보안 권고 S1~S4는 다음 작업이다. 배운 것은 `docs/solutions/harness-process-costs.md`.
 - 진행 칸(run 20261120-flow-panel): 가운데 그래프 칸을 "진행" 칸으로 바꿨다. 단계 줄, 종류별 되돌림 수, 지금 도는 에이전트, 끝난 합계를 보여 주고 그래프 표시는 없앴다. 알려진 한계: 실제 앱에서 세션을 고른 뒤의 화면은 사용자가 위험을 수용하고 확인하지 않았다(USER_ACCEPT). 배운 것은 `docs/solutions/qa-gui-automation-focus.md`·`ui-reference-fidelity.md`·`case-insensitive-import.md`.
 - 로드맵 실시간 반영(run 20261120-roadmap-live): 로드맵 칸이 `ROADMAP.md` 변경을 약 1초 안에 반영한다. 파일 감시가 멈춰도 30초마다 다시 읽는 동작은 그대로다. 로드맵 칸 스크롤이 이중 테두리 선을 덮던 문제를 고쳤다(안쪽 래퍼가 스크롤을 맡는다). 새 의존성 없음(메타데이터 폴링). 배운 것은 `docs/solutions/session-log-watch.md`·`tauri-dev-restart-kills-session.md`.
