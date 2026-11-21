@@ -109,14 +109,14 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
       - build 루프 회차(reviewer 전): qa GOAL에 `시각 리뷰 동반`과 `디자인 루프`를 적는다. qa는 앱 띄우기 전용이고 VERIFY.md를 쓰지 않는다.
       - qa 단계 마지막 확인: qa GOAL에는 `시각 리뷰 동반`만 적고 `디자인 루프`는 넣지 않는다. qa는 정상 qa로 VERIFY.md를 쓴다.
       - designer GOAL에는 두 경우 모두 `시각 리뷰 동반`과 `디자인 루프 <n>회차 / 한도 <k>`를 적는다.
-    - 판정 우선순위는 designer.md가 정한다(합 하락이면 `원복 요청`이 먼저). 판정별 순서:
-      - `원복 요청`: 한도와 무관하게 실행한다. `loops.design`은 올리지 않는다(revert는 수정 회차가 아니다). engineer가 그 회차 수정 커밋을 `git revert`하고 원복 커밋 SHA를 DESIGN.md 그 회차 절에 적는다. 그 뒤 아래 한도 조건으로 다시 판단한다: 한도가 남았으면 직전 회차 지적을 원복 사유와 함께 `수정 요청`으로 보내고, 아니면 멈추고 남은 지적과 DESIGN.md 회차 절 경로를 사용자에게 보고한다.
+    - 판정어와 원복 규칙(통과는 되돌리지 않음, 최고 회차 기준)은 designer.md 판정어 항목이 정한다. 판정별 순서:
+      - `원복 요청`: 한도와 무관하게 실행한다. `loops.design`은 올리지 않는다(revert는 수정 회차가 아니다). engineer가 그 최고 회차 이후의 수정 커밋을 `git revert`하고 원복 커밋 SHA를 최종 메시지로 보고한다. Lead가 이를 `tasks/<id>/SUMMARY.md`와 STATE `history`에 기록한다. 원복 뒤에는 그 최고 회차의 미달 지적을 원복 사유와 함께 `수정 요청`으로 보고 아래 한도 조건을 적용한다.
       - 한도 조건: 판정이 `수정 요청`인데 `loops.design`이 이미 `<k>` 이상이면 +1·engineer 호출을 하지 않는다. §6 표의 행동대로 멈추고 남은 지적과 DESIGN.md 회차 절 경로를 사용자에게 보고한다. designer가 `한도 도달` 표시를 달았을 때도 같다.
       - `통과` → reviewer로 간다.
-      - `수정 요청` → `loops.design` +1, engineer를 부른다. READ는 DESIGN.md의 그 회차 절이다. engineer가 고친 뒤 커밋 SHA를 그 회차 절에 적고, 다시 (qa+designer)를 부른다.
+      - `수정 요청` → `loops.design` +1, engineer를 부른다. READ는 DESIGN.md의 그 회차 절이다. engineer가 고친 뒤 커밋 SHA를 최종 메시지로 보고하면 Lead가 `tasks/<id>/SUMMARY.md`와 STATE에 기록하고, 다시 (qa+designer)를 부른다.
       - `못 봄` → 회차를 세지 않고 한 번 다시 부른다. 또 못 보면 사용자에게 보고한다.
     - engineer의 수정은 PLAN.md 파일 칸 안에서만 한다. 밖이면 §4 범위 넓히기 절차를 따른다.
-    - qa 단계의 시각 리뷰는 루프의 마지막 확인이다. 미달이면 같은 순서로 engineer → (qa+designer)를 돌리고, 같은 `design` 카운터를 쓴다.
+    - qa 단계의 시각 리뷰는 루프의 마지막 확인이다. 미달이면 같은 순서로 engineer → reviewer(최소 reviewer-correctness) → (qa+designer)를 돌리고, 같은 `design` 카운터를 쓴다.
 
 ## 6. 루프와 한도
 
