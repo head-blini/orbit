@@ -19,6 +19,13 @@
 - 해결: Shell이 이미 자유로운 correctness·tests 둘만 Write를 두고 나머지 6명은 최종 메시지로 되돌렸다.
 - 다음에 미리 할 것: 읽기 전용 역할에 Write를 주기 전에 gate의 OWNERS와 `.orbit/` 쓰기 범위를 보고, 사람이 실행할 스크립트는 에이전트가 쓸 수 없는 곳에 둔다.
 
+## 키트 run의 파일 만들기와 BASE (scope-lock)
+
+- 증상: 하네스 키트(`kit/`) 파일을 만들려 하자 gate.mjs를 언급한 셸 명령이 막혔다. 또 `kit/`가 git 밖이라 커밋이 없어 기준(BASE)을 잡을 수 없었다.
+- 원인: gate.mjs·설정 파일를 언급하는 셸은 읽기 형태만 허용된다. git 밖 파일은 커밋 해시가 없다.
+- 해결: 셸 복사 대신 Read로 읽고 Write로 만들었다. BASE는 파일의 blob 해시로 잡았다. 키트는 커밋 대상이 아니다.
+- 다음에 미리 할 것: 키트 run은 처음부터 Read→Write로 하고, git 밖 산출물은 blob 해시를 기준으로 적는다.
+
 ## 병렬 커밋 메시지 파일 (open-folder)
 
 - 증상: 병렬로 돌던 engineer가 공유 temp 폴더의 같은 이름 메시지 파일을 써서, 한 커밋에 다른 engineer의 오래된 메시지가 들어갔다. amend로 고쳤다.
