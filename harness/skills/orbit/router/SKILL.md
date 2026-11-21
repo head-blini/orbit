@@ -32,7 +32,7 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
 
 | 트랙 | 언제 | 순서 |
 |---|---|---|
-| quick | 버그 하나, 작은 수정, 파일 1~3개 | architect(간단 계획) → engineer → qa → (배운 것이 있으면) engineer가 `docs/solutions/<주제>.md` 기록 (UI 수정이면 designer 시각 리뷰 추가). main 대비 문서만 바뀐 run은 qa를 생략할 수 있다: Lead가 `git merge --no-ff orbit/<id>` 뒤 `check ship`의 `PASS docs-only`를 확인하고 done으로 쓴다 |
+| quick | 버그 하나, 작은 수정, 파일 1~3개 | architect(간단 계획) → engineer → qa → (배운 것이 있으면) engineer가 `docs/solutions/<주제>.md` 기록 (UI 수정이면 designer 시각 리뷰와 디자인 루프 추가). main 대비 문서만 바뀐 run은 qa를 생략할 수 있다: Lead가 `git merge --no-ff orbit/<id>` 뒤 `check ship`의 `PASS docs-only`를 확인하고 done으로 쓴다 |
 | standard | 일반 기능 | (researcher) → architect ⇄ plan-checker → engineer ×N → reviewer(최대 2명) → qa → librarian. 프로필·작업에 따라 designer·data·devops 추가 |
 | full | 새 프로젝트, 큰 기능, 보안 민감(인증·결제·개인정보·외부 입력·토큰·에이전트 설정) | 전체: (researcher) → product → designer/data(병렬) → architect ⇄ plan-checker → engineer ×N → reviewer 패널 → qa → security → devops(배포가 있을 때) → librarian |
 
@@ -105,12 +105,15 @@ run을 만들기 전에 두 파일을 읽는다. 없으면 전부 기본값이�
   - **디자인 루프**
     - 조건: designer가 켜져 있고 이번 run에서 UI 파일(스타일·컴포넌트)이 바뀌었을 때 돈다. quick 포함 모든 트랙이 대상이다. 문서만 바뀐 run이나 UI 변경이 없는 run은 건너뛰고, 이유를 STATE `history`에 적는다.
     - 시점: build의 마지막 UI 웨이브 직후, reviewer 전.
-    - 매 회차: APP_URL·VISUAL_DONE을 초기화한 뒤 qa와 designer를 병렬로 호출한다. 두 GOAL에 `시각 리뷰 동반`과 `디자인 루프 <n>회차 / 한도 <k>`를 적는다. `<n>`은 지금까지 engineer로 돌려보낸 횟수(= STATE `loops.design`, 0부터)다. `<k>`는 `budget.loops.design`(없으면 2)이다.
-    - 판정별 순서:
-      - 한도 조건: 판정이 `수정 요청`·`원복 요청`인데 `loops.design`이 이미 한도(`budget.loops.design`, 없으면 2) 이상이면 +1·engineer 호출을 하지 않는다. §6 표의 행동대로 멈추고 남은 지적과 DESIGN.md 회차 절 경로를 사용자에게 보고한다. designer가 `한도 도달` 표시를 달았을 때도 같다.
+    - 매 회차: APP_URL·VISUAL_DONE을 초기화한 뒤 qa와 designer를 병렬로 호출한다. `<n>`은 지금까지 engineer로 돌려보낸 횟수(= STATE `loops.design`, 0부터)다. `<k>`는 `budget.loops.design`(없으면 2)이다. **GOAL 표기는 여기서만 정한다**(designer.md·qa.md는 이 줄을 가리킨다):
+      - build 루프 회차(reviewer 전): qa GOAL에 `시각 리뷰 동반`과 `디자인 루프`를 적는다. qa는 앱 띄우기 전용이고 VERIFY.md를 쓰지 않는다.
+      - qa 단계 마지막 확인: qa GOAL에는 `시각 리뷰 동반`만 적고 `디자인 루프`는 넣지 않는다. qa는 정상 qa로 VERIFY.md를 쓴다.
+      - designer GOAL에는 두 경우 모두 `시각 리뷰 동반`과 `디자인 루프 <n>회차 / 한도 <k>`를 적는다.
+    - 판정 우선순위는 designer.md가 정한다(합 하락이면 `원복 요청`이 먼저). 판정별 순서:
+      - `원복 요청`: 한도와 무관하게 실행한다. `loops.design`은 올리지 않는다(revert는 수정 회차가 아니다). engineer가 그 회차 수정 커밋을 `git revert`하고 원복 커밋 SHA를 DESIGN.md 그 회차 절에 적는다. 그 뒤 아래 한도 조건으로 다시 판단한다: 한도가 남았으면 직전 회차 지적을 원복 사유와 함께 `수정 요청`으로 보내고, 아니면 멈추고 남은 지적과 DESIGN.md 회차 절 경로를 사용자에게 보고한다.
+      - 한도 조건: 판정이 `수정 요청`인데 `loops.design`이 이미 `<k>` 이상이면 +1·engineer 호출을 하지 않는다. §6 표의 행동대로 멈추고 남은 지적과 DESIGN.md 회차 절 경로를 사용자에게 보고한다. designer가 `한도 도달` 표시를 달았을 때도 같다.
       - `통과` → reviewer로 간다.
-      - `수정 요청` → `loops.design` +1, engineer를 부른다. READ는 DESIGN.md의 그 회차 절이다. engineer가 고친 뒤 다시 (qa+designer)를 부른다.
-      - `원복 요청` → `loops.design` +1, engineer가 그 회차 수정 커밋을 `git revert`한다. 한도가 남았으면 직전 회차 지적을 원복 사유와 함께 engineer에게 다시 보내고, 고친 뒤 (qa+designer)를 부른다.
+      - `수정 요청` → `loops.design` +1, engineer를 부른다. READ는 DESIGN.md의 그 회차 절이다. engineer가 고친 뒤 커밋 SHA를 그 회차 절에 적고, 다시 (qa+designer)를 부른다.
       - `못 봄` → 회차를 세지 않고 한 번 다시 부른다. 또 못 보면 사용자에게 보고한다.
     - engineer의 수정은 PLAN.md 파일 칸 안에서만 한다. 밖이면 §4 범위 넓히기 절차를 따른다.
     - qa 단계의 시각 리뷰는 루프의 마지막 확인이다. 미달이면 같은 순서로 engineer → (qa+designer)를 돌리고, 같은 `design` 카운터를 쓴다.

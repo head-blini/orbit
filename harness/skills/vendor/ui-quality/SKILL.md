@@ -3,7 +3,7 @@ name: ui-quality
 description: UI 화면이 템플릿처럼 보이지 않게 하는 범용 바닥·기본값·금지 목록과 스크린샷 리뷰 절차. Designer가 설계·시각 리뷰할 때, 리뷰어가 UI diff를 볼 때 쓴다.
 ---
 
-> 출처: Impeccable(github.com/pbakaus/impeccable, 커밋 b49177d, Apache-2.0)와 Hallmark(github.com/Nutlope/hallmark, 커밋 04977e1, MIT)의 규칙 텍스트를 옮겨 번역·축약·수정함. 라이선스·변경 내용은 ../SOURCES.md.
+> 출처: Impeccable(github.com/pbakaus/impeccable, 커밋 b49177d, Apache-2.0)와 Hallmark(github.com/Nutlope/hallmark, 커밋 04977e1, MIT)의 규칙 텍스트를 옮겨 번역·축약·수정함. Copyright 2025 Paul Bakaus(Impeccable). 라이선스·변경 내용은 ../SOURCES.md.
 
 # UI 품질
 
@@ -51,7 +51,6 @@ description: UI 화면이 템플릿처럼 보이지 않게 하는 범용 바닥�
 - 사용자가 일을 하러 온 화면이다. 어디에 무엇이 있는지 알아보는 것이 먼저고, 개성은 그 뒤에 온다. 개성이 작업·상태·익숙한 조작을 가리면 안 된다.
 - 컨트롤은 플랫폼의 표준 컨트롤(버튼·탭·입력·선택·표 정렬 머리)을 쓴다. 다른 도구의 인터페이스를 흉내 낸 장식 컨트롤은 쓰지 않는다.
 - 상태 색은 의미가 있을 때만 얹는다. "회색 화면 + 액센트 하나"는 범주의 기본값일 뿐 마감이 아니다.
-- 그림자는 오프셋과 부드러운 블러를 가진다. 오프셋 없는 색 후광은 장식이다.
 - 간격: 묶음 안은 촘촘하게, 묶음 사이는 넉넉하게, 제목 위는 아래보다 넓게. 계산된 값을 읽어서 확인한다.
 - 본문 줄 길이는 65~75자, 제목은 균형 있게 줄바꿈한다. 실제 문구를 모든 폭에서 넣어 보고 넘치는 곳을 고친다.
 - 컨트롤 이름은 동작을 말한다. 오류는 문제와 복구 방법을 말한다.

@@ -103,7 +103,7 @@
 ## 6. 트랙 (규모별)
 | 트랙 | 언제 | 쓰는 역할 |
 |---|---|---|
-| Quick | 버그 하나, 작은 수정 | Architect(간단 계획) → Engineer → QA (+ UI 수정이면 Designer 시각 리뷰) |
+| Quick | 버그 하나, 작은 수정 | Architect(간단 계획) → Engineer → QA (+ UI 수정이면 Designer 시각 리뷰·디자인 루프) |
 | Standard | 일반 기능 | (Researcher) → Architect → Plan Checker → Engineer ×N → Reviewer → QA → Librarian, 프로필에 따라 Designer · Data · DevOps 추가 |
 | Full | 새 프로젝트, 큰 기능, 보안 민감 | 전체 |
 
