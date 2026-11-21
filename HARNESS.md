@@ -20,6 +20,8 @@
 | BMAD Method | 애자일 역할 분리, 스토리 파일 인계, 규모별 트랙, UX Designer 역할 |
 | MetaGPT | 자유 대화 대신 SOP가 관리하는 공유 산출물로 협업 |
 | Anthropic frontend-design 스킬 | 템플릿 같은 기본값을 피하는 디자인 방향 가이드 |
+| Impeccable (pbakaus) | 보편 바닥(대비·포커스·모션 감소), 앱 화면 원칙, 점검 우선순위 — 규칙 텍스트만 옮김(ui-quality) |
+| Hallmark (Nutlope) | 상태 8종·AI 티 금지 목록·스크린샷 리뷰 절차 — 규칙 텍스트만 옮김(ui-quality) |
 
 ## 2. 설계 원칙
 1. **얇은 리드**: Lead는 조율만, 실제 작업은 새 컨텍스트 서브에이전트.
@@ -68,7 +70,7 @@
 ### 전문 역할 (프로젝트 프로필 · 작업 내용에 따라 켜짐)
 | 역할 | 하는 일 | 주요 스킬 | 산출물 | 권장 모델 · 권한 |
 |---|---|---|---|---|
-| Designer (UI/UX) | 사용자 흐름 · 화면 · 상태(빈/로딩/에러) 설계, 디자인 시스템 관리, 구현 후 스크린샷 시각 리뷰 | gstack plan-design-review · design-consultation · design-review / Anthropic frontend-design / design-system-guard (만듦) | DESIGN.md, design/tokens.json, 시각 리뷰 결과 | Opus · 읽기 + 브라우저, 디자인 파일만 편집 |
+| Designer (UI/UX) | 사용자 흐름 · 화면 · 상태(빈/로딩/에러) 설계, 디자인 시스템 관리, 구현 후 스크린샷 채점 → 미달이면 Engineer로 돌려보내는 디자인 루프 | gstack plan-design-review · design-consultation · design-review / Anthropic frontend-design / design-system-guard (만듦) / ui-quality (Impeccable·Hallmark에서 옮김) | DESIGN.md, design/tokens.json, 시각 리뷰 결과 | Opus · 읽기 + 브라우저, 디자인 파일만 편집 |
 | Data | 스키마 설계 검토, 마이그레이션 작성 · 안전성(되돌리기 가능 여부, 대용량 테이블 잠금), 쿼리 성능, 인덱스, 데이터 무결성, 시드 · 백업 | Compound Engineering 데이터 무결성 · 스키마 변경 감지 방식 / data-migration-safety (만듦) | DATA.md (스키마 변경 · 마이그레이션 계획 · 롤백 방법) | Opus · 읽기 + 로컬/테스트 DB만 실행 (운영 DB 접근 금지) |
 | DevOps | CI, 빌드 · 패키징 · 서명, 배포, 환경 변수 · 설정 관리, 컨테이너 · IaC | gstack ship · land-and-deploy · setup-deploy · canary / devops-release (만듦) | RELEASE.md (배포 절차 · 롤백 방법) | Sonnet · 편집 + 실행 (배포 명령은 사람 승인 필수) |
 
@@ -90,7 +92,8 @@
   → Architect ⇄ Plan Checker (최대 3회)
   → [사람 승인: 계획 확정]
   → Engineer ×N (병렬 웨이브)
-  → Reviewer 패널 (+ Designer 시각 리뷰, + 조건부 페르소나) ──수정 요청──→ Engineer (최대 3회)
+  → (UI 변경이면) QA+Designer 디자인 루프 ──미달──→ Engineer (최대 2회)
+  → Reviewer 패널 (+ 조건부 페르소나) ──수정 요청──→ Engineer (최대 3회)
   → QA ──실패──→ Debugger → Engineer
   → Security ──차단 이슈──→ Engineer
   → DevOps (배포가 포함된 작업만) → [사람 승인: 배포]
