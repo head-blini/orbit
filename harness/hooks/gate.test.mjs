@@ -1106,3 +1106,161 @@ test('S4: docs/는 대소문자를 구분하고, 심볼릭 링크·gitlink는 �
   gitIn(g, 'switch', '-q', 'main');
   assert.equal(exitOf(g, MERGE), 2, 'gitlink');
 });
+
+// ---- scope-lock: 현재 run PLAN.md 파일 칸 합집합 밖 쓰기를 engineer·debugger·devops에게서 막는다 ----
+const planOf = (...cells) => `# PLAN\n\n| id | 할 일 | 파일 | 검증 방법 |\n|---|---|---|---|\n${cells.map((c, i) => `| T${i + 1} | x | ${c} | V |`).join('\n')}\n`;
+const lockWr = (root, file, agent_type, tool_name = 'Write') => ({ ...wr(root, file, agent_type, { content: 'x' }), tool_name });
+const LOCKED = (...cells) => project('full', { 'PLAN.md': planOf(...cells) });
+
+test('scope-lock 1: 목록 밖 Write — engineer·devops 차단, 메시지에 경로·계획 밖·재승인', () => {
+  const root = LOCKED('`src/a.ts`');
+  for (const who of ['orbit:engineer', 'orbit:devops']) {
+    const r = spawnGate([], { input: JSON.stringify(lockWr(root, 'src/b.ts', who)), root });
+    assert.equal(r.status, 2, who);
+    for (const s of ['src/b.ts', '계획(PLAN.md) 파일 목록 밖', 'architect', '재승인']) assert.ok(r.stderr.includes(s), `${who} ${s}: ${r.stderr}`);
+  }
+});
+
+test('scope-lock 2: debugger 목록 밖 Edit — DEBUG.md 안내', () => {
+  const root = LOCKED('`src/a.ts`');
+  const r = spawnGate([], { input: JSON.stringify(lockWr(root, 'src/b.ts', 'orbit:debugger', 'Edit')), root });
+  assert.equal(r.status, 2);
+  assert.ok(r.stderr.includes('DEBUG.md에 기록하고 보고'), r.stderr);
+});
+
+test('scope-lock 3: 목록 안은 세 역할 모두 통과', () => {
+  const root = LOCKED('`src/a.ts`');
+  for (const who of ['orbit:engineer', 'orbit:debugger', 'orbit:devops'])
+    for (const tool of ['Write', 'Edit']) assert.equal(decide(lockWr(root, 'src/a.ts', who, tool), root), null, `${who} ${tool}`);
+});
+
+test('scope-lock 4: 태스크 합집합', () => {
+  const root = LOCKED('`a.ts`', '`b.ts`');
+  assert.equal(decide(lockWr(root, 'b.ts', 'orbit:engineer'), root), null);
+  assert.equal(decide(lockWr(root, 'a.ts', 'orbit:engineer'), root), null);
+  assert.match(decide(lockWr(root, 'c.ts', 'orbit:engineer'), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/);
+});
+
+test('scope-lock 5: 폴더 항목', () => {
+  const root = LOCKED('`lib/`');
+  for (const f of ['lib/x.ts', 'lib/sub/y.ts']) assert.equal(decide(lockWr(root, f, 'orbit:engineer'), root), null, f);
+  for (const f of ['libx/z.ts', 'other.ts', 'lib']) assert.match(decide(lockWr(root, f, 'orbit:engineer'), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/, f);
+});
+
+test('scope-lock 6: 글롭 항목은 아무것도 허용하지 않고 잠금은 건다', () => {
+  const root = LOCKED('`src/*.ts`');
+  assert.match(decide(lockWr(root, 'src/a.ts', 'orbit:engineer'), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/);
+  assert.match(decide(lockWr(root, 'src/*.ts', 'orbit:engineer'), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/);
+});
+
+test('scope-lock 7: 목록 없음 네 경우는 잠그지 않음', () => {
+  const noFileCol = project('full', { 'PLAN.md': '# PLAN\n\n| id | 할 일 |\n|---|---|\n| T1 | x |\n' });
+  const emptyCol = LOCKED('', '-');
+  const noCurrent = LOCKED('`src/a.ts`');
+  rmSync(join(noCurrent, '.orbit/current'));
+  for (const root of [project('full'), noFileCol, emptyCol, noCurrent]) assert.equal(decide(lockWr(root, 'src/other.ts', 'orbit:engineer'), root), null, root);
+});
+
+test('scope-lock 8: .orbit/ 쓰기는 기존 규칙', () => {
+  const root = LOCKED('`src/a.ts`');
+  assert.equal(decide(lockWr(root, '.orbit/runs/r1/DEBUG.md', 'orbit:debugger'), root), null);
+  assert.match(decide(lockWr(root, '.orbit/runs/r1/VERIFY.md', 'orbit:engineer'), root) ?? '', /qa만/);
+});
+
+test('scope-lock 9: worktree는 worktree 기준 상대 경로로 대조', () => {
+  const root = LOCKED('`src/a.ts`');
+  assert.equal(decide(lockWr(root, '.orbit/wt/t1/src/a.ts', 'orbit:engineer'), root), null);
+  assert.match(decide(lockWr(root, '.orbit/wt/t1/src/b.ts', 'orbit:engineer'), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/);
+});
+
+test('scope-lock 10: PLAN.md는 architect만', () => {
+  const root = LOCKED('`src/a.ts`');
+  for (const f of ['.orbit/runs/r1/PLAN.md', '.orbit/runs/r1/plan.md']) {
+    assert.equal(decide(lockWr(root, f, 'orbit:architect'), root), null, `architect ${f}`);
+    for (const who of ['orbit:engineer', 'orbit:debugger', 'orbit:devops', 'orbit:plan-checker', undefined]) assert.match(decide(lockWr(root, f, who), root) ?? '', /\.orbit\/runs\/r1\/PLAN\.md.*만 쓸 수 있음/i, `${who} ${f}`);
+  }
+});
+
+test('scope-lock 11: 잠금 중에도 다른 역할 판정은 그대로', () => {
+  const root = LOCKED('`src/a.ts`');
+  assert.equal(decide(lockWr(root, '.orbit/HARNESS_ISSUES.md', undefined), root), null);
+  assert.equal(decide(lockWr(root, 'docs/x.md', 'orbit:librarian'), root), null);
+  assert.equal(decide(lockWr(root, 'design/tokens.json', 'orbit:designer'), root), null);
+  assert.match(decide(lockWr(root, 'src/a.ts', undefined), root) ?? '', /Lead는 직접 코딩하지 않음/);
+});
+
+test('scope-lock 12: 경로 우회 — 정규화·대소문자·심볼릭 링크', () => {
+  const root = LOCKED('`src/a.ts`');
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'src/a.ts'), 'x');
+  const at = (r, f) => decide(lockWr(r, f, 'orbit:engineer'), r);
+  const blocked = (r, f) => assert.match(at(r, f) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/, f);
+  assert.equal(at(root, 'src/./a.ts'), null);
+  assert.equal(at(root, 'src/x/../a.ts'), null);
+  blocked(root, 'src/a.ts/../b.ts');
+  blocked(root, 'src/A.ts'); // a.ts가 있을 때
+  blocked(LOCKED('`src/a.ts`'), 'src/A.ts'); // 없을 때
+  const outside = mkdtempSync(join(tmpdir(), 'orbit-out-'));
+  writeFileSync(join(outside, 'f.ts'), 'x');
+  const lk = LOCKED('`src/link.ts`, `lib/`');
+  mkdirSync(join(lk, 'src'));
+  mkdirSync(join(lk, 'lib'));
+  let linked = true;
+  try {
+    symlinkSync(join(outside, 'f.ts'), join(lk, 'src/link.ts'));
+    symlinkSync(outside, join(lk, 'lib/out'));
+  } catch {
+    linked = false; // 심볼릭 링크를 만들 수 없는 환경(Windows 권한)
+  }
+  if (linked) {
+    blocked(lk, 'src/link.ts');
+    blocked(lk, 'lib/out/z.ts');
+    assert.equal(at(lk, 'lib/ok.ts'), null); // 대조
+  }
+});
+
+// ---- scope-lock 표 파싱·NotebookEdit (리뷰 수정) ----
+const planRaw = (text) => project('full', { 'PLAN.md': text });
+const E = 'orbit:engineer';
+
+test('scope-lock 13: 머리 칸 변형 — Files·**파일**·다른 열 위치, 구분선 :---:', () => {
+  const variants = [
+    '| id | Files | x |\n|---|---|---|\n| T1 | `src/a.ts` | V |\n',
+    '| id | **파일** | x |\n|:---:|:---:|:---:|\n| T1 | `src/a.ts` | V |\n',
+    '| 파일 | id | x |\n| --- | --- | --- |\n| `src/a.ts` | T1 | V |\n',
+    '| id | x | y | 파일 (수정) |\n|---|---|---|---|\n| T1 | V | V | `src/a.ts` |\n',
+  ];
+  for (const t of variants) {
+    const root = planRaw(t);
+    assert.equal(decide(lockWr(root, 'src/a.ts', E), root), null, t);
+    assert.match(decide(lockWr(root, 'src/b.ts', E), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/, t);
+  }
+});
+
+test('scope-lock 14: 코드 블록 안 예시 표는 허용 목록에 넣지 않는다', () => {
+  const root = planRaw('```\n| id | 파일 |\n|---|---|\n| T1 | `src/ex.ts` |\n```\n\n| id | 파일 |\n|---|---|\n| T1 | `src/a.ts` |\n');
+  assert.equal(decide(lockWr(root, 'src/a.ts', E), root), null);
+  assert.match(decide(lockWr(root, 'src/ex.ts', E), root) ?? '', /계획\(PLAN\.md\) 파일 목록 밖/);
+  const onlyFenced = planRaw('~~~\n| id | 파일 |\n|---|---|\n| T1 | `src/ex.ts` |\n~~~\n');
+  assert.equal(decide(lockWr(onlyFenced, 'src/other.ts', E), onlyFenced), null); // 항목 없음 = 잠그지 않음
+});
+
+test('scope-lock 15: 백틱·\\| 안의 |는 칸 경계가 아니다', () => {
+  const root = planRaw('| id | 할 일 | 파일 |\n|---|---|---|\n| T1 | `a|b` 처리 | `src/a.ts` |\n| T2 | a \\| b | `src/c.ts` |\n| T3 | x | `src/d.ts` |\n');
+  for (const f of ['src/a.ts', 'src/c.ts', 'src/d.ts']) assert.equal(decide(lockWr(root, f, E), root), null, f);
+  assert.notEqual(decide(lockWr(root, 'src/b.ts', E), root), null); // 다른 칸 조각이 허용되지 않는다
+  const inFile = planRaw('| id | 파일 |\n|---|---|\n| T1 | `src/a.ts` 또는 \\| `src/e.ts` |\n');
+  assert.equal(decide(lockWr(inFile, 'src/e.ts', E), inFile), null);
+});
+
+test('scope-lock 16: 백틱 없는 항목만 있으면 잠그지 않는다', () => {
+  const root = planRaw('| id | 파일 |\n|---|---|\n| T1 | src/a.ts |\n');
+  assert.equal(decide(lockWr(root, 'src/other.ts', E), root), null);
+});
+
+test('scope-lock 17: NotebookEdit는 notebook_path로 잠금 대조', () => {
+  const root = LOCKED('`nb/a.ipynb`');
+  const nb = (f) => ({ tool_name: 'NotebookEdit', tool_input: { notebook_path: join(root, f), new_source: 'x' }, cwd: root, agent_id: 'a1', agent_type: E });
+  assert.equal(decide(nb('nb/a.ipynb'), root), null);
+  assert.match(decide(nb('nb/b.ipynb'), root) ?? '', /nb\/b\.ipynb.*계획\(PLAN\.md\) 파일 목록 밖/);
+});
