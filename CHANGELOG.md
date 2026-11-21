@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- 범위 잠금(run 20261121-scope-lock): 계획(PLAN.md) 태스크 표의 파일 목록 밖에 쓰는 것을 구현 담당·디버거·배포 담당에게서 훅이 막는다. 계획은 설계 담당만 수정한다. 알려진 한계: 셸을 통한 쓰기는 막지 못한다. 보안 권고 S1~S4는 다음 작업이다. 배운 것은 `docs/solutions/harness-process-costs.md`.
 - 진행 칸(run 20261120-flow-panel): 가운데 그래프 칸을 "진행" 칸으로 바꿨다. 단계 줄, 종류별 되돌림 수, 지금 도는 에이전트, 끝난 합계를 보여 주고 그래프 표시는 없앴다. 알려진 한계: 실제 앱에서 세션을 고른 뒤의 화면은 사용자가 위험을 수용하고 확인하지 않았다(USER_ACCEPT). 배운 것은 `docs/solutions/qa-gui-automation-focus.md`·`ui-reference-fidelity.md`·`case-insensitive-import.md`.
 - 로드맵 실시간 반영(run 20261120-roadmap-live): 로드맵 칸이 `ROADMAP.md` 변경을 약 1초 안에 반영한다. 파일 감시가 멈춰도 30초마다 다시 읽는 동작은 그대로다. 로드맵 칸 스크롤이 이중 테두리 선을 덮던 문제를 고쳤다(안쪽 래퍼가 스크롤을 맡는다). 새 의존성 없음(메타데이터 폴링). 배운 것은 `docs/solutions/session-log-watch.md`·`tauri-dev-restart-kills-session.md`.
 - 세션 칸 주의 표시(run 20261120-ui-attention): 세션 칸 위에 '대기 n · 에러 n' 요약 줄이 생겼고, 누르거나 ⌘J를 누르면 다음 대기 세션으로 이동한다. 대기 이유가 표시된다. 실행 중 세션에 토큰 숫자가 보인다. 로드맵에서 다음 할 일에 ▶가 붙는다. 지난 세션은 폴더별로 묶여 펼치고 접을 수 있다. 세션 칸이 넘쳐 스크롤될 때 내용이 이중 테두리 안쪽 선을 덮던 문제를 고쳤다(스크롤은 안쪽 래퍼가 맡는다). 알려진 한계: 화면 동작은 사용자 실기 점검으로 확인했고, 로드맵 칸(`.detail`)에는 같은 래퍼를 아직 적용하지 않았다. 배운 것은 `docs/solutions/ui-reference-fidelity.md`·`qa-gui-automation-focus.md`.

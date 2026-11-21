@@ -11,7 +11,7 @@
 import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { join, resolve, relative, isAbsolute, dirname, basename, sep } from 'node:path';
+import { join, resolve, relative, isAbsolute, dirname, basename, sep, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,7 @@ const OWNERS = [
   [/^runs\/[^/]+\/PLAN_CHECK\.md$/i, 'plan-checker'], // i: NTFS는 대소문자를 구분하지 않는다
   [/^runs\/[^/]+\/VERIFY\.md$/i, 'qa'],
   [/^runs\/[^/]+\/SECURITY\.md$/i, 'security'],
+  [/^runs\/[^/]+\/PLAN\.md$/i, 'architect'],
   [/^runs\/[^/]+\/(REVIEW\.md|STATE\.json)$/i, 'lead'],
   [/^current$/i, 'lead'],
   [/^profile\.json$/i, 'researcher'],
@@ -81,6 +82,89 @@ export function currentRun(root = ROOT) {
   } catch {
     return null;
   }
+}
+
+// 범위 잠금: 현재 run의 PLAN.md 태스크 표에서 "파일" 칸(머리가 `파일…`/`file…`)의 백틱 항목을 모두 모은다. 읽을 수 없거나 run이 없으면 null, 항목이 없으면 빈 배열(둘 다 잠그지 않음).
+// 표 줄을 칸으로 가른다. 백틱 안의 |와 \|는 칸 경계가 아니다.
+const cells = (line) => {
+  const out = [];
+  let cur = '';
+  let tick = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '`') tick = !tick;
+    if (c === '\\' && line[i + 1] === '|') cur += c + line[++i];
+    else if (c === '|' && !tick) {
+      out.push(cur);
+      cur = '';
+    } else cur += c;
+  }
+  out.push(cur);
+  if (!out[0].trim()) out.shift(); // 줄 앞뒤의 |
+  if (out.length && !out.at(-1).trim()) out.pop();
+  return out;
+};
+const planFiles = (root) => {
+  const run = currentRun(root);
+  if (!run) return null;
+  let text;
+  try {
+    text = readFileSync(join(run.dir, 'PLAN.md'), 'utf8');
+  } catch {
+    return null;
+  }
+  let fence = null; // 코드 블록(``` 또는 ~~~) 안의 예시 표는 계획이 아니므로 빈 줄로 바꾼다
+  const lines = text.split(/\r?\n/).map((l) => {
+    const f = /^\s*(```|~~~)/.exec(l)?.[1];
+    if (f && (!fence || f === fence)) {
+      fence = fence ? null : f;
+      return '';
+    }
+    return fence ? '' : l;
+  });
+  const items = [];
+  for (let i = 0; i + 1 < lines.length; i++) {
+    // 표 = 머리 줄 + 구분선(---, :---:) 줄
+    if (!lines[i].trimStart().startsWith('|') || !/^\s*\|[\s:|-]*-[\s:|-]*$/.test(lines[i + 1])) continue;
+    const col = cells(lines[i]).findIndex((c) => {
+      const s = c.replace(/[*`]/g, '').trim();
+      return s.replace(/\s/g, '').startsWith('파일') || /^files?\b/i.test(s);
+    });
+    let j = i + 2;
+    for (; j < lines.length && lines[j].trimStart().startsWith('|'); j++) {
+      if (col < 0) continue; // 파일 칸이 없는 표는 건너뛴다
+      for (const m of (cells(lines[j])[col] ?? '').matchAll(/`([^`\n]+)`/g)) if (m[1].trim()) items.push(m[1].trim());
+    }
+    i = j - 1;
+  }
+  return items;
+};
+// 글롭 문자, 선행 / \ ~, 드라이브 문자, .. 세그먼트, \는 아무것도 허용하지 않는다(개수에는 들어가 잠금은 걸린다).
+const BAD_ITEM = /[*?[\]{}\\]|^[/~]|^[A-Za-z]:|(^|\/)\.\.(\/|$)/;
+// 막을 사유(문자열) 또는 null. wt가 있으면 .orbit/wt/<wt>/ 기준 상대 경로로 대조한다.
+function scopeFailure(root, croot, raw, resolved, file, role, wt) {
+  const items = planFiles(root);
+  if (!items?.length) return null;
+  const bases = [resolve(root), croot].map((r) => (wt ? join(r, '.orbit/wt', wt) : r));
+  const rels = bases.filter((b) => inside(b, resolved)).map((b) => posixRel(b, resolved)); // 글자 대조용: 대소문자까지 그대로
+  const real = bases[1]; // croot 기반이라 이미 정규화돼 있다
+  const ok = inside(real, file) && items.some((item) => { // 앞의 검사: 심볼릭 링크로 범위 밖을 가리키는 경로는 전부 거부
+    if (BAD_ITEM.test(item)) return false;
+    const norm = posix.normalize(item);
+    if (norm === '.' || norm === './') return false;
+    const dir = norm.endsWith('/');
+    const target = canon(join(real, norm)).path;
+    return dir
+      ? rels.some((r) => r.startsWith(norm)) && inside(target, file) && file !== target
+      : rels.includes(norm) && file === target;
+  });
+  if (ok) return null;
+  const shown = inside(croot, file) ? posixRel(croot, file) : raw;
+  return `${shown} — 현재 run 계획(PLAN.md) 파일 목록 밖이라 쓸 수 없음. ${
+    role === 'debugger'
+      ? '고치지 말고 DEBUG.md에 기록하고 보고만 할 것(파일·원인·제안 수정). Lead가 사용자에게 전한다.'
+      : '범위를 넓히려면 Lead에게 보고 → architect가 PLAN.md 태스크 표 수정 → plan-checker → 사용자 재승인 → 다시 build.'
+  }`;
 }
 
 // 설정 경로(CLAUDE.md, .claude/**, .mcp.json)는 full 트랙 + config 승인이 있는 run에서만 연다(H8-2). 읽을 수 없으면 닫힘.
@@ -421,6 +505,8 @@ export function decide(p, root = ROOT) {
     if (inside(orbit, file)) {
       const rel = posixRel(orbit, file);
       if (/^wt\//i.test(rel) && !CODERS.includes(role)) return '.orbit/wt/는 engineer·debugger·devops만 쓸 수 있음';
+      const wt = /^wt\/([^/]+)\//i.exec(rel);
+      if (wt) return scopeFailure(root, croot, raw, resolved, file, role, wt[1]); // 여기까지 오면 CODERS
       // 셸을 제한 없이 못 쓰는 쓰기 주체(Lead 포함)는 실행될 만한 파일(.js·.sh 등)을 .orbit/에 못 둔다
       if (!FREE_SHELL.includes(role) && !/(^|\/)[^/.]+$|\.(md|json|txt|ya?ml)$/i.test(rel)) return '.orbit/에는 .md·.json·.txt·.yaml·확장자 없는 파일만 쓸 수 있음 (Lead·읽기 전용 역할)';
       const owner = OWNERS.find(([re]) => re.test(rel));
@@ -439,7 +525,7 @@ export function decide(p, root = ROOT) {
       return null;
     }
     if (isLead) return 'Lead는 직접 코딩하지 않음: .orbit/ 밖의 파일은 서브에이전트(engineer 등)에게 맡길 것';
-    if (CODERS.includes(role)) return null;
+    if (CODERS.includes(role)) return scopeFailure(root, croot, raw, resolved, file, role, null);
     const rel = inside(croot, file) ? posixRel(croot, file) : null;
     if (rel !== null) {
       if (role === 'librarian' && (/\.md$/i.test(rel) || /^docs\//i.test(rel) || /^CHANGELOG[^/]*$/i.test(rel))) return null;
